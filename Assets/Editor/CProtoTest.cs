@@ -37,6 +37,7 @@ namespace Client
             Test_StepOnOwnTrailIsDeadly();
             Test_MoveRules();
             Test_BoundaryOnlyMove();
+            Test_LineFollow();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -172,11 +173,12 @@ namespace Client
             Check("점령지에 닿은 테두리도 내부가 됨", cGrid.Is_Boundary(new Vector2Int(4, 0)) == false);
             Check("현재 칸은 경계", cGrid.Is_Boundary(new Vector2Int(3, 0)));
 
-            // 오른쪽은 점령지 내부 → 가로지를 수 없다
+            // 오른쪽은 점령지 내부 → 가로지를 수 없다 (선을 타고 위로 우회한다)
             cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
-            Check("점령지 내부로 진입 차단", cMove.CUR_CELL == new Vector2Int(3, 0));
+            Check("점령지 내부로 진입 차단", cMove.CUR_CELL != new Vector2Int(4, 0));
 
             // 왼쪽은 아직 미점령 지대와 맞닿은 '선' → 이동 가능
+            cMove.Teleport(new Vector2Int(3, 0));
             cMove.Tick(1f, MOVE_DIR.LEFT, out Vector2Int _);
             Check("경계 위로는 이동 가능", cMove.CUR_CELL == new Vector2Int(2, 0));
 
@@ -184,6 +186,51 @@ namespace Client
             Walk(cGrid, cMove, MOVE_DIR.UP, 2, null);
             Check("선에서 미점령 지대로 진입 가능", cMove.CUR_CELL == new Vector2Int(2, 2));
             Check("나가면 다시 선을 그린다", cGrid.IS_DRAWING);
+        }
+        // 260902_선분 자동 추적 — 가려던 방향이 막혀도 선이 꺾여 이어지면 따라간다
+        private static void Test_LineFollow()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            Walk_ClosedLoop(cGrid, null, out CMoveHandler cMove);
+            // 이 시점의 점령 모양: 아래 테두리(y=0) 위에 x 3~10 · y 1~5 블록이 얹힌 계단
+
+            // (3,0)에서 오른쪽은 블록 내부 → 블록의 왼쪽 벽을 타고 자동으로 올라간다
+            cMove.Teleport(new Vector2Int(3, 0));
+            for (int i = 0; i < 5; ++i)
+                cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
+
+            Check("막힌 방향 대신 이어지는 선을 따라감", cMove.CUR_CELL == new Vector2Int(3, 5));
+
+            // 블록 꼭대기에 도달하면 원래 누르던 방향으로 자연스럽게 복귀한다
+            cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
+            Check("길이 열리면 원래 방향으로 복귀", cMove.CUR_CELL == new Vector2Int(4, 5));
+
+            cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
+            Check("복귀 후 계속 진행", cMove.CUR_CELL == new Vector2Int(5, 5));
+
+            // 반대쪽도 대칭으로 동작 (블록 오른쪽 벽을 타고 올라감)
+            cMove.Teleport(new Vector2Int(10, 0));
+            for (int i = 0; i < 5; ++i)
+                cMove.Tick(1f, MOVE_DIR.LEFT, out Vector2Int _);
+
+            Check("반대쪽 벽도 자동 추적", cMove.CUR_CELL == new Vector2Int(10, 5));
+
+            // 갈림길에서는 멈춰서 플레이어가 고르게 한다 (양쪽 다 선이라 방향을 정할 수 없음)
+            cMove.Teleport(new Vector2Int(15, 0));
+            cMove.Tick(1f, MOVE_DIR.DOWN, out Vector2Int _);
+            Check("갈림길에서는 자동 추적하지 않음", cMove.CUR_CELL == new Vector2Int(15, 0));
+
+            // 선 위에서 미점령 지대로 나가는 것은 자동 추적보다 우선한다
+            cMove.Teleport(new Vector2Int(15, 0));
+            cMove.Tick(1f, MOVE_DIR.UP, out Vector2Int vArrived);
+            cGrid.Step_To(vArrived, null, out int _);
+            Check("미점령 지대 진입이 우선", cMove.CUR_CELL == new Vector2Int(15, 1));
+            Check("나가면 선을 그린다", cGrid.IS_DRAWING);
+
+            // 그리는 중에는 자동 추적을 하지 않는다 (좌우로 꺾이면 도형이 뭉개진다)
+            Walk(cGrid, cMove, MOVE_DIR.UP, 2, null);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 1, null);      // 180도 반전 = 막힘
+            Check("그리는 중에는 자동 추적 안 함", cMove.CUR_CELL == new Vector2Int(15, 4));
         }
         #endregion 테스트 케이스
 

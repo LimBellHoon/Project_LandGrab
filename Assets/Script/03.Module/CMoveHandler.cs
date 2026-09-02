@@ -17,6 +17,7 @@ namespace Client
         private float           m_fProgress;                // 현재 셀 → 다음 셀 진행도 0~1
         private float           m_fSpeed;                   // 초당 이동 셀 수
         private bool            m_bMoving;
+        private bool            m_bFollowing;               // 직전 이동이 선분 자동 추적이었는가
 
         public Vector2Int   CUR_CELL    => m_vCurCell;
         public MOVE_DIR     CUR_DIR     => m_eCurDir;
@@ -53,9 +54,10 @@ namespace Client
         {
             m_vCurCell  = vCell;
             m_vNextCell = vCell;
-            m_eCurDir   = MOVE_DIR.NONE;
-            m_fProgress = 0f;
-            m_bMoving   = false;
+            m_eCurDir    = MOVE_DIR.NONE;
+            m_fProgress  = 0f;
+            m_bMoving    = false;
+            m_bFollowing = false;
         }
 
         /// <summary>
@@ -86,10 +88,21 @@ namespace Client
         {
             MOVE_DIR eDir = eDesiredDir;
 
+            bool bFollowing = false;
+
             if (Can_Move(eDir) == false)
             {
                 // 미점령 지대에서는 멈출 수 없다 — 입력이 없거나 막혔으면 진행 방향을 유지한다.
-                eDir = m_cGrid.IS_DRAWING == true ? m_eCurDir : MOVE_DIR.NONE;
+                // 반대로 선 위에서는 가려던 방향이 막혀도 선이 꺾여 이어지면 그쪽으로 따라간다.
+                if (m_cGrid.IS_DRAWING == true)
+                {
+                    eDir = m_eCurDir;
+                }
+                else
+                {
+                    eDir = Find_FollowDir(eDesiredDir);
+                    bFollowing = eDir != MOVE_DIR.NONE;
+                }
 
                 if (Can_Move(eDir) == false)
                 {
@@ -98,10 +111,55 @@ namespace Client
                 }
             }
 
+            m_bFollowing = bFollowing;
             m_eCurDir   = eDir;
             m_vNextCell = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
             m_bMoving   = true;
             return true;
+        }
+
+        // 260902_선분 자동 추적
+        /// <summary>
+        /// 가려던 방향이 막혔을 때, 그 방향과 수직으로 이어지는 '선'을 찾는다.
+        /// 미점령 지대로 나가는 방향은 후보에서 제외한다 — 안 그러면 벽에 부딪힐 때마다
+        /// 의도치 않게 땅따먹기가 시작돼 그대로 죽는다.
+        /// </summary>
+        private MOVE_DIR Find_FollowDir(MOVE_DIR eDesiredDir)
+        {
+            if (eDesiredDir == MOVE_DIR.NONE)
+                return MOVE_DIR.NONE;
+
+            CTerritoryGrid.Dir_Perpendicular(eDesiredDir, out MOVE_DIR eFirst, out MOVE_DIR eSecond);
+
+            bool bFirst  = Can_Follow(eFirst);
+            bool bSecond = Can_Follow(eSecond);
+
+            // 길이 하나뿐이면 고민 없이 그 길로
+            if (bFirst != bSecond)
+                return bFirst == true ? eFirst : eSecond;
+
+            if (bFirst == false)
+                return MOVE_DIR.NONE;
+
+            // 갈림길 — 가던 방향을 이어갈 수 있으면 잇고, 아니면 멈춰서 플레이어가 고르게 한다.
+            if (m_eCurDir == eFirst || m_eCurDir == eSecond)
+                return m_eCurDir;
+
+            return MOVE_DIR.NONE;
+        }
+
+        private bool Can_Follow(MOVE_DIR eDir)
+        {
+            // 자동 추적으로 들어온 길을 자동 추적으로 되돌아가면 막다른 길에서 무한 왕복한다.
+            // (플레이어가 직접 방향을 눌러 되돌아가는 것은 막지 않는다)
+            if (m_bFollowing == true && eDir == CTerritoryGrid.Dir_Reverse(m_eCurDir))
+                return false;
+
+            Vector2Int vNext = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
+            if (m_cGrid.Get_Cell(vNext) != CELL_STATE.OWNED)
+                return false;
+
+            return Can_Move(eDir);
         }
 
         private bool Can_Move(MOVE_DIR eDir)

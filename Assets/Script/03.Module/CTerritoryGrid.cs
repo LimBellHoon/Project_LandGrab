@@ -135,6 +135,20 @@ namespace Client
 
             return new Vector2Int(ARR_DIR_X[i], ARR_DIR_Y[i]);
         }
+        // 260902_선분 자동 추적: 진행 방향이 막혔을 때 살펴볼 두 방향
+        public static void Dir_Perpendicular(MOVE_DIR eDir, out MOVE_DIR eFirst, out MOVE_DIR eSecond)
+        {
+            if (eDir == MOVE_DIR.LEFT || eDir == MOVE_DIR.RIGHT)
+            {
+                eFirst  = MOVE_DIR.UP;
+                eSecond = MOVE_DIR.DOWN;
+                return;
+            }
+
+            eFirst  = MOVE_DIR.LEFT;
+            eSecond = MOVE_DIR.RIGHT;
+        }
+
         public static MOVE_DIR Dir_Reverse(MOVE_DIR eDir)
         {
             switch (eDir)
