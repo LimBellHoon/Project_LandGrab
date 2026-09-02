@@ -38,6 +38,7 @@ namespace Client
             Test_MoveRules();
             Test_BoundaryOnlyMove();
             Test_LineFollow();
+            Test_Enemy();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -231,6 +232,61 @@ namespace Client
             Walk(cGrid, cMove, MOVE_DIR.UP, 2, null);
             Walk(cGrid, cMove, MOVE_DIR.DOWN, 1, null);      // 180도 반전 = 막힘
             Check("그리는 중에는 자동 추적 안 함", cMove.CUR_CELL == new Vector2Int(15, 4));
+        }
+        // 260902_몬스터 — 미점령 지대만 다니고, 점령지에 튕기고, 나온 플레이어를 쫓는다
+        private static void Test_Enemy()
+        {
+            // ① 점령지에 부딪히면 튕긴다 (아래 테두리를 향해 내려보낸다)
+            CTerritoryGrid cGrid = Make_Grid();
+            CEnemyMoveHandler cEnemy = new CEnemyMoveHandler();
+            cEnemy.Initialize(cGrid, new Vector2(10.5f, 1.5f), Vector2.down, 1f);
+
+            cEnemy.Tick(1f, false, Vector2.zero, 0f);
+            Check("점령지에 튕겨 방향이 뒤집힘", cEnemy.DIR.y > 0f);
+            Check("튕긴 축은 제자리", Mathf.Approximately(cEnemy.POS.y, 1.5f));
+
+            // ② 오래 돌려도 절대 점령지 안으로 들어가지 않는다
+            cEnemy.Initialize(cGrid, new Vector2(10.5f, 10.5f), new Vector2(1f, 1f), 3f);
+            bool bStayedOutside = true;
+            for (int i = 0; i < 300; ++i)
+            {
+                cEnemy.Tick(0.1f, false, Vector2.zero, 0f);
+                if (cGrid.Get_Cell(cEnemy.CELL) == CELL_STATE.OWNED)
+                {
+                    bStayedOutside = false;
+                    break;
+                }
+            }
+            Check("미점령 지대를 벗어나지 않음", bStayedOutside);
+
+            // ③ 추적 상태면 플레이어 쪽으로 선회한다 (속도 0으로 두어 선회만 검증)
+            cEnemy.Initialize(cGrid, new Vector2(10.5f, 10.5f), Vector2.right, 0f);
+            cEnemy.Tick(1f, true, new Vector2(10.5f, 15.5f), 1f);   // 위쪽으로 1라디안 선회
+            Check("추적 시 목표 쪽으로 선회", cEnemy.DIR.y > 0.5f);
+            Check("선회는 즉시 꺾이지 않음", cEnemy.DIR.x > 0.3f);
+
+            // ④ 추적하지 않으면 방향을 유지한다 (안전 지대의 플레이어는 쫓지 않음)
+            cEnemy.Initialize(cGrid, new Vector2(10.5f, 10.5f), Vector2.right, 0f);
+            cEnemy.Tick(1f, false, new Vector2(10.5f, 15.5f), 1f);
+            Check("배회 중에는 목표를 무시", Mathf.Approximately(cEnemy.DIR.y, 0f));
+
+            // ⑤ 점령 판정과 겹쳐 점령지 안에 갇히면 가장 가까운 미점령 칸으로 탈출한다
+            CTerritoryGrid cBlockGrid = Make_Grid();
+            Walk_ClosedLoop(cBlockGrid, null, out CMoveHandler _);   // x 3~10 · y 1~5 블록 생성
+            Check("갇힘 상황 준비", cBlockGrid.Get_Cell(new Vector2Int(6, 2)) == CELL_STATE.OWNED);
+
+            CEnemyMoveHandler cTrapped = new CEnemyMoveHandler();
+            cTrapped.Initialize(cBlockGrid, new Vector2(6.5f, 2.5f), Vector2.right, 1f);
+            cTrapped.Tick(0.1f, false, Vector2.zero, 0f);
+            Check("점령지에 갇히면 탈출", cBlockGrid.Get_Cell(cTrapped.CELL) == CELL_STATE.EMPTY);
+
+            // ⑥ 링 탐색 자체 검증
+            Check("이미 조건을 만족하면 제자리 반환",
+                  cGrid.Try_Find_NearestCell(new Vector2Int(10, 10), CELL_STATE.EMPTY, 4, out Vector2Int vSelf)
+                  && vSelf == new Vector2Int(10, 10));
+            Check("테두리에서 가장 가까운 미점령 칸을 찾음",
+                  cGrid.Try_Find_NearestCell(new Vector2Int(0, 0), CELL_STATE.EMPTY, 4, out Vector2Int vNear)
+                  && cGrid.Get_Cell(vNear) == CELL_STATE.EMPTY);
         }
         #endregion 테스트 케이스
 

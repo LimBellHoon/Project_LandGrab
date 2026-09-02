@@ -24,6 +24,14 @@ namespace Client
 
         [Header("Player")]
         public float    fMoveSpeed      = 9f;       // 초당 이동 셀 수
+
+        // 260902_몬스터
+        [Header("Enemy")]
+        public int      iEnemyCount     = 3;
+        public float    fEnemySpeed     = 5f;       // 배회 속도 (초당 셀)
+        public float    fEnemyChaseSpeed= 7f;       // 추적 속도 (초당 셀)
+        public float    fEnemyTurnRate  = 5f;       // 추적 시 선회 속도 (초당 라디안)
+        public float    fEnemyHitRange  = 1.2f;     // 플레이어와의 충돌 반경 (셀)
     }
 
     /// <summary> CPlayer 생성 Desc — Engine 오브젝트 풀에 그대로 전달된다 </summary>
@@ -33,6 +41,24 @@ namespace Client
         public Vector2Int       vStartCell  { get; set; }
         public float            fMoveSpeed  { get; set; }
         public int              iLife       { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
+
+    // 260902_몬스터
+    /// <summary> CEnemy 생성 Desc </summary>
+    public class CEnemyDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid       { get; set; }
+        public Vector2Int       vStartCell  { get; set; }
+        public Vector2          vStartDir   { get; set; }
+        public float            fSpeed      { get; set; }   // 초당 셀
+        public float            fChaseSpeed { get; set; }   // 초당 셀
+        public float            fTurnRate   { get; set; }
 
         public override void OnReturn()
         {

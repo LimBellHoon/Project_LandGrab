@@ -198,6 +198,40 @@ namespace Client
         public bool Is_Boundary(Vector2Int vCell) => Is_Boundary(vCell.x, vCell.y);
 
         public void Clear_Dirty() => IS_DIRTY = false;
+
+        // 260902_몬스터가 점령지 안에 갇혔을 때 빠져나올 곳을 찾는 용도
+        /// <summary> vFrom에서 가장 가까운 eState 칸을 링 탐색으로 찾는다. </summary>
+        public bool Try_Find_NearestCell(Vector2Int vFrom, CELL_STATE eState, int iMaxRadius, out Vector2Int vFound)
+        {
+            vFound = vFrom;
+
+            if (Get_Cell(vFrom) == eState)
+                return true;
+
+            for (int r = 1; r <= iMaxRadius; ++r)
+            {
+                for (int dy = -r; dy <= r; ++dy)
+                {
+                    for (int dx = -r; dx <= r; ++dx)
+                    {
+                        // 링의 테두리만 검사 (안쪽은 이전 반복에서 이미 봤다)
+                        if (Mathf.Abs(dx) != r && Mathf.Abs(dy) != r)
+                            continue;
+
+                        int x = vFrom.x + dx;
+                        int y = vFrom.y + dy;
+
+                        if (Is_InBounds(x, y) == false || m_arrCell[To_Index(x, y)] != eState)
+                            continue;
+
+                        vFound = new Vector2Int(x, y);
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
         #endregion 셀 조회
 
         #region 트레일

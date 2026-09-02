@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+
+using UnityEngine;
 
 using Engine;
 
@@ -13,6 +15,10 @@ namespace Client
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
 
+        // 260902_몬스터
+        private readonly List<CEnemy>       m_lstEnemy      = new List<CEnemy>();
+        private readonly List<Vector2Int>   m_lstEnemyCell  = new List<Vector2Int>();  // 점령 판정용 재사용 버퍼
+
         private CStageDesc      m_cStageDesc;
         private CPlayer         m_cPlayer;
         private STAGE_STATE     m_eState = STAGE_STATE.READY;
@@ -25,6 +31,7 @@ namespace Client
         public float            OWNED_RATIO     => m_cGrid.OWNED_RATIO;
         public float            CLEAR_RATIO     => m_cStageDesc != null ? m_cStageDesc.fClearRatio : 0f;
         public int              LIFE            => m_cPlayer != null ? m_cPlayer.LIFE : 0;
+        public int              ENEMY_COUNT     => m_lstEnemy.Count;
 
         #region 초기화
         public bool Initialize(CStageDesc cStageDesc, SpriteRenderer srBackground, SpriteRenderer srOverlay)
@@ -56,6 +63,7 @@ namespace Client
         public void Release()
         {
             m_cGridRenderer.Release();
+            m_lstEnemy.Clear();
             m_cPlayer = null;
         }
 
@@ -81,6 +89,8 @@ namespace Client
             if (Spawn_Player() == false)
                 return false;
 
+            Spawn_Enemies();
+
             m_fRemainTime = m_cStageDesc.fTimeLimit;
             m_eState      = STAGE_STATE.PLAYING;
             return true;
@@ -92,6 +102,8 @@ namespace Client
 
             if (m_eState != STAGE_STATE.PLAYING)
                 return;
+
+            Tick_Enemy();
 
             m_fRemainTime -= fDeltaTime;
             if (m_fRemainTime <= 0f)
@@ -132,11 +144,115 @@ namespace Client
 
             m_cPlayer.OnCapture     += On_PlayerCapture;
             m_cPlayer.OnDead        += On_PlayerDead;
-            m_cPlayer.GetEnemyCells  = null;    // TODO: 몬스터 구현 시 살아있는 몬스터의 셀 목록을 넘긴다
+            m_cPlayer.GetEnemyCells  = Get_EnemyCells;  // 몬스터가 있는 영역은 점령되지 않는다
 
             return true;
         }
         #endregion 스테이지 진행
+
+        #region 몬스터
+        private void Spawn_Enemies()
+        {
+            m_lstEnemy.Clear();
+
+            for (int i = 0; i < m_cStageDesc.iEnemyCount; ++i)
+            {
+                CEnemyDesc cEnemyDesc = new CEnemyDesc
+                {
+                    eObjectType     = OBJECT_TYPE.ENEMY,
+                    strPrefabName   = "Prefab_Enemy",
+                    cGrid           = m_cGrid,
+                    vStartCell      = Get_EnemySpawnCell(i),
+                    vStartDir       = Get_EnemySpawnDir(i),
+                    fSpeed          = m_cStageDesc.fEnemySpeed,
+                    fChaseSpeed     = m_cStageDesc.fEnemyChaseSpeed,
+                    fTurnRate       = m_cStageDesc.fEnemyTurnRate,
+                };
+
+                GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
+                if (goEnemy == null)
+                {
+                    Debug.LogError("[CStage_Manager] Enemy 생성 실패 — Addressable 라벨/프리팹 이름을 확인하세요.");
+                    return;
+                }
+
+                CEnemy cEnemy = goEnemy.GetComponent<CEnemy>();
+                if (cEnemy == null)
+                {
+                    Debug.LogError("[CStage_Manager] 프리팹에 CEnemy 컴포넌트가 없습니다.");
+                    return;
+                }
+
+                m_lstEnemy.Add(cEnemy);
+            }
+        }
+
+        // 플레이어 시작 지점(아래쪽)에서 멀리 떨어진 가운데~위쪽 대역에 고르게 배치한다.
+        private Vector2Int Get_EnemySpawnCell(int iIndex)
+        {
+            float fT = (iIndex + 1f) / (m_cStageDesc.iEnemyCount + 1f);
+
+            int x = Mathf.RoundToInt(Mathf.Lerp(m_cStageDesc.iGridWidth * 0.2f, m_cStageDesc.iGridWidth * 0.8f, fT));
+            int y = Mathf.RoundToInt(m_cStageDesc.iGridHeight * (0.4f + 0.15f * (iIndex % 3)));
+
+            return new Vector2Int(x, y);
+        }
+
+        private Vector2 Get_EnemySpawnDir(int iIndex)
+        {
+            // 대각선으로 출발시켜야 벽에 튕기며 맵 전체를 고르게 돈다.
+            float fX = (iIndex % 2 == 0) ? 1f : -1f;
+            float fY = ((iIndex / 2) % 2 == 0) ? 1f : -1f;
+            return new Vector2(fX, fY).normalized;
+        }
+
+        private void Tick_Enemy()
+        {
+            if (m_cPlayer == null)
+                return;
+
+            // 플레이어가 안전 지대(선) 위에 있으면 몬스터는 쫓지 않고 배회한다.
+            bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
+            Vector2 vPlayerPos = m_cPlayer.transform.position;
+
+            float fHitRange = m_cStageDesc.fEnemyHitRange * m_cGrid.CELL_SIZE;
+            bool bHit = false;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                cEnemy.Set_ChaseState(bExposed, vPlayerPos);
+
+                // 그리는 중인 선분에 몬스터가 닿아도 사망한다.
+                if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) == CELL_STATE.TRAIL)
+                {
+                    bHit = true;
+                    break;
+                }
+
+                // 플레이어와의 직접 충돌은 땅을 먹으러 나와 있을 때만 판정한다.
+                if (bExposed == true && Vector2.Distance(cEnemy.POS, vPlayerPos) <= fHitRange)
+                {
+                    bHit = true;
+                    break;
+                }
+            }
+
+            if (bHit == true)
+                m_cPlayer.Damage();
+        }
+
+        /// <summary> 점령 판정에 넘길 몬스터 셀 목록. 매 호출마다 버퍼를 재사용해 GC를 만들지 않는다. </summary>
+        private IReadOnlyList<Vector2Int> Get_EnemyCells()
+        {
+            m_lstEnemyCell.Clear();
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+                m_lstEnemyCell.Add(m_lstEnemy[i].CUR_CELL);
+
+            return m_lstEnemyCell;
+        }
+        #endregion 몬스터
 
         #region 콜백
         private void On_PlayerCapture(int iCapturedCount)

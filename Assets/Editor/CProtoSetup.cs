@@ -22,20 +22,16 @@ namespace Client
         private const string DIR_SCENE      = "Assets/Scenes";
 
         private const string PATH_TEX_PLAYER = DIR_ART + "/Tex_PlayerBody.png";
+        private const string PATH_TEX_ENEMY  = DIR_ART + "/Tex_EnemyBody.png";
         private const string PATH_TEX_BG     = DIR_ART + "/Tex_Reward_Placeholder.png";
         private const string PATH_PREFAB     = DIR_PREFAB + "/Prefab_Player.prefab";
+        private const string PATH_PREFAB_ENEMY = DIR_PREFAB + "/Prefab_Enemy.prefab";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
 
-        [MenuItem("Tools/LandGrab/Setup Prototype")]
+        [MenuItem("Tools/LandGrab/Setup Prototype (씬까지 새로 만듦)")]
         public static void Setup_All()
         {
-            Ensure_Folder(DIR_ART);
-            Ensure_Folder(DIR_PREFAB);
-            Ensure_Folder(DIR_SCENE);
-
-            Create_Sprites();
-            Create_PlayerPrefab();
-            Setup_Addressables();
+            Setup_Assets();
             Build_Scene();
 
             AssetDatabase.SaveAssets();
@@ -43,13 +39,34 @@ namespace Client
             Debug.Log("[CProtoSetup] 프로토타입 셋업 완료 — Assets/Scenes/LV_Proto.unity 를 열고 Play 하세요.");
         }
 
+        // 260902_씬을 갈아엎지 않는 안전한 메뉴 — 작업 중인 씬이 열려 있어도 쓸 수 있다.
+        [MenuItem("Tools/LandGrab/Setup Assets (씬 건드리지 않음)")]
+        public static void Setup_Assets()
+        {
+            Ensure_Folder(DIR_ART);
+            Ensure_Folder(DIR_PREFAB);
+            Ensure_Folder(DIR_SCENE);
+
+            Create_Sprites();
+            Create_Prefabs();
+            Setup_Addressables();
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("[CProtoSetup] 에셋 셋업 완료 (스프라이트 / 프리팹 / Addressable)");
+        }
+
         #region 스프라이트 생성
         private static void Create_Sprites()
         {
-            // 플레이어: 1 월드 유닛 크기의 원 (CPlayer가 셀 크기에 맞춰 스케일한다)
-            const int PLAYER_SIZE = 64;
-            Write_Png(PATH_TEX_PLAYER, Make_CircleTexture(PLAYER_SIZE));
-            Import_AsSprite(PATH_TEX_PLAYER, PLAYER_SIZE);
+            // 플레이어 / 몬스터: 1 월드 유닛 크기의 원 (각자 셀 크기에 맞춰 스케일한다)
+            const int BODY_SIZE = 64;
+            Write_Png(PATH_TEX_PLAYER, Make_CircleTexture(BODY_SIZE, new Color(0.45f, 0.95f, 1f)));
+            Import_AsSprite(PATH_TEX_PLAYER, BODY_SIZE);
+
+            // 몬스터는 흰색으로 만들어 두고 CEnemy가 상태별로 틴트한다 (배회=빨강 / 추적=노랑)
+            Write_Png(PATH_TEX_ENEMY, Make_CircleTexture(BODY_SIZE, Color.white));
+            Import_AsSprite(PATH_TEX_ENEMY, BODY_SIZE);
 
             // 배경: 실제 보상 카드 이미지가 들어갈 자리. 점령 시 드러나는 게 보이도록 알록달록하게.
             const int BG_W = 540;
@@ -58,7 +75,7 @@ namespace Client
             Import_AsSprite(PATH_TEX_BG, 100);
         }
 
-        private static Texture2D Make_CircleTexture(int iSize)
+        private static Texture2D Make_CircleTexture(int iSize, Color cRim)
         {
             Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
             float fRadius = iSize * 0.5f - 1f;
@@ -71,7 +88,7 @@ namespace Client
                     float fDist = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), vCenter);
                     float fAlpha = Mathf.Clamp01(fRadius - fDist);              // 가장자리 1px 안티에일리어싱
                     float fInner = Mathf.Clamp01((fRadius - 3f - fDist) / 3f);  // 안쪽 하이라이트
-                    Color cColor = Color.Lerp(new Color(0.45f, 0.95f, 1f), Color.white, fInner);
+                    Color cColor = Color.Lerp(cRim, Color.white, fInner);
                     cColor.a = fAlpha;
                     tex.SetPixel(x, y, cColor);
                 }
@@ -133,23 +150,31 @@ namespace Client
         #endregion 스프라이트 생성
 
         #region 프리팹 / Addressable
-        private static void Create_PlayerPrefab()
+        private static void Create_Prefabs()
         {
-            GameObject goPlayer = new GameObject("Prefab_Player");
+            Create_ActorPrefab<CPlayer>("Prefab_Player", PATH_TEX_PLAYER, PATH_PREFAB, 20);
+            Create_ActorPrefab<CEnemy>("Prefab_Enemy", PATH_TEX_ENEMY, PATH_PREFAB_ENEMY, 15);
+        }
 
-            SpriteRenderer srBody = goPlayer.AddComponent<SpriteRenderer>();
-            srBody.sprite       = AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_PLAYER);
-            srBody.sortingOrder = 20;   // 마스크(10)보다 위
+        /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
+        private static void Create_ActorPrefab<T>(string strName, string strTexPath, string strPrefabPath,
+                                                  int iSortingOrder) where T : Component
+        {
+            GameObject go = new GameObject(strName);
 
-            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            SpriteRenderer srBody = go.AddComponent<SpriteRenderer>();
+            srBody.sprite       = AssetDatabase.LoadAssetAtPath<Sprite>(strTexPath);
+            srBody.sortingOrder = iSortingOrder;     // 마스크(10)보다 위
+
+            T cComponent = go.AddComponent<T>();
 
             // m_srBody는 private [SerializeField]이므로 SerializedObject로 연결한다.
-            SerializedObject cSerialized = new SerializedObject(cPlayer);
+            SerializedObject cSerialized = new SerializedObject(cComponent);
             cSerialized.FindProperty("m_srBody").objectReferenceValue = srBody;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
-            PrefabUtility.SaveAsPrefabAsset(goPlayer, PATH_PREFAB);
-            Object.DestroyImmediate(goPlayer);
+            PrefabUtility.SaveAsPrefabAsset(go, strPrefabPath);
+            Object.DestroyImmediate(go);
         }
 
         private static void Setup_Addressables()
@@ -163,19 +188,25 @@ namespace Client
 
             cSettings.AddLabel(CAddressableLabel.PREFAB, false);
 
-            string strGuid = AssetDatabase.AssetPathToGUID(PATH_PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB, "Prefab_Player");
+            Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy");
+
+            EditorUtility.SetDirty(cSettings);
+        }
+
+        private static void Regist_Addressable(AddressableAssetSettings cSettings, string strAssetPath, string strAddress)
+        {
+            string strGuid = AssetDatabase.AssetPathToGUID(strAssetPath);
             AddressableAssetEntry cEntry = cSettings.CreateOrMoveEntry(strGuid, cSettings.DefaultGroup, false, false);
             if (cEntry == null)
             {
-                Debug.LogError("[CProtoSetup] Addressable 엔트리 생성 실패");
+                Debug.LogError($"[CProtoSetup] Addressable 엔트리 생성 실패 : {strAssetPath}");
                 return;
             }
 
             // Engine.CPrefabDataHolder는 GameObject.name을 키로 캐싱하므로 주소도 이름과 맞춰 둔다.
-            cEntry.address = "Prefab_Player";
+            cEntry.address = strAddress;
             cEntry.SetLabel(CAddressableLabel.PREFAB, true, false, false);
-
-            EditorUtility.SetDirty(cSettings);
         }
         #endregion 프리팹 / Addressable
 
