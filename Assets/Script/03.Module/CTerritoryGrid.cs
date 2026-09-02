@@ -17,6 +17,11 @@ namespace Client
         private static readonly int[] ARR_DIR_X = { 0, 0, -1, 1 };
         private static readonly int[] ARR_DIR_Y = { 1, -1, 0, 0 };
 
+        // 260902_경계 판정은 8방향. 4방향만 보면 테두리의 모서리 칸이 경계에서 빠져 길이 끊긴다.
+        private const int DIR8_COUNT = 8;
+        private static readonly int[] ARR_DIR8_X = { 0, 0, -1, 1, -1, 1, -1, 1 };
+        private static readonly int[] ARR_DIR8_Y = { 1, -1, 0, 0, 1, 1, -1, -1 };
+
         private int         m_iWidth;
         private int         m_iHeight;
         private float       m_fCellSize;
@@ -157,6 +162,26 @@ namespace Client
 
         /// <summary> 이 셀에 발을 들이면 즉사하는가 (자기 트레일 밟기). </summary>
         public bool Is_Deadly(Vector2Int vCell) => Get_Cell(vCell) == CELL_STATE.TRAIL;
+
+        // 260902_영토의 '선'만 따라 이동
+        /// <summary>
+        /// 점령지의 경계('선')인가 — 점령지이면서 이웃 8칸 중 하나라도 점령지가 아닌 칸.
+        /// 맵 밖은 Get_Cell이 OWNED(벽)로 돌려주므로 바깥쪽 테두리는 경계에서 자동 제외된다.
+        /// </summary>
+        public bool Is_Boundary(int x, int y)
+        {
+            if (Get_Cell(x, y) != CELL_STATE.OWNED)
+                return false;
+
+            for (int d = 0; d < DIR8_COUNT; ++d)
+            {
+                if (Get_Cell(x + ARR_DIR8_X[d], y + ARR_DIR8_Y[d]) != CELL_STATE.OWNED)
+                    return true;
+            }
+
+            return false;
+        }
+        public bool Is_Boundary(Vector2Int vCell) => Is_Boundary(vCell.x, vCell.y);
 
         public void Clear_Dirty() => IS_DIRTY = false;
         #endregion 셀 조회

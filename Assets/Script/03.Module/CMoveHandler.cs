@@ -121,6 +121,16 @@ namespace Client
                 return false;
             }
 
+            // 260902_점령지 '내부'는 통과할 수 없다 — 영토의 선(경계)만 따라 움직인다.
+            // 단, 점령 직후 자기가 내부에 갇힌 경우에는 선으로 빠져나가야 하므로 허용한다.
+            // (선을 그리는 중에는 현재 칸이 TRAIL이라 Is_Boundary가 false → 도형을 닫는 이동은 항상 통과)
+            if (m_cGrid.Get_Cell(vNext) == CELL_STATE.OWNED
+                && m_cGrid.Is_Boundary(vNext) == false
+                && m_cGrid.Is_Boundary(m_vCurCell) == true)
+            {
+                return false;
+            }
+
             return true;
         }
     }
