@@ -12,6 +12,9 @@ namespace Client
     /// </summary>
     public class CStage_Manager
     {
+        private const string PREFAB_PLAYER = "Prefab_Player";
+        private const string PREFAB_ENEMY  = "Prefab_Enemy";
+
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
 
@@ -113,15 +116,29 @@ namespace Client
             }
         }
 
+        // 260903_Engine은 프리팹이 없으면 Instantiate에서 예외를 던진다(반환값 null이 아님).
+        // 호출 전에 미리 확인해야 스테이지 전체가 초기화 도중 죽는 것을 막을 수 있다.
+        private static bool Has_Prefab(string strPrefabName)
+        {
+            return CGameInstance.Instance.Get_Prefab(strPrefabName) != null;
+        }
+
         private bool Spawn_Player()
         {
+            if (Has_Prefab(PREFAB_PLAYER) == false)
+            {
+                Debug.LogError($"[CStage_Manager] '{PREFAB_PLAYER}'를 찾을 수 없습니다. "
+                             + "Unity 메뉴 Tools/LandGrab/Setup Assets 를 실행한 뒤 다시 시도하세요.");
+                return false;
+            }
+
             // 시작 위치: 아래쪽 테두리(안전 지대)의 가운데
             Vector2Int vStartCell = new Vector2Int(m_cStageDesc.iGridWidth / 2, m_cStageDesc.iBorderThick - 1);
 
             CPlayerDesc cPlayerDesc = new CPlayerDesc
             {
                 eObjectType     = OBJECT_TYPE.PLAYER,
-                strPrefabName   = "Prefab_Player",
+                strPrefabName   = PREFAB_PLAYER,
                 cGrid           = m_cGrid,
                 vStartCell      = vStartCell,
                 fMoveSpeed      = m_cStageDesc.fMoveSpeed,
@@ -155,12 +172,23 @@ namespace Client
         {
             m_lstEnemy.Clear();
 
+            if (m_cStageDesc.iEnemyCount <= 0)
+                return;
+
+            // 260903_몬스터가 없어도 스테이지는 굴러가야 한다 — 경고만 남기고 넘어간다.
+            if (Has_Prefab(PREFAB_ENEMY) == false)
+            {
+                Debug.LogWarning($"[CStage_Manager] '{PREFAB_ENEMY}'가 없어 몬스터 없이 진행합니다. "
+                               + "Unity 메뉴 Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
             for (int i = 0; i < m_cStageDesc.iEnemyCount; ++i)
             {
                 CEnemyDesc cEnemyDesc = new CEnemyDesc
                 {
                     eObjectType     = OBJECT_TYPE.ENEMY,
-                    strPrefabName   = "Prefab_Enemy",
+                    strPrefabName   = PREFAB_ENEMY,
                     cGrid           = m_cGrid,
                     vStartCell      = Get_EnemySpawnCell(i),
                     vStartDir       = Get_EnemySpawnDir(i),
