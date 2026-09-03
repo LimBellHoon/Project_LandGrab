@@ -120,7 +120,7 @@ namespace Client
         // 호출 전에 미리 확인해야 스테이지 전체가 초기화 도중 죽는 것을 막을 수 있다.
         private static bool Has_Prefab(string strPrefabName)
         {
-            return CGameInstance.Instance.Get_Prefab(strPrefabName) != null;
+            return CGameInstance.Instance.Has_Prefab(strPrefabName);
         }
 
         private bool Spawn_Player()
