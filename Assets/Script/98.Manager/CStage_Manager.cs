@@ -12,8 +12,12 @@ namespace Client
     /// </summary>
     public class CStage_Manager
     {
-        private const string PREFAB_PLAYER = "Prefab_Player";
-        private const string PREFAB_ENEMY  = "Prefab_Enemy";
+        private const string PREFAB_PLAYER     = "Prefab_Player";
+        private const string PREFAB_ENEMY      = "Prefab_Enemy";
+        // 260904_몬스터 기믹
+        private const string PREFAB_PROJECTILE = "Prefab_Projectile";
+        private const string PREFAB_WEB        = "Prefab_Web";
+        private const int    GIMMICK_SEARCH_RADIUS = 6;    // 거미줄/소환 위치를 찾을 최대 반경(셀)
 
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
@@ -21,6 +25,10 @@ namespace Client
         // 260902_몬스터
         private readonly List<CEnemy>       m_lstEnemy      = new List<CEnemy>();
         private readonly List<Vector2Int>   m_lstEnemyCell  = new List<Vector2Int>();  // 점령 판정용 재사용 버퍼
+
+        // 260904_몬스터 기믹
+        private readonly List<CProjectile>  m_lstProjectile = new List<CProjectile>();
+        private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
 
         private CStageDesc      m_cStageDesc;
         private CPlayer         m_cPlayer;
@@ -67,6 +75,8 @@ namespace Client
         {
             m_cGridRenderer.Release();
             m_lstEnemy.Clear();
+            m_lstProjectile.Clear();
+            m_lstWeb.Clear();
             m_cPlayer = null;
         }
 
@@ -185,7 +195,9 @@ namespace Client
 
             for (int i = 0; i < m_cStageDesc.iEnemyCount; ++i)
             {
-                CEnemyDesc cEnemyDesc = new CEnemyDesc
+                ENEMY_GIMMICK eGimmick = Get_EnemyGimmick(i);
+
+                Spawn_Enemy(new CEnemyDesc
                 {
                     eObjectType     = OBJECT_TYPE.ENEMY,
                     strPrefabName   = PREFAB_ENEMY,
@@ -195,23 +207,54 @@ namespace Client
                     fSpeed          = m_cStageDesc.fEnemySpeed,
                     fChaseSpeed     = m_cStageDesc.fEnemyChaseSpeed,
                     fTurnRate       = m_cStageDesc.fEnemyTurnRate,
-                };
+                    eGimmick        = eGimmick,
+                    fGimmickCool    = Get_GimmickCool(eGimmick),
+                    fScale          = 1f,
+                });
+            }
+        }
 
-                GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
-                if (goEnemy == null)
-                {
-                    Debug.LogError("[CStage_Manager] Enemy 생성 실패 — Addressable 라벨/프리팹 이름을 확인하세요.");
-                    return;
-                }
+        // 260904_몬스터 기믹: 최초 스폰과 미니 몬스터 소환이 같은 경로를 타도록 분리
+        private CEnemy Spawn_Enemy(CEnemyDesc cEnemyDesc)
+        {
+            GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
+            if (goEnemy == null)
+            {
+                Debug.LogError("[CStage_Manager] Enemy 생성 실패 — Addressable 라벨/프리팹 이름을 확인하세요.");
+                return null;
+            }
 
-                CEnemy cEnemy = goEnemy.GetComponent<CEnemy>();
-                if (cEnemy == null)
-                {
-                    Debug.LogError("[CStage_Manager] 프리팹에 CEnemy 컴포넌트가 없습니다.");
-                    return;
-                }
+            CEnemy cEnemy = goEnemy.GetComponent<CEnemy>();
+            if (cEnemy == null)
+            {
+                Debug.LogError("[CStage_Manager] 프리팹에 CEnemy 컴포넌트가 없습니다.");
+                return null;
+            }
 
-                m_lstEnemy.Add(cEnemy);
+            if (cEnemyDesc.eGimmick != ENEMY_GIMMICK.NONE)
+                cEnemy.OnGimmick += On_EnemyGimmick;
+
+            m_lstEnemy.Add(cEnemy);
+            return cEnemy;
+        }
+
+        private ENEMY_GIMMICK Get_EnemyGimmick(int iIndex)
+        {
+            ENEMY_GIMMICK[] arrGimmick = m_cStageDesc.arrEnemyGimmick;
+            if (arrGimmick == null || iIndex >= arrGimmick.Length)
+                return ENEMY_GIMMICK.NONE;
+
+            return arrGimmick[iIndex];
+        }
+
+        private float Get_GimmickCool(ENEMY_GIMMICK eGimmick)
+        {
+            switch (eGimmick)
+            {
+                case ENEMY_GIMMICK.PROJECTILE: return m_cStageDesc.fProjectileCool;
+                case ENEMY_GIMMICK.WEB:        return m_cStageDesc.fWebCool;
+                case ENEMY_GIMMICK.SUMMON:     return m_cStageDesc.fSummonCool;
+                default:                       return 0f;
             }
         }
 
@@ -238,6 +281,8 @@ namespace Client
         {
             if (m_cPlayer == null)
                 return;
+
+            Prune_Enemies();
 
             // 플레이어가 안전 지대(선) 위에 있으면 몬스터는 쫓지 않고 배회한다.
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
@@ -266,8 +311,188 @@ namespace Client
                 }
             }
 
+            // 260904_기믹 판정. 투사체도 몬스터와 같은 규칙(선분 접촉 / 노출된 플레이어 접촉)을 따른다.
+            if (bHit == false)
+                bHit = Tick_Projectile(bExposed, vPlayerPos, fHitRange);
+
+            Tick_Web(bExposed, vPlayerPos);
+
             if (bHit == true)
                 m_cPlayer.Damage();
+        }
+
+        #region 기믹
+        private void On_EnemyGimmick(CEnemy cEnemy)
+        {
+            switch (cEnemy.GIMMICK)
+            {
+                case ENEMY_GIMMICK.PROJECTILE: Fire_Projectile(cEnemy, false); break;
+                case ENEMY_GIMMICK.WEB:        Fire_Projectile(cEnemy, true);  break;
+                case ENEMY_GIMMICK.SUMMON:     Summon_Minion(cEnemy);          break;
+            }
+        }
+
+        private void Fire_Projectile(CEnemy cEnemy, bool bLeaveWeb)
+        {
+            if (Has_Prefab(PREFAB_PROJECTILE) == false)
+                return;
+
+            Vector2 vDir = cEnemy.TARGET_POS - cEnemy.POS;
+            if (vDir.sqrMagnitude <= Mathf.Epsilon)
+                return;
+
+            CProjectileDesc cDesc = new CProjectileDesc
+            {
+                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName   = PREFAB_PROJECTILE,
+                cGrid           = m_cGrid,
+                vStartPos       = cEnemy.POS,
+                vDir            = vDir.normalized,
+                fSpeed          = m_cStageDesc.fProjectileSpeed,
+                fLifeTime       = m_cStageDesc.fProjectileLife,
+                bLeaveWeb       = bLeaveWeb,
+            };
+
+            GameObject goProjectile = CGameInstance.Instance.Reuse_Object(cDesc);
+            CProjectile cProjectile = goProjectile != null ? goProjectile.GetComponent<CProjectile>() : null;
+            if (cProjectile == null)
+                return;
+
+            cProjectile.OnExpire += On_ProjectileExpire;
+            m_lstProjectile.Add(cProjectile);
+        }
+
+        private void On_ProjectileExpire(CProjectile cProjectile)
+        {
+            if (cProjectile.LEAVE_WEB == true)
+                Spawn_Web(cProjectile.POS);
+        }
+
+        private void Spawn_Web(Vector2 vPos)
+        {
+            if (Has_Prefab(PREFAB_WEB) == false)
+                return;
+
+            // 투사체는 점령지에 닿아 소멸하는 경우가 많다. 거미줄은 미점령 지대에 깔려야
+            // 의미가 있으므로 가장 가까운 미점령 칸으로 밀어 넣는다.
+            Vector2Int vCell = m_cGrid.World_ToCell(vPos);
+            if (m_cGrid.Get_Cell(vCell) != CELL_STATE.EMPTY)
+            {
+                if (m_cGrid.Try_Find_NearestCell(vCell, CELL_STATE.EMPTY, GIMMICK_SEARCH_RADIUS, out Vector2Int vFound) == false)
+                    return;
+
+                vPos = m_cGrid.Cell_ToWorld(vFound);
+            }
+
+            CWebDesc cDesc = new CWebDesc
+            {
+                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName   = PREFAB_WEB,
+                cGrid           = m_cGrid,
+                vPos            = vPos,
+                fRadius         = m_cStageDesc.fWebRadius,
+                fDuration       = m_cStageDesc.fWebDuration,
+                fSlowRate       = m_cStageDesc.fWebSlowRate,
+                fSlowTime       = m_cStageDesc.fWebSlowTime,
+            };
+
+            GameObject goWeb = CGameInstance.Instance.Reuse_Object(cDesc);
+            CWeb cWeb = goWeb != null ? goWeb.GetComponent<CWeb>() : null;
+            if (cWeb == null)
+                return;
+
+            m_lstWeb.Add(cWeb);
+        }
+
+        private void Summon_Minion(CEnemy cSummoner)
+        {
+            if (cSummoner.SUMMON_COUNT >= m_cStageDesc.iSummonMax)
+                return;
+
+            if (m_cGrid.Try_Find_NearestCell(cSummoner.CUR_CELL, CELL_STATE.EMPTY,
+                                             GIMMICK_SEARCH_RADIUS, out Vector2Int vSpawnCell) == false)
+                return;
+
+            // 미니 몬스터는 기믹이 없다 — 소환된 놈이 또 소환하면 무한히 불어난다.
+            CEnemy cMinion = Spawn_Enemy(new CEnemyDesc
+            {
+                eObjectType     = OBJECT_TYPE.ENEMY,
+                strPrefabName   = PREFAB_ENEMY,
+                cGrid           = m_cGrid,
+                vStartCell      = vSpawnCell,
+                vStartDir       = Get_EnemySpawnDir(cSummoner.SUMMON_COUNT),
+                fSpeed          = m_cStageDesc.fEnemySpeed * m_cStageDesc.fMinionSpeedRate,
+                fChaseSpeed     = m_cStageDesc.fEnemyChaseSpeed * m_cStageDesc.fMinionSpeedRate,
+                fTurnRate       = m_cStageDesc.fEnemyTurnRate,
+                eGimmick        = ENEMY_GIMMICK.NONE,
+                fScale          = m_cStageDesc.fMinionScale,
+            });
+
+            if (cMinion == null)
+                return;
+
+            cMinion.SUMMONER = cSummoner;
+            ++cSummoner.SUMMON_COUNT;
+        }
+
+        /// <returns> 투사체가 플레이어나 선분에 닿았으면 true </returns>
+        private bool Tick_Projectile(bool bExposed, Vector2 vPlayerPos, float fHitRange)
+        {
+            bool bHit = false;
+
+            for (int i = m_lstProjectile.Count - 1; i >= 0; --i)
+            {
+                CProjectile cProjectile = m_lstProjectile[i];
+
+                if (cProjectile == null || cProjectile.bCollect == true)
+                {
+                    m_lstProjectile.RemoveAt(i);
+                    continue;
+                }
+
+                if (m_cGrid.Get_Cell(cProjectile.CUR_CELL) == CELL_STATE.TRAIL)
+                    bHit = true;
+                else if (bExposed == true && Vector2.Distance(cProjectile.POS, vPlayerPos) <= fHitRange)
+                    bHit = true;
+            }
+
+            return bHit;
+        }
+
+        private void Tick_Web(bool bExposed, Vector2 vPlayerPos)
+        {
+            for (int i = m_lstWeb.Count - 1; i >= 0; --i)
+            {
+                CWeb cWeb = m_lstWeb[i];
+
+                if (cWeb == null || cWeb.bCollect == true)
+                {
+                    m_lstWeb.RemoveAt(i);
+                    continue;
+                }
+
+                // 선 위에서는 완전히 안전해야 하므로 나와 있을 때만 감속된다.
+                if (bExposed == true && cWeb.Is_Inside(vPlayerPos) == true)
+                    m_cPlayer.Apply_Slow(cWeb.SLOW_RATE, cWeb.SLOW_TIME);
+            }
+        }
+        #endregion 기믹
+
+        // 260904_풀에 반납된 몬스터를 목록에서 걷어낸다. 미니 몬스터가 사라지면
+        // 소환자의 SUMMON_COUNT를 되돌려 다시 소환할 수 있게 한다.
+        private void Prune_Enemies()
+        {
+            for (int i = m_lstEnemy.Count - 1; i >= 0; --i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy != null && cEnemy.bCollect == false)
+                    continue;
+
+                if (cEnemy != null && cEnemy.SUMMONER != null)
+                    --cEnemy.SUMMONER.SUMMON_COUNT;
+
+                m_lstEnemy.RemoveAt(i);
+            }
         }
 
         /// <summary> 점령 판정에 넘길 몬스터 셀 목록. 매 호출마다 버퍼를 재사용해 GC를 만들지 않는다. </summary>

@@ -26,9 +26,14 @@ namespace Client
         private int             m_iLife;
         private float           m_fInvincibleTimer;
 
+        // 260904_거미줄 감속
+        private float           m_fBaseSpeed;
+        private float           m_fSlowTimer;
+
         public int          LIFE            => m_iLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
+        public bool         IS_SLOWED       => m_fSlowTimer > 0f;
 
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
@@ -54,6 +59,8 @@ namespace Client
             m_iLife             = cDesc.iLife;
             m_fInvincibleTimer  = 0f;
             m_vLastSafeCell     = cDesc.vStartCell;
+            m_fBaseSpeed        = cDesc.fMoveSpeed;
+            m_fSlowTimer        = 0f;
 
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
                 return false;
@@ -75,6 +82,14 @@ namespace Client
             {
                 m_fInvincibleTimer -= fDeltaTime;
                 Refresh_InvincibleBlink();
+            }
+
+            // 260904_거미줄 감속 해제
+            if (m_fSlowTimer > 0f)
+            {
+                m_fSlowTimer -= fDeltaTime;
+                if (m_fSlowTimer <= 0f)
+                    m_cMoveHandler.SPEED = m_fBaseSpeed;
             }
 
             m_cInputHandler.Tick();
@@ -122,6 +137,14 @@ namespace Client
             }
         }
 
+        // 260904_거미줄 감속
+        /// <summary> 거미줄을 밟았을 때. 이미 감속 중이면 남은 시간이 긴 쪽을 유지한다. </summary>
+        public void Apply_Slow(float fSlowRate, float fDuration)
+        {
+            m_fSlowTimer = Mathf.Max(m_fSlowTimer, fDuration);
+            m_cMoveHandler.SPEED = m_fBaseSpeed * Mathf.Clamp01(fSlowRate);
+        }
+
         /// <summary> 몬스터/탄 피격, 자기 선 밟기 등으로 목숨 1 감소. </summary>
         public void Damage()
         {
@@ -142,6 +165,10 @@ namespace Client
             m_cMoveHandler.Teleport(m_vLastSafeCell);
             m_cInputHandler.Clear();
             m_fInvincibleTimer = INVINCIBLE_TIME;
+
+            // 260904_부활 시 감속은 풀어준다 (거미줄에 갇힌 채 되살아나면 연속으로 죽는다)
+            m_fSlowTimer = 0f;
+            m_cMoveHandler.SPEED = m_fBaseSpeed;
         }
         #endregion 규칙 판정
 

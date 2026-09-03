@@ -28,6 +28,11 @@ namespace Client
         private const string PATH_PREFAB_ENEMY = DIR_PREFAB + "/Prefab_Enemy.prefab";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
 
+        // 260904_몬스터 기믹
+        private const string PATH_TEX_WEB           = DIR_ART + "/Tex_Web.png";
+        private const string PATH_PREFAB_PROJECTILE = DIR_PREFAB + "/Prefab_Projectile.prefab";
+        private const string PATH_PREFAB_WEB        = DIR_PREFAB + "/Prefab_Web.prefab";
+
         [MenuItem("Tools/LandGrab/Setup Prototype (씬까지 새로 만듦)")]
         public static void Setup_All()
         {
@@ -64,6 +69,9 @@ namespace Client
 
             iFail += Validate_ActorPrefab(PATH_PREFAB, "Prefab_Player", typeof(CPlayer));
             iFail += Validate_ActorPrefab(PATH_PREFAB_ENEMY, "Prefab_Enemy", typeof(CEnemy));
+            // 260904_몬스터 기믹
+            iFail += Validate_ActorPrefab(PATH_PREFAB_PROJECTILE, "Prefab_Projectile", typeof(CProjectile));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
 
             if (iFail == 0)
                 Debug.Log("[CProtoSetup] 에셋 검증 통과 — 프리팹 / 스프라이트 / Addressable 정상");
@@ -166,9 +174,14 @@ namespace Client
             Write_Png(PATH_TEX_PLAYER, Make_CircleTexture(BODY_SIZE, new Color(0.45f, 0.95f, 1f)));
             Import_AsSprite(PATH_TEX_PLAYER, BODY_SIZE);
 
-            // 몬스터는 흰색으로 만들어 두고 CEnemy가 상태별로 틴트한다 (배회=빨강 / 추적=노랑)
+            // 몬스터는 흰색으로 만들어 두고 CEnemy가 기믹/상태별로 틴트한다.
+            // 투사체도 같은 원을 쓴다 (CProjectile이 색을 입힌다).
             Write_Png(PATH_TEX_ENEMY, Make_CircleTexture(BODY_SIZE, Color.white));
             Import_AsSprite(PATH_TEX_ENEMY, BODY_SIZE);
+
+            // 260904_거미줄은 원과 구분되어야 하므로 동심원 무늬로 따로 만든다
+            Write_Png(PATH_TEX_WEB, Make_WebTexture(BODY_SIZE));
+            Import_AsSprite(PATH_TEX_WEB, BODY_SIZE);
 
             // 배경: 실제 보상 카드 이미지가 들어갈 자리. 점령 시 드러나는 게 보이도록 알록달록하게.
             const int BG_W = 540;
@@ -193,6 +206,39 @@ namespace Client
                     Color cColor = Color.Lerp(cRim, Color.white, fInner);
                     cColor.a = fAlpha;
                     tex.SetPixel(x, y, cColor);
+                }
+            }
+
+            tex.Apply();
+            return tex;
+        }
+
+        // 260904_거미줄: 동심원 + 방사선. 원형 몬스터/투사체와 실루엣이 구분되게.
+        private static Texture2D Make_WebTexture(int iSize)
+        {
+            Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
+            float fRadius = iSize * 0.5f - 1f;
+            Vector2 vCenter = new Vector2(iSize * 0.5f, iSize * 0.5f);
+
+            for (int y = 0; y < iSize; ++y)
+            {
+                for (int x = 0; x < iSize; ++x)
+                {
+                    Vector2 vOffset = new Vector2(x + 0.5f, y + 0.5f) - vCenter;
+                    float fDist = vOffset.magnitude;
+
+                    if (fDist > fRadius)
+                    {
+                        tex.SetPixel(x, y, Color.clear);
+                        continue;
+                    }
+
+                    float fNormal = fDist / fRadius;
+                    float fRing   = Mathf.Abs(Mathf.Sin(fNormal * Mathf.PI * 4f));           // 동심원
+                    float fSpoke  = Mathf.Abs(Mathf.Cos(Mathf.Atan2(vOffset.y, vOffset.x) * 4f)); // 방사선
+                    float fAlpha  = Mathf.Max(fRing, fSpoke) * (1f - fNormal * 0.5f);
+
+                    tex.SetPixel(x, y, new Color(0.85f, 1f, 0.75f, Mathf.Clamp01(fAlpha)));
                 }
             }
 
@@ -254,8 +300,12 @@ namespace Client
         #region 프리팹 / Addressable
         private static void Create_Prefabs()
         {
+            // sortingOrder — 마스크(10) < 거미줄(12) < 투사체(18) < 몬스터(15는 마스크 위) < 플레이어(20)
             Create_ActorPrefab<CPlayer>("Prefab_Player", PATH_TEX_PLAYER, PATH_PREFAB, 20);
             Create_ActorPrefab<CEnemy>("Prefab_Enemy", PATH_TEX_ENEMY, PATH_PREFAB_ENEMY, 15);
+            // 260904_몬스터 기믹
+            Create_ActorPrefab<CProjectile>("Prefab_Projectile", PATH_TEX_ENEMY, PATH_PREFAB_PROJECTILE, 18);
+            Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -292,6 +342,9 @@ namespace Client
 
             Regist_Addressable(cSettings, PATH_PREFAB, "Prefab_Player");
             Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy");
+            // 260904_몬스터 기믹
+            Regist_Addressable(cSettings, PATH_PREFAB_PROJECTILE, "Prefab_Projectile");
+            Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web");
 
             EditorUtility.SetDirty(cSettings);
         }

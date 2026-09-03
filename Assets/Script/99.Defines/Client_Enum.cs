@@ -28,6 +28,19 @@
         DEAD,       // 자기 선분을 밟음
     }
 
+    // 260904_몬스터 기믹
+    /// <summary>
+    /// 몬스터가 가진 기믹. 하나의 몬스터는 기믹을 하나만 갖는다.
+    /// 웨이브가 올라갈수록 기믹을 가진 몬스터의 비중이 늘어난다(맵 크기는 그대로).
+    /// </summary>
+    public enum ENEMY_GIMMICK
+    {
+        NONE,           // 배회/추적만
+        PROJECTILE,     // 플레이어 쪽으로 투사체 발사
+        WEB,            // 터진 자리에 거미줄을 남기는 투사체 — 밟으면 감속
+        SUMMON,         // 작은 미니 몬스터 소환
+    }
+
     /// <summary> 스테이지 진행 상태 </summary>
     public enum STAGE_STATE
     {
