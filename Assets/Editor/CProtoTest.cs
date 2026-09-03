@@ -6,6 +6,8 @@ using UnityEditor;
 
 using UnityEngine;
 
+using Engine;
+
 namespace Client
 {
     // 260901_땅따먹기 프로토타입: 코어 규칙 헤드리스 검증
@@ -39,6 +41,7 @@ namespace Client
             Test_BoundaryOnlyMove();
             Test_LineFollow();
             Test_Enemy();
+            Test_Gimmick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -287,6 +290,97 @@ namespace Client
             Check("테두리에서 가장 가까운 미점령 칸을 찾음",
                   cGrid.Try_Find_NearestCell(new Vector2Int(0, 0), CELL_STATE.EMPTY, 4, out Vector2Int vNear)
                   && cGrid.Get_Cell(vNear) == CELL_STATE.EMPTY);
+        }
+        // 260904_몬스터 기믹 — 투사체 / 거미줄 / 감속
+        private static void Test_Gimmick()
+        {
+            CTerritoryGrid cGrid = Make_Grid();   // 20x20, 테두리 1, 셀 크기 1
+
+            // ① 투사체는 미점령 지대를 지나가고, 점령지에 닿으면 소멸한다
+            GameObject goProjectile = new GameObject("Test_Projectile");
+            CProjectile cProjectile = goProjectile.AddComponent<CProjectile>();
+
+            bool bExpired = false;
+            cProjectile.OnExpire += _ => bExpired = true;
+            cProjectile.Initialize(Make_ProjectileDesc(cGrid, new Vector2(10.5f, 2.5f), Vector2.down, 10f));
+
+            cProjectile.Tick(1f);   // (10.5, 1.5) — 미점령
+            Check("투사체가 미점령 지대는 통과", cProjectile.bCollect == false);
+
+            cProjectile.Tick(1f);   // (10.5, 0.5) — 아래 테두리(점령지)
+            Check("투사체가 점령지에 닿으면 소멸", cProjectile.bCollect);
+            Check("소멸 시 OnExpire 발생", bExpired);
+            Object.DestroyImmediate(goProjectile);
+
+            // ② 수명이 다해도 소멸한다 (맵 한가운데서 시간 초과)
+            GameObject goTimeout = new GameObject("Test_Projectile_Timeout");
+            CProjectile cTimeout = goTimeout.AddComponent<CProjectile>();
+            cTimeout.Initialize(Make_ProjectileDesc(cGrid, new Vector2(10.5f, 10.5f), Vector2.up, 0.5f));
+
+            cTimeout.Tick(1f);
+            Check("수명이 다하면 소멸", cTimeout.bCollect);
+            Object.DestroyImmediate(goTimeout);
+
+            // ③ 거미줄 범위 판정과 수명
+            GameObject goWeb = new GameObject("Test_Web");
+            CWeb cWeb = goWeb.AddComponent<CWeb>();
+            cWeb.Initialize(new CWebDesc
+            {
+                eObjectType   = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName = "Prefab_Web",
+                cGrid         = cGrid,
+                vPos          = new Vector2(10.5f, 10.5f),
+                fRadius       = 2f,     // 셀 단위 → 셀 크기 1이므로 월드 반경 2
+                fDuration     = 1f,
+                fSlowRate     = 0.5f,
+                fSlowTime     = 1.5f,
+            });
+
+            Check("거미줄 안", cWeb.Is_Inside(new Vector2(11.5f, 10.5f)));
+            Check("거미줄 밖", cWeb.Is_Inside(new Vector2(14f, 10.5f)) == false);
+
+            cWeb.Tick(0.5f);
+            Check("지속 시간 내에는 유지", cWeb.bCollect == false);
+            cWeb.Tick(0.6f);
+            Check("지속 시간이 끝나면 소멸", cWeb.bCollect);
+            Object.DestroyImmediate(goWeb);
+
+            // ④ 플레이어 감속 — 걸리고, 시간이 지나면 풀린다
+            GameObject goPlayer = new GameObject("Test_Player");
+            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            cPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
+                fMoveSpeed    = STEP_SPEED,
+                iLife         = 3,
+            });
+
+            Check("초기에는 감속 아님", cPlayer.IS_SLOWED == false);
+
+            cPlayer.Apply_Slow(0.5f, 1f);
+            Check("거미줄을 밟으면 감속", cPlayer.IS_SLOWED);
+
+            cPlayer.Tick(1.1f);
+            Check("시간이 지나면 감속 해제", cPlayer.IS_SLOWED == false);
+            Object.DestroyImmediate(goPlayer);
+        }
+
+        private static CProjectileDesc Make_ProjectileDesc(CTerritoryGrid cGrid, Vector2 vPos, Vector2 vDir, float fLife)
+        {
+            return new CProjectileDesc
+            {
+                eObjectType   = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName = "Prefab_Projectile",
+                cGrid         = cGrid,
+                vStartPos     = vPos,
+                vDir          = vDir,
+                fSpeed        = 1f,     // 초당 셀. 셀 크기 1이라 dt 1당 정확히 한 칸
+                fLifeTime     = fLife,
+                bLeaveWeb     = true,
+            };
         }
         #endregion 테스트 케이스
 
