@@ -56,6 +56,108 @@ namespace Client
             Debug.Log("[CProtoSetup] 에셋 셋업 완료 (스프라이트 / 프리팹 / Addressable)");
         }
 
+        // 260903_에셋이 실제로 로드되는지 확인 (Play 전에 프리팹 누락을 잡는 용도)
+        [MenuItem("Tools/LandGrab/Validate Assets")]
+        public static void Validate_Assets()
+        {
+            int iFail = 0;
+
+            iFail += Validate_ActorPrefab(PATH_PREFAB, "Prefab_Player", typeof(CPlayer));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_ENEMY, "Prefab_Enemy", typeof(CEnemy));
+
+            if (iFail == 0)
+                Debug.Log("[CProtoSetup] 에셋 검증 통과 — 프리팹 / 스프라이트 / Addressable 정상");
+            else
+                Debug.LogError($"[CProtoSetup] 에셋 검증 실패 {iFail}건 — Tools/LandGrab/Setup Assets 를 실행하세요.");
+
+            if (Application.isBatchMode == true)
+                EditorApplication.Exit(iFail == 0 ? 0 : 1);
+        }
+
+        private static int Validate_ActorPrefab(string strPath, string strAddress, System.Type tComponent)
+        {
+            int iFail = 0;
+
+            GameObject goPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(strPath);
+            if (goPrefab == null)
+            {
+                Debug.LogError($"  FAIL  프리팹 없음 : {strPath}");
+                return 1;
+            }
+            Debug.Log($"  PASS  프리팹 로드 : {strPath}");
+
+            Component cComponent = goPrefab.GetComponent(tComponent);
+            if (cComponent == null)
+            {
+                Debug.LogError($"  FAIL  {tComponent.Name} 컴포넌트 없음");
+                ++iFail;
+            }
+            else
+            {
+                SerializedObject cSerialized = new SerializedObject(cComponent);
+                SerializedProperty cBody = cSerialized.FindProperty("m_srBody");
+
+                if (cBody == null || cBody.objectReferenceValue == null)
+                {
+                    Debug.LogError($"  FAIL  {tComponent.Name}.m_srBody 미연결");
+                    ++iFail;
+                }
+                else
+                {
+                    Debug.Log($"  PASS  {tComponent.Name}.m_srBody 연결됨");
+                }
+            }
+
+            SpriteRenderer srBody = goPrefab.GetComponent<SpriteRenderer>();
+            if (srBody == null || srBody.sprite == null)
+            {
+                Debug.LogError("  FAIL  SpriteRenderer 스프라이트 미할당");
+                ++iFail;
+            }
+            else
+            {
+                Debug.Log($"  PASS  스프라이트 할당 : {srBody.sprite.name} (sortingOrder {srBody.sortingOrder})");
+            }
+
+            iFail += Validate_AddressableEntry(strPath, strAddress);
+            return iFail;
+        }
+
+        private static int Validate_AddressableEntry(string strPath, string strAddress)
+        {
+            AddressableAssetSettings cSettings = AddressableAssetSettingsDefaultObject.GetSettings(false);
+            if (cSettings == null)
+            {
+                Debug.LogError("  FAIL  Addressable 설정 없음");
+                return 1;
+            }
+
+            string strGuid = AssetDatabase.AssetPathToGUID(strPath);
+            AddressableAssetEntry cEntry = cSettings.FindAssetEntry(strGuid);
+
+            if (cEntry == null)
+            {
+                Debug.LogError($"  FAIL  Addressable 엔트리 없음 : {strAddress}");
+                return 1;
+            }
+
+            if (cEntry.address != strAddress)
+            {
+                // Engine.CPrefabDataHolder가 GameObject.name을 키로 캐싱하므로 주소가 이름과 달라도
+                // 로드 자체는 되지만, 혼동을 막기 위해 경고한다.
+                Debug.LogWarning($"  WARN  주소가 프리팹 이름과 다름 : {cEntry.address} != {strAddress}");
+            }
+
+            if (cEntry.labels.Contains(CAddressableLabel.PREFAB) == false)
+            {
+                Debug.LogError($"  FAIL  '{CAddressableLabel.PREFAB}' 라벨 없음 : {strAddress}");
+                return 1;
+            }
+
+            Debug.Log($"  PASS  Addressable : {cEntry.address} [{CAddressableLabel.PREFAB}]");
+            return 0;
+        }
+
         #region 스프라이트 생성
         private static void Create_Sprites()
         {
