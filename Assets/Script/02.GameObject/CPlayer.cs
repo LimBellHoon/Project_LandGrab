@@ -122,10 +122,13 @@ namespace Client
             }
         }
 
+        // 260904_이미 죽었거나 풀에 반납된 뒤의 호출을 막는다.
+        // 같은 프레임에 여러 몬스터가 겹치거나 스테이지가 끝난 뒤에도 판정이 한 번 더 들어올 수 있어,
+        // 목숨이 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
         /// <summary> 몬스터/탄 피격, 자기 선 밟기 등으로 목숨 1 감소. </summary>
         public void Damage()
         {
-            if (IS_INVINCIBLE == true)
+            if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
                 return;
 
             m_cGrid.Clear_Trail();

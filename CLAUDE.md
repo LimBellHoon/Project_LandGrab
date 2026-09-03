@@ -92,6 +92,12 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images"
 `CStageDesc` (`99.Defines/Client_Desc.cs`)에 모여 있다 — 그리드 60x100, 셀 0.12,
 클리어 점령률 0.7, 제한시간 180초, 목숨 3, 몬스터 3마리 등. **추후 CSV/SO로 이관 예정.**
 
+### 2-6. 스테이지 수명 주기
+`CStage_Manager.Tick`은 `STAGE_STATE.PLAYING`일 때만 규칙을 돌리지만,
+**플레이어·몬스터의 `Tick`은 Engine의 레이어가 직접 돌린다.** 스테이지 상태만 바꿔서는 액터가 멈추지 않는다.
+그래서 `Set_State`가 CLEAR/FAIL로 넘어갈 때 `Set_LayerTimeScale(PLAYER/ENEMY, 0)`으로 두 레이어를 세우고,
+`Start_Stage`/`Release`에서 1로 되돌린다 (260904). 액터를 멈춰야 하는 기능은 이 경로를 쓸 것 — 별도 정지 플래그를 만들지 말 것.
+
 ---
 
 ## 3. 에디터 툴

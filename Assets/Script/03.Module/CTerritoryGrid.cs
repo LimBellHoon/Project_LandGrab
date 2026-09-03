@@ -172,11 +172,6 @@ namespace Client
         }
         public CELL_STATE Get_Cell(Vector2Int vCell) => Get_Cell(vCell.x, vCell.y);
 
-        public bool Is_Safe(Vector2Int vCell) => Get_Cell(vCell) == CELL_STATE.OWNED;
-
-        /// <summary> 이 셀에 발을 들이면 즉사하는가 (자기 트레일 밟기). </summary>
-        public bool Is_Deadly(Vector2Int vCell) => Get_Cell(vCell) == CELL_STATE.TRAIL;
-
         // 260902_영토의 '선'만 따라 이동
         /// <summary>
         /// 점령지의 경계('선')인가 — 점령지이면서 이웃 8칸 중 하나라도 점령지가 아닌 칸.

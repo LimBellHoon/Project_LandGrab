@@ -28,6 +28,9 @@ namespace Client
                 return false;
             }
 
+            // 260904_스테이지를 다시 초기화해도 이전 텍스처/스프라이트가 남지 않게 먼저 정리한다.
+            Release();
+
             m_cGrid     = cGrid;
             m_srOverlay = srOverlay;
 
@@ -54,14 +57,26 @@ namespace Client
             return true;
         }
 
+        // 260904_Sprite.Create가 만든 스프라이트는 임포트된 에셋이 아니라 런타임 인스턴스다.
+        // 텍스처만 파괴하면 스프라이트가 그대로 새고, 오버레이는 파괴된 텍스처를 물고 깨져 보인다.
         public void Release()
         {
+            if (m_srOverlay != null)
+            {
+                Sprite spMask = m_srOverlay.sprite;
+                m_srOverlay.sprite = null;
+
+                if (spMask != null)
+                    Object.Destroy(spMask);
+            }
+
             if (m_texMask != null)
                 Object.Destroy(m_texMask);
 
             m_texMask   = null;
             m_arrPixel  = null;
             m_cGrid     = null;
+            m_srOverlay = null;
         }
 
         /// <summary> 그리드가 변했을 때만 텍스처를 다시 올린다. </summary>

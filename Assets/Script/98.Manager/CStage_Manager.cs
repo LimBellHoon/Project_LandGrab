@@ -65,6 +65,8 @@ namespace Client
 
         public void Release()
         {
+            Set_ActorTimeScale(1f);
+
             m_cGridRenderer.Release();
             m_lstEnemy.Clear();
             m_cPlayer = null;
@@ -93,6 +95,9 @@ namespace Client
                 return false;
 
             Spawn_Enemies();
+
+            // 이전 스테이지가 CLEAR/FAIL로 끝나며 0으로 내려둔 타임스케일을 되돌린다.
+            Set_ActorTimeScale(1f);
 
             m_fRemainTime = m_cStageDesc.fTimeLimit;
             m_eState      = STAGE_STATE.PLAYING;
@@ -246,24 +251,26 @@ namespace Client
             float fHitRange = m_cStageDesc.fEnemyHitRange * m_cGrid.CELL_SIZE;
             bool bHit = false;
 
+            // 260904_피격이 확정돼도 루프를 끊지 않는다 — break로 빠지면 뒤쪽 몬스터의 추적 상태가 갱신되지
+            // 않아, 플레이어가 안전 지대로 돌아간 뒤에도 한 프레임 더 추적 속도로 달려든다.
             for (int i = 0; i < m_lstEnemy.Count; ++i)
             {
                 CEnemy cEnemy = m_lstEnemy[i];
                 cEnemy.Set_ChaseState(bExposed, vPlayerPos);
 
+                if (bHit == true)
+                    continue;
+
                 // 그리는 중인 선분에 몬스터가 닿아도 사망한다.
                 if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) == CELL_STATE.TRAIL)
                 {
                     bHit = true;
-                    break;
+                    continue;
                 }
 
                 // 플레이어와의 직접 충돌은 땅을 먹으러 나와 있을 때만 판정한다.
                 if (bExposed == true && Vector2.Distance(cEnemy.POS, vPlayerPos) <= fHitRange)
-                {
                     bHit = true;
-                    break;
-                }
             }
 
             if (bHit == true)
@@ -297,12 +304,26 @@ namespace Client
             Set_State(STAGE_STATE.FAIL);
         }
 
+        // 260904_스테이지가 끝나면 액터를 세운다.
+        // Tick()은 PLAYING이 아니면 빠져나가지만 플레이어/몬스터의 Tick은 Engine 레이어가 직접 돌린다.
+        // 그대로 두면 CLEAR/FAIL 이후에도 계속 움직이며 땅을 먹고 목숨이 더 깎인다.
+        // Engine이 이미 레이어별 타임스케일을 갖고 있으므로 별도의 정지 플래그를 만들지 않는다.
+        private static void Set_ActorTimeScale(float fTimeScale)
+        {
+            CGameInstance.Instance.Set_LayerTimeScale(OBJECT_TYPE.PLAYER, fTimeScale);
+            CGameInstance.Instance.Set_LayerTimeScale(OBJECT_TYPE.ENEMY, fTimeScale);
+        }
+
         private void Set_State(STAGE_STATE eState)
         {
             if (m_eState == eState)
                 return;
 
             m_eState = eState;
+
+            if (eState == STAGE_STATE.CLEAR || eState == STAGE_STATE.FAIL)
+                Set_ActorTimeScale(0f);
+
             Debug.Log($"[CStage_Manager] STAGE {eState} — 점령률 {m_cGrid.OWNED_RATIO:P1}");
         }
         #endregion 콜백

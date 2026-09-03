@@ -44,6 +44,13 @@ namespace Client
 
             m_cGrid = cDesc.cGrid;
 
+            // 260904_아래에서 CELL_SIZE를 바로 쓰므로 여기서 걸러야 한다 (CPlayer는 CMoveHandler가 걸러준다).
+            if (m_cGrid == null)
+            {
+                Debug.LogError("[CEnemy] Grid가 null 입니다.");
+                return false;
+            }
+
             // Desc의 속도는 '초당 셀' 단위 — 월드 단위로 환산해 둔다.
             m_fSpeed      = cDesc.fSpeed * m_cGrid.CELL_SIZE;
             m_fChaseSpeed = cDesc.fChaseSpeed * m_cGrid.CELL_SIZE;
