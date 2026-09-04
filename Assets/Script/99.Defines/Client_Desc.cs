@@ -24,6 +24,8 @@ namespace Client
         public Vector2Int       vStartCell  { get; set; }
         public float            fMoveSpeed  { get; set; }
         public int              iLife       { get; set; }
+        // 260905_능력치 강화 — 피격을 무시할 확률 0~1
+        public float            fEvasion    { get; set; }
 
         public override void OnReturn()
         {

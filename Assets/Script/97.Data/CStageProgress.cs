@@ -22,11 +22,23 @@ namespace Client
     /// 통째로 JSON이 되는 모양으로 둔다. 나중에 백엔드에 올릴 때 이 덩어리를 그대로 보내면 되고,
     /// 스키마가 늘어도 저장 코드는 손댈 일이 없다.
     /// </summary>
+    // 260905_강화 기록. 항목이 늘어도 세이브 스키마를 고치지 않도록 리스트로 둔다.
+    [Serializable]
+    public class CUpgradeRecord
+    {
+        public UPGRADE_TYPE eType;
+        public int          iLevel;
+    }
+
     [Serializable]
     public class CStageProgress
     {
         public List<CMapRecord> lstRecord = new List<CMapRecord>();
         public int              iLastMapID;
+
+        // 260905_재화·강화도 같은 덩어리에 둔다 — 세이브가 하나여야 저장 타이밍이 꼬이지 않는다.
+        public int                   iCoin;
+        public List<CUpgradeRecord>  lstUpgrade = new List<CUpgradeRecord>();
 
         // 260905_구버전(별이 없던 시절) 기록. Migrate_Legacy로 옮기고 비운다.
         // 필드를 지우면 JsonUtility가 옛 저장본을 읽을 때 그냥 버려서 진행도가 날아간다.
@@ -95,6 +107,57 @@ namespace Client
 
             lstClearedMap.Clear();
             return true;
+        }
+
+        // 260905_재화
+        public void Add_Coin(int iAmount)
+        {
+            if (iAmount <= 0)
+                return;
+
+            iCoin += iAmount;
+        }
+
+        public bool Use_Coin(int iAmount)
+        {
+            if (iAmount <= 0 || iCoin < iAmount)
+                return false;
+
+            iCoin -= iAmount;
+            return true;
+        }
+
+        // 260905_강화
+        public int Get_UpgradeLevel(UPGRADE_TYPE eType)
+        {
+            CUpgradeRecord cRecord = Find_Upgrade(eType);
+            return cRecord != null ? cRecord.iLevel : 0;
+        }
+
+        public void Set_UpgradeLevel(UPGRADE_TYPE eType, int iLevel)
+        {
+            if (eType == UPGRADE_TYPE.NONE || iLevel < 0)
+                return;
+
+            CUpgradeRecord cRecord = Find_Upgrade(eType);
+            if (cRecord == null)
+            {
+                lstUpgrade.Add(new CUpgradeRecord { eType = eType, iLevel = iLevel });
+                return;
+            }
+
+            cRecord.iLevel = iLevel;
+        }
+
+        private CUpgradeRecord Find_Upgrade(UPGRADE_TYPE eType)
+        {
+            for (int i = 0; i < lstUpgrade.Count; ++i)
+            {
+                if (lstUpgrade[i].eType == eType)
+                    return lstUpgrade[i];
+            }
+
+            return null;
         }
 
         private CMapRecord Find(int iMapID)

@@ -53,6 +53,8 @@ namespace Client
         public int      iWaveCount;
 
         public string   strShapeMask;               // 맵 모양 텍스처. 비어 있으면 직사각형 전체
+        // 260905_별 1개당 주는 코인. 최고 기록을 갱신한 만큼만 지급한다.
+        public int      iCoinPerStar;
         public List<string>     lstLayerTex = new List<string>();
         public List<CWaveInfo>  lstWave     = new List<CWaveInfo>();
 
@@ -114,6 +116,7 @@ namespace Client
                 fPlayerSpeed    = CCSV_Utility.To_Float(arrField, 7, 9f),
                 iWaveCount      = CCSV_Utility.To_Int(arrField, 8, 1),
                 strShapeMask    = CCSV_Utility.To_String(arrField, 9),
+                iCoinPerStar    = CCSV_Utility.To_Int(arrField, 14, 50),
             };
 
             if (cInfo.iMapID <= 0)

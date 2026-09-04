@@ -43,6 +43,7 @@ namespace Client
             Test_DirtyCell();
             Test_StageProgress();
             Test_Star();
+            Test_Currency();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -355,6 +356,43 @@ namespace Client
             Check("점령은 전체 갱신", cGrid.IS_FULL_DIRTY);
         }
         // 260904_진행도 / 순차 해금
+        // 260905_재화·강화 — 별 1개당 코인, 갱신분만 지급
+        private static void Test_Currency()
+        {
+            CStageProgress cProgress = new CStageProgress();
+
+            // 새로 던 별만큼만 준다 — 같은 판을 반복해 무한히 벌 수 없어야 한다
+            Check("처음에는 코인 0", cProgress.iCoin, 0);
+            cProgress.Add_Coin(100);
+            Check("코인 적립", cProgress.iCoin, 100);
+            cProgress.Add_Coin(-50);
+            Check("음수는 무시", cProgress.iCoin, 100);
+
+            Check("모자란 쓰기 실패", cProgress.Use_Coin(200) == false);
+            Check("실패 시 코인 그대로", cProgress.iCoin, 100);
+            Check("코인 쓰기", cProgress.Use_Coin(60));
+            Check("쓴 만큼 줄어듦", cProgress.iCoin, 40);
+
+            // 강화 레벨
+            Check("처음에는 0레벨", cProgress.Get_UpgradeLevel(UPGRADE_TYPE.SPEED), 0);
+            cProgress.Set_UpgradeLevel(UPGRADE_TYPE.SPEED, 2);
+            Check("레벨 저장", cProgress.Get_UpgradeLevel(UPGRADE_TYPE.SPEED), 2);
+            Check("다른 항목은 그대로", cProgress.Get_UpgradeLevel(UPGRADE_TYPE.EVASION), 0);
+
+            // 비용 공식 : iCostBase + iCostAdd * 현재레벨
+            CUpgradeInfo cInfo = new CUpgradeInfo
+            {
+                eType = UPGRADE_TYPE.SPEED, iMaxLevel = 3,
+                iCostBase = 100, iCostAdd = 80, fValuePerLevel = 0.04f,
+            };
+
+            Check("0레벨 비용", cInfo.Get_Cost(0), 100);
+            Check("1레벨 비용", cInfo.Get_Cost(1), 180);
+            Check("만렉은 비용 0", cInfo.Get_Cost(3), 0);
+            Check("2레벨 수치", Mathf.RoundToInt(cInfo.Get_Value(2) * 100f), 8);
+            Check("만렉 초과 수치는 상한", Mathf.RoundToInt(cInfo.Get_Value(99) * 100f), 12);
+        }
+
         // 260905_별 기록 — 웨이브 하나만 달성해도 클리어, 최고 기록만 남는다
         private static void Test_Star()
         {

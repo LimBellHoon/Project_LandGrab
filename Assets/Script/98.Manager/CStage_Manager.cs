@@ -78,6 +78,18 @@ namespace Client
         public int              WAVE            => m_iWave;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
         public int              STAR            => m_iStar;
+
+        // 260905_능력치 강화 반영. Start_Stage 전에 넣어 둔다.
+        private float           m_fSpeedRate = 1f;      // 이동 속도 배율
+        private float           m_fEvasion;             // 피격 회피 확률 0~1
+
+        /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
+        /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
+        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion)
+        {
+            m_fSpeedRate = Mathf.Max(0.1f, fSpeedRate);
+            m_fEvasion   = Mathf.Clamp01(fEvasion);
+        }
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
         public string           MAP_NAME        => m_cMapInfo != null ? m_cMapInfo.strMapName : string.Empty;
 
@@ -378,7 +390,9 @@ namespace Client
                 strPrefabName   = PREFAB_PLAYER,
                 cGrid           = m_cGrid,
                 vStartCell      = Find_StartCell(),
-                fMoveSpeed      = m_cMapInfo.fPlayerSpeed,
+                // 260905_능력치 강화 반영
+                fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate,
+                fEvasion        = m_fEvasion,
                 iLife           = m_cMapInfo.iLife,
             };
 

@@ -14,7 +14,8 @@ namespace Client
     /// </summary>
     public class CPlayer : CGameObject
     {
-        private const float INVINCIBLE_TIME = 1.2f;     // 피격 후 무적 시간
+        private const float INVINCIBLE_TIME  = 1.2f;    // 피격 후 무적 시간
+        private const float EVADE_GRACE_TIME = 0.4f;    // 260905_회피 성공 후 빠져나갈 틈
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
@@ -26,6 +27,7 @@ namespace Client
         private int             m_iLife;
         private float           m_fInvincibleTimer;
         private float           m_fBaseSpeed;       // 260904_거미줄 감속의 기준이 되는 원래 속도
+        private float           m_fEvasion;         // 260905_피격 회피 확률 0~1
 
         public int          LIFE            => m_iLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
@@ -39,6 +41,8 @@ namespace Client
         public event Action<int> OnLifeChanged;
         /// <summary> 목숨을 전부 잃음 </summary>
         public event Action OnDead;
+        /// <summary> 260905_회피 성공. 연출/사운드를 붙일 자리. </summary>
+        public event Action OnEvade;
         /// <summary> 점령 판정에 쓸 몬스터 셀 목록 공급자 (없으면 null) </summary>
         public Func<IReadOnlyList<Vector2Int>> GetEnemyCells;
 
@@ -58,6 +62,7 @@ namespace Client
             m_fInvincibleTimer  = 0f;
             m_vLastSafeCell     = cDesc.vStartCell;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
+            m_fEvasion          = Mathf.Clamp01(cDesc.fEvasion);
 
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
                 return false;
@@ -96,6 +101,7 @@ namespace Client
             OnCapture       = null;
             OnLifeChanged   = null;
             OnDead          = null;
+            OnEvade         = null;
             GetEnemyCells   = null;
             m_cGrid         = null;
 
@@ -156,6 +162,15 @@ namespace Client
         {
             if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
                 return;
+
+            // 260905_회피(능력치 강화). 성공하면 짧은 무적을 함께 준다 —
+            // 몬스터와 겹쳐 있는 동안 매 프레임 판정하면 확률이 아무리 높아도 결국 죽는다.
+            if (m_fEvasion > 0f && UnityEngine.Random.value < m_fEvasion)
+            {
+                m_fInvincibleTimer = EVADE_GRACE_TIME;
+                OnEvade?.Invoke();
+                return;
+            }
 
             m_cGrid.Clear_Trail();
 

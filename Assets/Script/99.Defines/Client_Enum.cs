@@ -32,6 +32,17 @@
         DEAD,       // 자기 선분을 밟음
     }
 
+    // 260905_재화로 올리는 능력치
+    /// <summary>
+    /// 이름이 UpgradeInfo.csv의 eType 열과 정확히 같아야 한다 (CCSV_Utility.To_Enum이 이름으로 찾는다).
+    /// </summary>
+    public enum UPGRADE_TYPE
+    {
+        NONE = 0,
+        SPEED,      // 플레이어 이동 속도 배율
+        EVASION,    // 피격 회피 확률
+    }
+
     /// <summary> 스테이지 진행 상태 </summary>
     public enum STAGE_STATE
     {

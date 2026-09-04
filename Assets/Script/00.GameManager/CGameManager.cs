@@ -48,6 +48,7 @@ namespace Client
 
         private CCSVData_MapInfo    m_cMapTable;
         private CCSVData_EnemyInfo  m_cEnemyTable;
+        private CCSVData_UpgradeInfo m_cUpgradeTable;   // 260905_능력치 강화 표
         private CUI                 m_cStageSelectUI;
         private CUI                 m_cInGameUI;
         private CUI                 m_cPopupUI;
@@ -57,6 +58,7 @@ namespace Client
         private int                 m_iLastStar;
         private int                 m_iLastMaxStar;
         private bool                m_bLastNewRecord;
+        private int                 m_iLastCoin;
 
         public static CStage_Manager    STAGE_MANAGER    => instance.m_cStageManager;
         public static CProgress_Manager PROGRESS_MANAGER => instance.m_cProgressManager;
@@ -194,6 +196,14 @@ namespace Client
                 return false;
             }
 
+            // 260905_강화 표는 없어도 게임은 돌아간다(강화가 전부 0레벨일 뿐).
+            m_cUpgradeTable = m_cGameInstance.Get_CSVData(CCSVData_UpgradeInfo.CSV_KEY) as CCSVData_UpgradeInfo;
+            if (m_cUpgradeTable == null)
+            {
+                Debug.LogWarning("[CGameManager] UpgradeInfo.csv를 읽지 못해 능력치 강화 없이 진행합니다. "
+                               + $"Addressable 라벨 '{CAddressableLabel.CSV}'가 붙었는지 확인하세요.");
+            }
+
             if (m_cEnemyTable == null)
             {
                 Debug.LogError("[CGameManager] EnemyInfo.csv를 읽지 못했습니다. "
@@ -268,6 +278,11 @@ namespace Client
                 return;
             }
 
+            // 260905_강화 수치를 반영한다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
+            m_cStageManager.Set_PlayerUpgrade(
+                1f + m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.SPEED),
+                m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.EVASION));
+
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 
             if (m_cStageManager.Start_Stage() == false)
@@ -325,8 +340,15 @@ namespace Client
             m_iLastStar    = m_cStageManager.STAR;
             m_iLastMaxStar = m_cStageManager.WAVE_COUNT;
             m_bLastCleared = m_iLastStar >= 1;
-            m_bLastNewRecord = m_bLastCleared == true
-                            && m_cProgressManager.Set_Star(m_cStageManager.MAP_ID, m_iLastStar);
+
+            // 260905_재화는 '새로 딴 별'만큼만 준다 — 안 그러면 쉬운 판을 반복해 무한히 벌 수 있다.
+            int iGainedStar  = m_bLastCleared == true
+                             ? m_cProgressManager.Set_Star(m_cStageManager.MAP_ID, m_iLastStar) : 0;
+            m_bLastNewRecord = iGainedStar > 0;
+            m_iLastCoin      = iGainedStar * Get_CoinPerStar(m_cStageManager.MAP_ID);
+
+            if (m_iLastCoin > 0)
+                m_cProgressManager.Add_Coin(m_iLastCoin);
 
             // 260904_클리어는 드러난 보상을 조금 더 보여준 뒤 결과를 띄운다.
             // 실패는 굳이 끌 이유가 없어 빨리 띄운다.
@@ -338,6 +360,13 @@ namespace Client
 
         // 260904_결과 화면. 일시정지와 같은 팝업 프리팹을 쓴다.
         // 260905_별을 결과의 주인공으로 둔다. 별 0개일 때만 '실패'다.
+        // 260905_별당 코인은 맵마다 다르다(MapInfo.csv).
+        private int Get_CoinPerStar(int iMapID)
+        {
+            CMapInfo cMapInfo = m_cMapTable != null ? m_cMapTable.Get_Info(iMapID) : null;
+            return cMapInfo != null ? cMapInfo.iCoinPerStar : 0;
+        }
+
         private void Show_Result()
         {
             string strBody = $"{m_cStageManager.MAP_NAME}\n"
@@ -345,8 +374,8 @@ namespace Client
                            + $"{m_iLastStar} / {m_iLastMaxStar} 웨이브"
                            + $"    점령률 {m_cStageManager.OWNED_RATIO:P0}";
 
-            if (m_bLastNewRecord == true)
-                strBody += "\n신기록!";
+            if (m_bLastNewRecord == true && m_iLastCoin > 0)
+                strBody += $"\n신기록!  +{m_iLastCoin} 코인   (보유 {m_cProgressManager.COIN})";
 
             Open_Popup(new CUI_PopupDesc
             {

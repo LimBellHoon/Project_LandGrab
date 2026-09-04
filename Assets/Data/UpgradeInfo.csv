@@ -1,0 +1,8 @@
+﻿eType	strName	strDesc	iMaxLevel	iCostBase	iCostAdd	fValuePerLevel	NONE
+;== 능력치 강화 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
+;eType : Client_Enum.UPGRADE_TYPE 이름과 정확히 같아야 한다
+;비용 공식 : iCostBase + iCostAdd * 현재레벨   (0->1은 iCostBase)
+;fValuePerLevel : 레벨 1당 오르는 값. SPEED는 이동속도 배율, EVASION은 회피 확률
+;---	이름	설명	최대레벨	기본비용	레벨당증가	레벨당수치	메모
+SPEED	이동 속도	레벨당 이동 속도 +4%	5	100	80	0.04	만렙 +20%
+EVASION	회피	레벨당 피격 회피 +5%	5	150	120	0.05	만렙 25%. 안전 지대 밖에서만 의미가 있다

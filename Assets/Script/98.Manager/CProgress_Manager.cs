@@ -70,12 +70,71 @@ namespace Client
 
         // 260905_별 하나라도 얻으면 그 맵은 클리어다(웨이브 하나만 달성해도 클리어).
         /// <summary> 최고 기록을 갱신하고 저장한다. 기록이 나아지지 않으면 저장까지 가지 않는다. </summary>
-        /// <returns> 기록이 갱신됐으면 true — 결과 화면에서 '신기록' 표시에 쓴다 </returns>
-        public bool Set_Star(int iMapID, int iStar)
+        /// <returns>
+        /// 늘어난 별 개수. 0이면 갱신 없음.
+        /// 개수를 돌려주는 이유 — 재화를 '새로 딴 별만큼' 줘야 같은 판을 반복해 무한히 벌 수 없다.
+        /// </returns>
+        public int Set_Star(int iMapID, int iStar)
         {
+            int iPrev = m_cProgress.Get_Star(iMapID);
+
             if (m_cProgress.Set_Star(iMapID, iStar) == false)
+                return 0;
+
+            m_cRepository.Save(m_cProgress);
+            return m_cProgress.Get_Star(iMapID) - iPrev;
+        }
+
+        // 260905_재화
+        public int COIN => m_cProgress.iCoin;
+
+        public void Add_Coin(int iAmount)
+        {
+            if (iAmount <= 0)
+                return;
+
+            m_cProgress.Add_Coin(iAmount);
+            m_cRepository.Save(m_cProgress);
+        }
+
+        // 260905_능력치 강화
+        public int Get_UpgradeLevel(UPGRADE_TYPE eType) => m_cProgress.Get_UpgradeLevel(eType);
+
+        /// <summary> 지금 레벨에서 적용될 수치. 표가 없으면 0(강화 없음)으로 본다. </summary>
+        public float Get_UpgradeValue(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        {
+            CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
+            return cInfo != null ? cInfo.Get_Value(Get_UpgradeLevel(eType)) : 0f;
+        }
+
+        /// <summary> 다음 레벨 비용. 만렙이면 0. </summary>
+        public int Get_UpgradeCost(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        {
+            CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
+            return cInfo != null ? cInfo.Get_Cost(Get_UpgradeLevel(eType)) : 0;
+        }
+
+        public bool Is_UpgradeMax(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        {
+            CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
+            return cInfo != null && Get_UpgradeLevel(eType) >= cInfo.iMaxLevel;
+        }
+
+        /// <summary> 코인이 모자라거나 만렙이면 아무 일도 일어나지 않는다. </summary>
+        public bool Try_Upgrade(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        {
+            CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
+            if (cInfo == null)
                 return false;
 
+            int iLevel = Get_UpgradeLevel(eType);
+            if (iLevel >= cInfo.iMaxLevel)
+                return false;
+
+            if (m_cProgress.Use_Coin(cInfo.Get_Cost(iLevel)) == false)
+                return false;
+
+            m_cProgress.Set_UpgradeLevel(eType, iLevel + 1);
             m_cRepository.Save(m_cProgress);
             return true;
         }
