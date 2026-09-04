@@ -99,6 +99,23 @@ namespace Client
         }
     }
 
+    /// <summary>
+    /// 인게임 HUD. 조이스틱과 진행 상황을 그리는 데 필요한 것만 넘긴다 —
+    /// 싱글턴을 타고 들어가면 스테이지가 없는 순간에 터지기 때문이다.
+    /// </summary>
+    public class CUI_InGameDesc : CUIDesc
+    {
+        public CPlayer          cPlayer { get; set; }
+        public CStage_Manager   cStage  { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cPlayer = null;
+            cStage  = null;
+        }
+    }
+
     /// <summary> CWeb 생성 Desc. 밟은 플레이어를 fSlowRatio 배로 느리게 만든다. </summary>
     public class CWebDesc : CGameObjectDesc
     {

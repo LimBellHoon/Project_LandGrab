@@ -3,25 +3,55 @@
 namespace Client
 {
     // 260901_땅따먹기 프로토타입: 입력 → 4방향
+    // 260904_모바일 가상 조이스틱 추가
     /// <summary>
-    /// 프로토타입은 WASD/방향키. 추후 조이스틱으로 교체할 때 이 클래스 하나만 갈아끼우면 된다.
-    /// (가장 마지막에 누른 방향을 우선하여 대각 입력에서도 방향이 흔들리지 않게 한다)
+    /// 입력이 어디서 오든 결과는 4방향 하나다.
+    /// 조이스틱을 잡고 있으면 그쪽을 따르고, 아니면 WASD/방향키를 본다 —
+    /// 덕분에 에디터에서는 키보드로, 기기에서는 터치로 같은 코드가 굴러간다.
+    /// (키보드는 가장 마지막에 누른 방향을 우선해 대각 입력에서도 방향이 흔들리지 않는다)
     /// </summary>
     public class CInputHandler
     {
+        // 화면 크기가 제각각이라 픽셀을 그대로 적지 않고 화면 높이에 대한 비율로 잡는다.
+        private const float RADIUS_RATIO    = 0.12f;    // 화면 높이 대비 조이스틱 반경
+        private const float DEADZONE_RATIO  = 0.25f;    // 반경 대비 데드존
+        private const float ACTIVE_HEIGHT   = 0.6f;     // 화면 아래 이 비율 안에서만 조이스틱을 잡는다
+
+        private readonly CVirtualJoystick m_cJoystick = new CVirtualJoystick();
+
         private MOVE_DIR m_eDesiredDir = MOVE_DIR.NONE;
 
-        public MOVE_DIR DESIRED_DIR => m_eDesiredDir;
+        public MOVE_DIR         DESIRED_DIR => m_eDesiredDir;
+        /// <summary> UI가 그리기 위해 읽는다. </summary>
+        public CVirtualJoystick JOYSTICK    => m_cJoystick;
+
+        public void Initialize()
+        {
+            float fRadius = Screen.height * RADIUS_RATIO;
+            m_cJoystick.Initialize(fRadius, fRadius * DEADZONE_RATIO, ACTIVE_HEIGHT);
+        }
 
         public void Tick()
         {
-            MOVE_DIR eNew = Read_Dir();
+            m_cJoystick.Tick();
 
-            // 아무 키도 안 눌렸으면 NONE을 유지한다 (안전 지대에서 멈추기 위함)
-            m_eDesiredDir = eNew;
+            // 조이스틱을 잡고 있는 동안에는 키보드를 보지 않는다.
+            // 데드존 안이면 NONE이 나오는데, 그건 '멈춤'이라는 뜻이라 그대로 쓴다.
+            if (m_cJoystick.IS_ACTIVE == true)
+            {
+                m_eDesiredDir = m_cJoystick.DIR;
+                return;
+            }
+
+            // 아무것도 안 눌렸으면 NONE을 유지한다 (안전 지대에서 멈추기 위함)
+            m_eDesiredDir = Read_Dir();
         }
 
-        public void Clear() => m_eDesiredDir = MOVE_DIR.NONE;
+        public void Clear()
+        {
+            m_eDesiredDir = MOVE_DIR.NONE;
+            m_cJoystick.Clear();
+        }
 
         private MOVE_DIR Read_Dir()
         {

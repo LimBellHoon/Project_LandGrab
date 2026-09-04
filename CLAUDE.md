@@ -87,9 +87,10 @@ Assets/
 ├── Editor/                 CProtoSetup(씬·프리팹·Addressable 자동 생성), CProtoTest(코어 테스트)
 └── Script/
     ├── 00.GameManager/     CGameManager
-    ├── 01.UI/              CDebugHUD, CUI_StageSelect (Engine.CUI 상속)
+    ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame (Engine.CUI 상속)
     ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
-    ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler, CInputHandler
+    ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
+    │                       CInputHandler, CVirtualJoystick
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress
     ├── 98.Manager/         CStage_Manager, CProgress_Manager
@@ -192,6 +193,23 @@ CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
 - `SPAWN`의 `RefID`가 다시 `SPAWN` 몬스터를 가리키면 무한히 늘어나므로
   `CStage_Manager.MAX_ENEMY`(32)로 총량을 막는다.
 
+### 2-6-1. 입력 — 키보드 + 가상 조이스틱 (260904)
+`CInputHandler`가 입력을 4방향 하나로 정리해 내보낸다. 어디서 왔는지는 바깥이 몰라도 된다.
+
+```
+CInputHandler ── CVirtualJoystick   (터치/마우스 → 4방향)
+              └─ WASD / 방향키       (조이스틱을 안 잡고 있을 때만)
+```
+
+- **조이스틱은 EventSystem을 쓰지 않고 구 `Input`을 직접 읽는다.**
+  이 프로젝트엔 Input System 패키지가 들어 있지만 코드는 구 `Input`을 쓰고 있어
+  어느 입력 모듈이 살아 있는지 확실하지 않다. 조작이 통째로 죽는 위험을 피한 선택이다.
+  (반대로 스테이지 선택 **버튼은 EventSystem을 탄다** — 여기가 안 눌리면 그 문제다.)
+- **누른 자리가 중심이 되는 플로팅 방식.** 세로 화면에서 엄지가 닿는 자리가 매번 다르다.
+- 화면 **아래 60%** 에서 눌러야 잡힌다. 위쪽은 나중에 붙을 버튼용으로 비워 둔다.
+- 반경·데드존은 픽셀이 아니라 **화면 높이 비율**(12% / 그 25%)이라 해상도가 달라도 같은 느낌이 난다.
+- 판정(`CVirtualJoystick`)과 그리기(`CUI_InGame`)를 나눠서, 화면 없이도 방향 양자화를 테스트한다.
+
 ### 2-7. 화면 흐름 / 진행도 (260904)
 ```
 선택 화면(CUI_StageSelect) ──고름──> 스테이지 ──CLEAR/FAIL──> 1.5초 뒤 선택 화면
@@ -213,6 +231,11 @@ UI는 Engine의 `CUI`를 상속해 오브젝트 풀과 캔버스 관리에 그�
 목록은 `MapInfo.csv`를 훑어 런타임에 만든다 — 맵이 늘어도 UI 코드는 고치지 않는다.
 버튼은 프리팹에 넣어 둔 비활성 템플릿을 복제해 쓰고, 겉모습은 프리팹에서 정한다.
 `CGameInstance.Set_UICanvas(Field/Main/Popup)`를 먼저 불러야 UI가 붙을 자리가 생긴다.
+
+인게임 HUD(`CUI_InGame`, Field 캔버스)는 스테이지가 있는 동안만 떠서 조이스틱과 진행 상황을 그린다.
+Engine 레이어가 UI까지 Tick하는지 확실하지 않아 이 클래스만 Unity `Update`를 쓴다 —
+조이스틱이 안 그려지면 조작 자체가 불가능해지기 때문이다.
+`CDebugHUD`(OnGUI)는 아직 남겨 두었다. 겹치는 정보가 있으므로 정식 UI가 자리 잡으면 지울 것.
 
 ### 2-8. 스테이지 수명 주기
 `CStage_Manager.Tick`은 `STAGE_STATE.PLAYING`일 때만 규칙을 돌리지만,

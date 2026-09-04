@@ -17,6 +17,7 @@ namespace Client
     public class CGameManager : SingletonBase_MonoBehaviour<CGameManager>
     {
         private const string PREFAB_UI_STAGE_SELECT = "UI_StageSelect";
+        private const string PREFAB_UI_INGAME       = "UI_InGame";
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
@@ -41,6 +42,7 @@ namespace Client
         private CCSVData_MapInfo    m_cMapTable;
         private CCSVData_EnemyInfo  m_cEnemyTable;
         private CUI                 m_cStageSelectUI;
+        private CUI                 m_cInGameUI;
         private bool                m_bReady;
 
         public static CStage_Manager    STAGE_MANAGER    => instance.m_cStageManager;
@@ -66,6 +68,7 @@ namespace Client
 
         public void OnDestroy()
         {
+            CancelInvoke();
             m_cStageManager?.Release();
             m_cGameInstance?.Release_Engine();
         }
@@ -234,6 +237,40 @@ namespace Client
 
             m_cProgressManager.Set_LastMap(iMapID);
             m_cStageDesc.iMapID = iMapID;
+
+            Open_InGameUI();
+        }
+
+        // 260904_인게임 HUD (가상 조이스틱). 스테이지가 있는 동안만 떠 있다.
+        private void Open_InGameUI()
+        {
+            Close_InGameUI();
+
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_INGAME) == false)
+            {
+                Debug.LogWarning($"[CGameManager] '{PREFAB_UI_INGAME}' 프리팹이 없어 조이스틱 없이 진행합니다. "
+                               + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            CUI_InGameDesc cDesc = new CUI_InGameDesc
+            {
+                eObjectType     = OBJECT_TYPE.UI_FIELD,
+                strPrefabName   = PREFAB_UI_INGAME,
+                cPlayer         = m_cStageManager.PLAYER,
+                cStage          = m_cStageManager,
+            };
+
+            m_cInGameUI = m_cGameInstance.Open_UI(cDesc, m_trUIField);
+        }
+
+        private void Close_InGameUI()
+        {
+            if (m_cInGameUI == null)
+                return;
+
+            m_cGameInstance.Close_UI(m_cInGameUI);
+            m_cInGameUI = null;
         }
 
         private void On_StageStateChanged(STAGE_STATE eState)
@@ -252,6 +289,7 @@ namespace Client
 
         private void Return_ToStageSelect()
         {
+            Close_InGameUI();
             m_cStageManager.Release();
             Open_StageSelect();
         }

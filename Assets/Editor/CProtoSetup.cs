@@ -56,6 +56,11 @@ namespace Client
         // 260904_스테이지 선택 UI
         private const string PATH_PREFAB_UI_SELECT  = DIR_PREFAB + "/UI_StageSelect.prefab";
         private const string UI_STAGE_SELECT        = "UI_StageSelect";
+        // 260904_인게임 HUD (가상 조이스틱)
+        private const string PATH_PREFAB_UI_INGAME  = DIR_PREFAB + "/UI_InGame.prefab";
+        private const string UI_INGAME              = "UI_InGame";
+        private const string PATH_TEX_JOY_BASE      = DIR_ART + "/Tex_JoystickBase.png";
+        private const string PATH_TEX_JOY_HANDLE    = DIR_ART + "/Tex_JoystickHandle.png";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
 
         [MenuItem("Tools/LandGrab/Setup Prototype (씬까지 새로 만듦)")]
@@ -98,6 +103,8 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_PROJECTILE, "Prefab_Projectile", typeof(CProjectile));
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_StageSelectUI();
+            iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
+                        new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus" });
 
             // 260904_CSV 테이블과 웨이브 이미지가 빠지면 스테이지가 통째로 안 뜬다.
             iFail += Validate_CsvTables();
@@ -117,42 +124,48 @@ namespace Client
         // 260904_UI 프리팹은 m_srBody가 없으므로 Validate_ActorPrefab을 쓸 수 없다. 따로 본다.
         private static int Validate_StageSelectUI()
         {
-            GameObject goPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PATH_PREFAB_UI_SELECT);
+            return Validate_UIPrefab<CUI_StageSelect>(PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT,
+                        new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
+        }
+
+        /// <summary> UI 프리팹의 컴포넌트 · [SerializeField] 연결 · Addressable을 한꺼번에 본다. </summary>
+        private static int Validate_UIPrefab<T>(string strPath, string strAddress, string[] arrField)
+            where T : Component
+        {
+            GameObject goPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(strPath);
             if (goPrefab == null)
             {
-                Debug.LogError($"  FAIL  UI 프리팹 없음 : {PATH_PREFAB_UI_SELECT}");
+                Debug.LogError($"  FAIL  UI 프리팹 없음 : {strPath}");
                 return 1;
             }
 
             int iFail = 0;
+            T cUI = goPrefab.GetComponent<T>();
 
-            CUI_StageSelect cUI = goPrefab.GetComponent<CUI_StageSelect>();
             if (cUI == null)
             {
-                Debug.LogError("  FAIL  CUI_StageSelect 컴포넌트 없음");
+                Debug.LogError($"  FAIL  {typeof(T).Name} 컴포넌트 없음");
                 ++iFail;
             }
             else
             {
                 SerializedObject cSerialized = new SerializedObject(cUI);
-                string[] arrField = { "m_trContent", "m_btnTemplate", "m_txtTitle" };
 
                 for (int i = 0; i < arrField.Length; ++i)
                 {
                     SerializedProperty cProperty = cSerialized.FindProperty(arrField[i]);
                     if (cProperty == null || cProperty.objectReferenceValue == null)
                     {
-                        Debug.LogError($"  FAIL  CUI_StageSelect.{arrField[i]} 미연결");
+                        Debug.LogError($"  FAIL  {typeof(T).Name}.{arrField[i]} 미연결");
                         ++iFail;
                     }
                 }
 
                 if (iFail == 0)
-                    Debug.Log("  PASS  CUI_StageSelect 참조 연결됨");
+                    Debug.Log($"  PASS  {typeof(T).Name} 참조 연결됨");
             }
 
-            return iFail + Validate_AddressableEntry(PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT,
-                                                     CAddressableLabel.PREFAB);
+            return iFail + Validate_AddressableEntry(strPath, strAddress, CAddressableLabel.PREFAB);
         }
 
         private static int Validate_CsvTables()
@@ -344,6 +357,37 @@ namespace Client
 
             Write_Png(PATH_TEX_WEB, Make_WebTexture(64));
             Import_AsSprite(PATH_TEX_WEB, 64);
+
+            // 260904_조이스틱. 바깥은 테두리 링, 손잡이는 꽉 찬 원.
+            Write_Png(PATH_TEX_JOY_BASE, Make_RingTexture(128));
+            Import_AsSprite(PATH_TEX_JOY_BASE, 128);
+
+            Write_Png(PATH_TEX_JOY_HANDLE, Make_CircleTexture(64, new Color(0.65f, 0.85f, 1f)));
+            Import_AsSprite(PATH_TEX_JOY_HANDLE, 64);
+        }
+
+        /// <summary> 조이스틱 바깥 링 — 가운데가 비어 있어 게임 화면을 덜 가린다. </summary>
+        private static Texture2D Make_RingTexture(int iSize)
+        {
+            Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
+            Vector2 vCenter = new Vector2(iSize * 0.5f, iSize * 0.5f);
+            float fOuter = iSize * 0.5f - 1f;
+            float fInner = fOuter * 0.78f;
+
+            for (int y = 0; y < iSize; ++y)
+            {
+                for (int x = 0; x < iSize; ++x)
+                {
+                    float fDist = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), vCenter);
+
+                    // 링 두께 안쪽/바깥쪽 모두 1px 안티에일리어싱
+                    float fAlpha = Mathf.Clamp01(fOuter - fDist) * Mathf.Clamp01(fDist - fInner);
+                    tex.SetPixel(x, y, new Color(0.85f, 0.92f, 1f, fAlpha * 0.55f));
+                }
+            }
+
+            tex.Apply();
+            return tex;
         }
 
         /// <summary> 거미줄 — 방사선 + 동심원. 반투명이라 아래 가림막이 비친다. </summary>
@@ -565,6 +609,7 @@ namespace Client
             Create_ActorPrefab<CProjectile>("Prefab_Projectile", PATH_TEX_PROJECTILE, PATH_PREFAB_PROJECTILE, 18);
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_StageSelectUI();
+            Create_InGameUI();
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -606,6 +651,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_PROJECTILE, "Prefab_Projectile", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
             for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
@@ -700,6 +746,58 @@ namespace Client
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_SELECT);
             Object.DestroyImmediate(goRoot);
+        }
+
+        // 260904_인게임 HUD 프리팹.
+        // 조이스틱은 위치를 코드로 직접 잡으므로 레이아웃 그룹에 넣지 않는다.
+        // 터치는 EventSystem을 거치지 않고 Input으로 직접 읽으므로 raycastTarget은 전부 끈다 —
+        // HUD가 화면을 덮고 있어도 다른 UI의 클릭을 막지 않게 하기 위해서다.
+        private static void Create_InGameUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_INGAME, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            GameObject goStatus = Create_UIObject("Txt_Status", goRoot.transform);
+            RectTransform trStatus = goStatus.GetComponent<RectTransform>();
+            trStatus.anchorMin = new Vector2(0f, 1f);
+            trStatus.anchorMax = new Vector2(1f, 1f);
+            trStatus.pivot     = new Vector2(0.5f, 1f);
+            trStatus.offsetMin = new Vector2(24f, -90f);
+            trStatus.offsetMax = new Vector2(-24f, -20f);
+            Text txtStatus = Make_Text(goStatus, string.Empty, 28, TextAnchor.MiddleLeft);
+            txtStatus.raycastTarget = false;
+
+            RectTransform trBase   = Make_JoystickPart("Joystick_Base", goRoot.transform, PATH_TEX_JOY_BASE);
+            RectTransform trHandle = Make_JoystickPart("Joystick_Handle", goRoot.transform, PATH_TEX_JOY_HANDLE);
+
+            CUI_InGame cUI = goRoot.AddComponent<CUI_InGame>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_trJoystickBase").objectReferenceValue   = trBase;
+            cSerialized.FindProperty("m_trJoystickHandle").objectReferenceValue = trHandle;
+            cSerialized.FindProperty("m_txtStatus").objectReferenceValue        = txtStatus;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        private static RectTransform Make_JoystickPart(string strName, Transform trParent, string strTexPath)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform trPart = go.GetComponent<RectTransform>();
+
+            // 화면 어디에나 놓이므로 앵커는 가운데 한 점으로 고정한다.
+            trPart.anchorMin = new Vector2(0.5f, 0.5f);
+            trPart.anchorMax = new Vector2(0.5f, 0.5f);
+            trPart.pivot     = new Vector2(0.5f, 0.5f);
+            trPart.sizeDelta = new Vector2(200f, 200f);
+
+            Image cImage = go.AddComponent<Image>();
+            cImage.sprite        = AssetDatabase.LoadAssetAtPath<Sprite>(strTexPath);
+            cImage.raycastTarget = false;
+
+            go.SetActive(false);        // 잡기 전에는 보이지 않는다
+            return trPart;
         }
 
         private static GameObject Create_UIObject(string strName, Transform trParent)

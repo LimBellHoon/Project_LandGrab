@@ -30,6 +30,8 @@ namespace Client
         public int          LIFE            => m_iLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
+        /// <summary> 260904_UI가 조이스틱을 그리려고 읽는다. </summary>
+        public CVirtualJoystick JOYSTICK    => m_cInputHandler.JOYSTICK;
 
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
@@ -64,6 +66,7 @@ namespace Client
             // 바디 스프라이트는 1 월드 유닛 크기로 제작되어 있으므로, 셀 크기의 1.6배로 맞춘다.
             transform.localScale = Vector3.one * m_cGrid.CELL_SIZE * 1.6f;
 
+            m_cInputHandler.Initialize();
             m_cInputHandler.Clear();
             return true;
         }

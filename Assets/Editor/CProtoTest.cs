@@ -42,6 +42,7 @@ namespace Client
             Test_ShapeMask();
             Test_DirtyCell();
             Test_StageProgress();
+            Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -432,6 +433,57 @@ namespace Client
             CCSVData_MapInfo cTable = new CCSVData_MapInfo();
             cTable.Read_CSVData(cText);
             return cTable;
+        }
+        // 260904_가상 조이스틱 — 판정만 떼어 두었으므로 화면 없이 검증할 수 있다
+        private static void Test_Joystick()
+        {
+            const int   SCREEN_H = 1000;
+            const float RADIUS   = 100f;
+            const float DEADZONE = 25f;
+
+            // 4방향 양자화 — 더 많이 기운 축을 따른다
+            Check("오른쪽", CVirtualJoystick.To_Dir(new Vector2(50f, 10f), DEADZONE) == MOVE_DIR.RIGHT);
+            Check("왼쪽",   CVirtualJoystick.To_Dir(new Vector2(-50f, 10f), DEADZONE) == MOVE_DIR.LEFT);
+            Check("위",     CVirtualJoystick.To_Dir(new Vector2(10f, 50f), DEADZONE) == MOVE_DIR.UP);
+            Check("아래",   CVirtualJoystick.To_Dir(new Vector2(10f, -50f), DEADZONE) == MOVE_DIR.DOWN);
+            Check("데드존 안은 방향 없음",
+                  CVirtualJoystick.To_Dir(new Vector2(10f, 10f), DEADZONE) == MOVE_DIR.NONE);
+
+            CVirtualJoystick cJoystick = new CVirtualJoystick();
+            cJoystick.Initialize(RADIUS, DEADZONE, 0.6f);
+            Check("처음에는 비활성", cJoystick.IS_ACTIVE == false);
+
+            // 화면 위쪽(활성 영역 밖)에서는 잡히지 않는다
+            cJoystick.Update_State(true, new Vector2(500f, 900f), SCREEN_H);
+            Check("활성 영역 밖에서는 안 잡힘", cJoystick.IS_ACTIVE == false);
+
+            // 아래쪽에서 누르면 그 자리가 중심이 된다 (플로팅)
+            Vector2 vPress = new Vector2(300f, 200f);
+            cJoystick.Update_State(true, vPress, SCREEN_H);
+            Check("아래쪽에서 잡힘", cJoystick.IS_ACTIVE);
+            Check("누른 자리가 중심", cJoystick.ORIGIN == vPress);
+            Check("잡은 직후엔 방향 없음", cJoystick.DIR == MOVE_DIR.NONE);
+
+            // 오른쪽으로 끌면 오른쪽
+            cJoystick.Update_State(true, vPress + new Vector2(60f, 0f), SCREEN_H);
+            Check("끌면 방향이 생김", cJoystick.DIR == MOVE_DIR.RIGHT);
+            Check("중심은 그대로", cJoystick.ORIGIN == vPress);
+
+            // 반경을 넘겨도 손잡이는 반경 안에 머문다
+            cJoystick.Update_State(true, vPress + new Vector2(500f, 0f), SCREEN_H);
+            Check("손잡이가 반경을 넘지 않음",
+                  Vector2.Distance(cJoystick.ORIGIN, cJoystick.HANDLE) <= RADIUS + 0.01f);
+            Check("반경 밖에서도 방향 유지", cJoystick.DIR == MOVE_DIR.RIGHT);
+
+            // 한 번 잡은 뒤에는 활성 영역 밖으로 끌어도 놓지 않는다
+            cJoystick.Update_State(true, new Vector2(300f, 950f), SCREEN_H);
+            Check("잡은 뒤에는 위로 끌어도 유지", cJoystick.IS_ACTIVE);
+            Check("위로 끌면 위쪽", cJoystick.DIR == MOVE_DIR.UP);
+
+            // 떼면 초기화
+            cJoystick.Update_State(false, Vector2.zero, SCREEN_H);
+            Check("떼면 비활성", cJoystick.IS_ACTIVE == false);
+            Check("떼면 방향 없음", cJoystick.DIR == MOVE_DIR.NONE);
         }
         #endregion 테스트 케이스
 
