@@ -53,6 +53,10 @@ namespace Client
         private CUI                 m_cPopupUI;
         private bool                m_bReady;
         private bool                m_bLastCleared;
+        // 260905_결과 화면에 넘길 별 정보
+        private int                 m_iLastStar;
+        private int                 m_iLastMaxStar;
+        private bool                m_bLastNewRecord;
 
         public static CStage_Manager    STAGE_MANAGER    => instance.m_cStageManager;
         public static CProgress_Manager PROGRESS_MANAGER => instance.m_cProgressManager;
@@ -310,17 +314,22 @@ namespace Client
             m_cInGameUI = null;
         }
 
+        // 260905_클리어 기준이 '전 웨이브 완주'에서 '웨이브 하나 이상 달성'으로 바뀌었다.
+        // STAGE_STATE는 판이 어떻게 끝났는지(완주/시간·목숨 소진)를 말할 뿐이고,
+        // 해금과 기록은 별 개수가 정한다 — 2웨이브에서 죽어도 1웨이브를 깼으면 클리어다.
         private void On_StageStateChanged(STAGE_STATE eState)
         {
-            if (eState == STAGE_STATE.CLEAR)
-                m_cProgressManager.Set_Cleared(m_cStageManager.MAP_ID);
-
             if (eState != STAGE_STATE.CLEAR && eState != STAGE_STATE.FAIL)
                 return;
 
+            m_iLastStar    = m_cStageManager.STAR;
+            m_iLastMaxStar = m_cStageManager.WAVE_COUNT;
+            m_bLastCleared = m_iLastStar >= 1;
+            m_bLastNewRecord = m_bLastCleared == true
+                            && m_cProgressManager.Set_Star(m_cStageManager.MAP_ID, m_iLastStar);
+
             // 260904_클리어는 드러난 보상을 조금 더 보여준 뒤 결과를 띄운다.
             // 실패는 굳이 끌 이유가 없어 빨리 띄운다.
-            m_bLastCleared = eState == STAGE_STATE.CLEAR;
             Invoke(nameof(Show_Result), m_bLastCleared == true ? RESULT_HOLD_CLEAR : RESULT_HOLD_FAIL);
         }
 
@@ -328,11 +337,16 @@ namespace Client
         private const float RESULT_HOLD_FAIL  = 0.8f;
 
         // 260904_결과 화면. 일시정지와 같은 팝업 프리팹을 쓴다.
+        // 260905_별을 결과의 주인공으로 둔다. 별 0개일 때만 '실패'다.
         private void Show_Result()
         {
             string strBody = $"{m_cStageManager.MAP_NAME}\n"
-                           + $"{m_cStageManager.WAVE} / {m_cStageManager.WAVE_COUNT} 웨이브"
+                           + $"{CStar_Utility.Get_Text(m_iLastStar, m_iLastMaxStar)}\n"
+                           + $"{m_iLastStar} / {m_iLastMaxStar} 웨이브"
                            + $"    점령률 {m_cStageManager.OWNED_RATIO:P0}";
+
+            if (m_bLastNewRecord == true)
+                strBody += "\n신기록!";
 
             Open_Popup(new CUI_PopupDesc
             {

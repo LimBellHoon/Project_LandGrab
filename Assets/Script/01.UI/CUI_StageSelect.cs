@@ -83,7 +83,11 @@ namespace Client
 
             IReadOnlyList<CMapInfo> lstMap = m_cMapTable.ALL;
             if (m_txtTitle != null)
-                m_txtTitle.text = $"스테이지 선택   ({m_cProgress.CLEARED_COUNT} / {lstMap.Count} 클리어)";
+            {
+                // 260905_클리어 수보다 모은 별이 더 정확한 진행도다 — 웨이브를 얼마나 파고들었는지 보인다.
+                m_txtTitle.text = $"스테이지 선택   ★ {m_cProgress.TOTAL_STAR} / {Get_TotalWave(lstMap)}"
+                                + $"   ({m_cProgress.CLEARED_COUNT} / {lstMap.Count} 클리어)";
+            }
 
             for (int i = 0; i < lstMap.Count; ++i)
             {
@@ -113,11 +117,27 @@ namespace Client
             if (txtLabel == null)
                 return;
 
-            string strMark = m_cProgress.Is_Cleared(cMapInfo.iMapID) ? "★"
-                           : bUnlocked ? "○" : "🔒";
+            // 260905_잠긴 맵은 자물쇠, 열린 맵은 별 칸을 웨이브 수만큼 보여준다.
+            // 한 번도 안 깬 맵도 빈 별(☆☆☆)이 보여야 '뭘 채우는 건지'가 전달된다.
+            if (bUnlocked == false)
+            {
+                txtLabel.text = $"🔒  {cMapInfo.iMapID}. {cMapInfo.strMapName}";
+                return;
+            }
 
-            txtLabel.text = $"{strMark}  {cMapInfo.iMapID}. {cMapInfo.strMapName}"
-                          + $"   ({cMapInfo.iWaveCount}웨이브)";
+            int iStar = m_cProgress.Get_Star(cMapInfo.iMapID);
+
+            txtLabel.text = $"{CStar_Utility.Get_Text(iStar, cMapInfo.iWaveCount)}  "
+                          + $"{cMapInfo.iMapID}. {cMapInfo.strMapName}";
+        }
+
+        private static int Get_TotalWave(IReadOnlyList<CMapInfo> lstMap)
+        {
+            int iTotal = 0;
+            for (int i = 0; i < lstMap.Count; ++i)
+                iTotal += lstMap[i].iWaveCount;
+
+            return iTotal;
         }
 
         private void Clear_List()

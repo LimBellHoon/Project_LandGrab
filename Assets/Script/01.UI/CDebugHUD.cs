@@ -25,7 +25,9 @@ namespace Client
 
             // 260904_웨이브 표시 추가
             GUILayout.BeginArea(new Rect(16f, 16f, 520f, 240f));
-            GUILayout.Label($"{cStage.MAP_NAME}   웨이브 {cStage.WAVE} / {cStage.WAVE_COUNT}", m_cStyle);
+            // 260905_별 표시 추가
+            GUILayout.Label($"{cStage.MAP_NAME}   웨이브 {cStage.WAVE} / {cStage.WAVE_COUNT}"
+                          + $"   {CStar_Utility.Get_Text(cStage.STAR, cStage.WAVE_COUNT)}", m_cStyle);
             GUILayout.Label($"점령률   {cStage.OWNED_RATIO:P1}  /  목표 {cStage.CLEAR_RATIO:P0}", m_cStyle);
             GUILayout.Label($"남은 시간 {cStage.REMAIN_TIME:F1}s     목숨 {cStage.LIFE}     몬스터 {cStage.ENEMY_COUNT}", m_cStyle);
             GUILayout.Label($"상태     {cStage.STATE}", m_cStyle);

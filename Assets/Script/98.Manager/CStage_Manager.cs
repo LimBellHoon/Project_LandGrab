@@ -53,6 +53,7 @@ namespace Client
         private CPlayer             m_cPlayer;
         private STAGE_STATE         m_eState = STAGE_STATE.READY;
         private int                 m_iWave;
+        private int                 m_iStar;    // 260905_이번 판에서 완료한 웨이브 수
         private float               m_fRemainTime;
         private bool                m_bPlayerExposed;   // 기믹 발동 조건 — 매 프레임 Tick_Enemy가 갱신한다
         private bool                m_bPaused;
@@ -75,6 +76,8 @@ namespace Client
         public int              LIFE            => m_cPlayer != null ? m_cPlayer.LIFE : 0;
         public int              ENEMY_COUNT     => m_lstEnemy.Count;
         public int              WAVE            => m_iWave;
+        // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
+        public int              STAR            => m_iStar;
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
         public string           MAP_NAME        => m_cMapInfo != null ? m_cMapInfo.strMapName : string.Empty;
 
@@ -208,6 +211,7 @@ namespace Client
             Set_ActorTimeScale(1f);
 
             m_bPaused    = false;
+            m_iStar      = 0;               // 260905_판을 새로 시작하면 별도 처음부터
             m_eWavePhase = WAVE_PHASE.NONE;
             m_cGridRenderer.Set_CoverAlpha(1f);
 
@@ -274,6 +278,10 @@ namespace Client
         // 이 게임에서 '드러났다'는 순간이 재미의 전부라 그냥 툭 바꾸면 남는 게 없다.
         private void Next_Wave()
         {
+            // 260905_웨이브를 하나 넘길 때마다 별 하나. 이 시점에 확정되므로
+            // 뒤 웨이브에서 죽더라도 여기까지의 별은 남는다.
+            m_iStar = m_iWave;
+
             Begin_WaveTransition(m_iWave >= m_cMapInfo.iWaveCount ? 0 : m_iWave + 1);
         }
 

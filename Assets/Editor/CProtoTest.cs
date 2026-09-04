@@ -42,6 +42,7 @@ namespace Client
             Test_ShapeMask();
             Test_DirtyCell();
             Test_StageProgress();
+            Test_Star();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -354,6 +355,47 @@ namespace Client
             Check("점령은 전체 갱신", cGrid.IS_FULL_DIRTY);
         }
         // 260904_진행도 / 순차 해금
+        // 260905_별 기록 — 웨이브 하나만 달성해도 클리어, 최고 기록만 남는다
+        private static void Test_Star()
+        {
+            CStageProgress cProgress = new CStageProgress();
+
+            Check("처음에는 별 0", cProgress.Get_Star(101), 0);
+            Check("별 0이면 클리어 아님", cProgress.Is_Cleared(101) == false);
+
+            Check("별 1 기록됨", cProgress.Set_Star(101, 1));
+            Check("웨이브 하나만 달성해도 클리어", cProgress.Is_Cleared(101));
+
+            Check("더 높은 기록은 갱신", cProgress.Set_Star(101, 3));
+            Check("갱신된 별", cProgress.Get_Star(101), 3);
+
+            Check("낮은 기록은 무시", cProgress.Set_Star(101, 2) == false);
+            Check("최고 기록 유지", cProgress.Get_Star(101), 3);
+            Check("같은 기록도 무시", cProgress.Set_Star(101, 3) == false);
+            Check("별 0 이하는 기록하지 않음", cProgress.Set_Star(102, 0) == false);
+
+            cProgress.Set_Star(102, 2);
+            Check("클리어한 맵 수", cProgress.Get_ClearedCount(), 2);
+            Check("모은 별 총합", cProgress.Get_TotalStar(), 5);
+
+            // 별이 없던 시절의 저장본을 별 1개짜리로 옮긴다
+            CStageProgress cLegacy = new CStageProgress();
+            cLegacy.lstClearedMap.Add(201);
+            cLegacy.lstClearedMap.Add(202);
+
+            Check("구버전 기록 이관됨", cLegacy.Migrate_Legacy());
+            Check("이관 후 별 1", cLegacy.Get_Star(201), 1);
+            Check("이관 후 클리어 유지", cLegacy.Is_Cleared(202));
+            Check("이관 후 구버전 목록 비움", cLegacy.lstClearedMap.Count, 0);
+            Check("이미 이관했으면 다시 하지 않음", cLegacy.Migrate_Legacy() == false);
+
+            // 표기
+            Check("별 표기 0/3", CStar_Utility.Get_Text(0, 3) == "☆☆☆");
+            Check("별 표기 2/3", CStar_Utility.Get_Text(2, 3) == "★★☆");
+            Check("별 표기 3/3", CStar_Utility.Get_Text(3, 3) == "★★★");
+            Check("웨이브 수가 0이면 빈 문자열", CStar_Utility.Get_Text(1, 0) == string.Empty);
+        }
+
         private static void Test_StageProgress()
         {
             CCSVData_MapInfo cTable = Load_MapTable();
@@ -376,7 +418,7 @@ namespace Client
             Check("표에 없는 맵은 잠김", cProgress.Is_Unlocked(99999) == false);
 
             // 첫 맵을 깨면 다음이 열린다
-            cProgress.Set_Cleared(iFirst);
+            cProgress.Set_Star(iFirst, 1);
             Check("클리어 기록됨", cProgress.Is_Cleared(iFirst));
             Check("클리어하면 다음 맵이 열림", cProgress.Is_Unlocked(iSecond));
             Check("클리어 수", cProgress.CLEARED_COUNT, 1);
@@ -384,7 +426,7 @@ namespace Client
 
             // 같은 맵을 또 깨도 기록은 늘지 않는다
             int iSaveCount = cRepo.SAVE_COUNT;
-            cProgress.Set_Cleared(iFirst);
+            cProgress.Set_Star(iFirst, 1);
             Check("중복 클리어는 저장하지 않음", cRepo.SAVE_COUNT, iSaveCount);
             Check("중복 클리어로 수가 늘지 않음", cProgress.CLEARED_COUNT, 1);
 

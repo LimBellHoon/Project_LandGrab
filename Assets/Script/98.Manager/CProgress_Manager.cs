@@ -22,7 +22,9 @@ namespace Client
 
         /// <summary> 디버그 전체 개방 여부. </summary>
         public bool IS_UNLOCK_ALL => m_bUnlockAll;
-        public int  CLEARED_COUNT => m_cProgress.lstClearedMap.Count;
+        public int  CLEARED_COUNT => m_cProgress.Get_ClearedCount();
+        // 260905_재화·강화에서 쓸 총 별 개수
+        public int  TOTAL_STAR    => m_cProgress.Get_TotalStar();
 
         public bool Initialize(CCSVData_MapInfo cMapTable, IStageProgress cRepository)
         {
@@ -35,6 +37,11 @@ namespace Client
             m_cMapTable   = cMapTable;
             m_cRepository = cRepository;
             m_cProgress   = cRepository.Load();
+
+            // 260905_별이 없던 시절의 저장본이면 별 1개짜리 기록으로 옮긴다.
+            if (m_cProgress.Migrate_Legacy() == true)
+                m_cRepository.Save(m_cProgress);
+
             return true;
         }
 
@@ -42,6 +49,8 @@ namespace Client
         public void Set_UnlockAll(bool bUnlockAll) => m_bUnlockAll = bUnlockAll;
 
         public bool Is_Cleared(int iMapID) => m_cProgress.Is_Cleared(iMapID);
+        // 260905_별 = 달성한 웨이브 수
+        public int  Get_Star(int iMapID)  => m_cProgress.Get_Star(iMapID);
 
         /// <summary> 표의 첫 맵은 항상 열려 있고, 그 뒤는 바로 앞 맵을 깨야 열린다. </summary>
         public bool Is_Unlocked(int iMapID)
@@ -59,13 +68,16 @@ namespace Client
             return m_cProgress.Is_Cleared(m_cMapTable.ALL[iIndex - 1].iMapID);
         }
 
-        /// <summary> 클리어를 기록하고 저장한다. 이미 깬 맵이면 저장까지 가지 않는다. </summary>
-        public void Set_Cleared(int iMapID)
+        // 260905_별 하나라도 얻으면 그 맵은 클리어다(웨이브 하나만 달성해도 클리어).
+        /// <summary> 최고 기록을 갱신하고 저장한다. 기록이 나아지지 않으면 저장까지 가지 않는다. </summary>
+        /// <returns> 기록이 갱신됐으면 true — 결과 화면에서 '신기록' 표시에 쓴다 </returns>
+        public bool Set_Star(int iMapID, int iStar)
         {
-            if (m_cProgress.Set_Cleared(iMapID) == false)
-                return;
+            if (m_cProgress.Set_Star(iMapID, iStar) == false)
+                return false;
 
             m_cRepository.Save(m_cProgress);
+            return true;
         }
 
         /// <summary> 마지막으로 고른 맵을 기억한다 — 선택 화면을 다시 열 때 그 자리로 돌아간다. </summary>
