@@ -102,6 +102,6 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 93474c011fdcf974190e9ea468ab524b, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Client.CEnemy
   m_srBody: {fileID: 3906184275910463728}

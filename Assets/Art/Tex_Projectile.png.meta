@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 157e7a71dd9050f4883aa1f3fdd01db7
+guid: e141f27f3b17f1d42a8d090951bd3859
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -3421816402737802157
-    second: Tex_Reward_Placeholder_0
+      213: -7210147933052675915
+    second: Tex_Projectile_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -24,7 +24,7 @@ TextureImporter:
     heightScale: 0.25
     normalMapFilter: 0
     flipGreenChannel: 0
-  isReadable: 1
+  isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
@@ -51,7 +51,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 100
+  spritePixelsToUnits: 32
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -113,13 +113,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Tex_Reward_Placeholder_0
+      name: Tex_Projectile_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 540
-        height: 960
+        width: 32
+        height: 32
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -128,8 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 354553c7c144380d0800000000000000
-      internalID: -3421816402737802157
+      spriteID: 5b8d068e7a860fb90800000000000000
+      internalID: -7210147933052675915
       vertices: []
       indices: 
       edges: []
@@ -148,7 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Tex_Reward_Placeholder_0: -3421816402737802157
+      Tex_Projectile_0: -7210147933052675915
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

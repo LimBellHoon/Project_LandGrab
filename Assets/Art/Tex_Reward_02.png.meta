@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: 157e7a71dd9050f4883aa1f3fdd01db7
+guid: 2f26a122a8e60414e951c032b24597fe
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -3421816402737802157
-    second: Tex_Reward_Placeholder_0
+      213: -7269587280287012005
+    second: Tex_Reward_02_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -113,7 +113,7 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Tex_Reward_Placeholder_0
+      name: Tex_Reward_02_0
       rect:
         serializedVersion: 2
         x: 0
@@ -128,8 +128,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 354553c7c144380d0800000000000000
-      internalID: -3421816402737802157
+      spriteID: b5b6bce62ec3d1b90800000000000000
+      internalID: -7269587280287012005
       vertices: []
       indices: 
       edges: []
@@ -148,7 +148,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Tex_Reward_Placeholder_0: -3421816402737802157
+      Tex_Reward_02_0: -7269587280287012005
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

@@ -47,3 +47,7 @@ crashlytics-build.properties
 *.log
 proto_test_result.txt
 proto_preview.png
+
+# Unity 크래시 복구 폴더 (로컬 산출물)
+/[Aa]ssets/_Recovery/
+/[Aa]ssets/_Recovery.meta

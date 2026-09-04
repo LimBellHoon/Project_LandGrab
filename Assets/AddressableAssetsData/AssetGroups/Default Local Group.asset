@@ -21,14 +21,62 @@ MonoBehaviour:
     m_SerializedLabels:
     - Prefabs
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 2d49a0cb396a4d07a2822671c7f9a502
+    m_Address: EnemyInfo
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - CSV
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 2f26a122a8e60414e951c032b24597fe
+    m_Address: Tex_Reward_02
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 50712b60099c9324cbdfa03c470b4f98
+    m_Address: Prefab_UI_InGame
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 51d4c9718dce1c542b6bb01916f1b2be
+    m_Address: Prefab_UI_Popup
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 7a2f9c14e63b0d84fb5e28c71a934d60
     m_Address: Prefab_Enemy
     m_ReadOnly: 0
     m_SerializedLabels:
     - Prefabs
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 9403892916b1396418b507ac89c06eab
+    m_Address: Tex_Reward_01
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: aa9bf227765b1d943b0a61f37584e1b3
+    m_Address: Tex_Reward_03
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: b01e3990b86d7f547bb6099d785e012d
     m_Address: Prefab_Projectile
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: b7651c5835604f543ae2f133fb533c5a
+    m_Address: Tex_Mask_01
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: bb514271c0468a145b55f9e9e07603ed
+    m_Address: Prefab_UI_StageSelect
     m_ReadOnly: 0
     m_SerializedLabels:
     - Prefabs
@@ -38,6 +86,18 @@ MonoBehaviour:
     m_ReadOnly: 0
     m_SerializedLabels:
     - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: d66343592d9382d409824f27c497a03e
+    m_Address: Tex_Shape_02
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: fa6364eb16bc44c797dbfa86fcf17a9f
+    m_Address: MapInfo
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - CSV
     FlaggedDuringContentUpdateRestriction: 0
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: 9124e21f40b1f924796478787b1b1b4a, type: 2}
