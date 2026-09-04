@@ -17,7 +17,8 @@ namespace Client
     /// </summary>
     public class CStage_Manager
     {
-        private const int SPAWN_SEARCH_RADIUS = 24;     // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
+        private const string PREFAB_PLAYER      = "Prefab_Player";
+        private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
 
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
@@ -64,7 +65,7 @@ namespace Client
                 return false;
             }
 
-            if (cMapInfo.IS_VALID == false)
+            if (cMapInfo.bIsValid == false)
                 Debug.LogWarning($"[CStage_Manager] 맵 {cMapInfo.iMapID}의 표가 어긋나 있습니다. "
                                + "웨이브 수와 이미지 스택 장수를 확인하세요.");
 
@@ -228,8 +229,6 @@ namespace Client
 
         private bool Spawn_Player()
         {
-            const string PREFAB_PLAYER = "Prefab_Player";
-
             if (Has_Prefab(PREFAB_PLAYER) == false)
             {
                 Debug.LogError($"[CStage_Manager] '{PREFAB_PLAYER}'를 찾을 수 없습니다. "
@@ -243,7 +242,7 @@ namespace Client
                 strPrefabName   = PREFAB_PLAYER,
                 cGrid           = m_cGrid,
                 vStartCell      = Find_StartCell(),
-                fMoveSpeed      = PLAYER_MOVE_SPEED,
+                fMoveSpeed      = m_cMapInfo.fPlayerSpeed,
                 iLife           = m_cMapInfo.iLife,
             };
 
@@ -267,10 +266,6 @@ namespace Client
 
             return true;
         }
-
-        // 플레이어 이동 속도는 아직 맵별로 나눌 이유가 없어 상수로 둔다.
-        // 맵마다 달리 줄 일이 생기면 MapInfo.csv에 열을 하나 늘릴 것.
-        private const float PLAYER_MOVE_SPEED = 9f;
 
         private void Respawn_Player()
         {

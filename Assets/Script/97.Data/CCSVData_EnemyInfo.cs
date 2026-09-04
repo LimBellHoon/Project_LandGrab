@@ -52,21 +52,21 @@ namespace Client
         }
 
         // 헤더 순서와 1:1로 맞춘다. CSV의 열 순서를 바꾸면 여기도 같이 바꿔야 한다.
-        protected override void Parse_CSVData(string[] strField)
+        protected override void Parse_CSVData(string[] arrField)
         {
             CEnemyInfo cInfo = new CEnemyInfo
             {
-                iEnemyID        = CCsvUtil.To_Int(strField, 0),
-                strName         = CCsvUtil.To_String(strField, 1),
-                strPrefabName   = CCsvUtil.To_String(strField, 2, "Prefab_Enemy"),
-                eGimmick        = CCsvUtil.To_Enum(strField, 3, ENEMY_GIMMICK.NONE),
-                fSpeed          = CCsvUtil.To_Float(strField, 4, 5f),
-                fChaseSpeed     = CCsvUtil.To_Float(strField, 5, 7f),
-                fTurnRate       = CCsvUtil.To_Float(strField, 6, 5f),
-                fHitRange       = CCsvUtil.To_Float(strField, 7, 1.2f),
-                fGimmickCool    = CCsvUtil.To_Float(strField, 8),
-                fGimmickValue   = CCsvUtil.To_Float(strField, 9),
-                fGimmickRange   = CCsvUtil.To_Float(strField, 10),
+                iEnemyID        = CCSV_Utility.To_Int(arrField, 0),
+                strName         = CCSV_Utility.To_String(arrField, 1),
+                strPrefabName   = CCSV_Utility.To_String(arrField, 2, "Prefab_Enemy"),
+                eGimmick        = CCSV_Utility.To_Enum(arrField, 3, ENEMY_GIMMICK.NONE),
+                fSpeed          = CCSV_Utility.To_Float(arrField, 4, 5f),
+                fChaseSpeed     = CCSV_Utility.To_Float(arrField, 5, 7f),
+                fTurnRate       = CCSV_Utility.To_Float(arrField, 6, 5f),
+                fHitRange       = CCSV_Utility.To_Float(arrField, 7, 1.2f),
+                fGimmickCool    = CCSV_Utility.To_Float(arrField, 8),
+                fGimmickValue   = CCSV_Utility.To_Float(arrField, 9),
+                fGimmickRange   = CCSV_Utility.To_Float(arrField, 10),
             };
 
             if (cInfo.iEnemyID <= 0)

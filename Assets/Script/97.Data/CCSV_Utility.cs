@@ -15,7 +15,7 @@ namespace Client
     /// 숫자는 반드시 InvariantCulture로 읽는다. 한국어 로케일에서 소수점이 쉼표로 잡히면
     /// 0.7이 7로 둔갑한다.
     /// </summary>
-    public static class CCsvUtil
+    public static class CCSV_Utility
     {
         public const char SPLIT_LIST  = '|';    // 웨이브 등 목록 구분
         public const char SPLIT_ITEM  = ',';    // 목록 안의 항목 구분
@@ -63,7 +63,7 @@ namespace Client
             if (Enum.TryParse(strValue, true, out T eValue) == true)
                 return eValue;
 
-            Debug.LogWarning($"[CCsvUtil] '{strValue}'는 {typeof(T).Name}에 없는 값이다. {eDefault}로 대체한다.");
+            Debug.LogWarning($"[CCSV_Utility] '{strValue}'는 {typeof(T).Name}에 없는 값이다. {eDefault}로 대체한다.");
             return eDefault;
         }
 

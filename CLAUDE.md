@@ -63,7 +63,7 @@ Assets/
     ├── 01.UI/              CDebugHUD
     ├── 02.GameObject/      CPlayer, CEnemy  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler, CInputHandler
-    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCsvUtil
+    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility
     ├── 98.Manager/         CStage_Manager
     └── 99.Defines/         Client_Enum, Client_Desc
 
@@ -100,7 +100,7 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | 파일 | 파싱 클래스 | 내용 |
 |---|---|---|
 | `EnemyInfo.csv` | `CCSVData_EnemyInfo` | 몬스터 종류별 기믹·속도·충돌반경 |
-| `MapInfo.csv` | `CCSVData_MapInfo` | 맵 크기·모양 마스크·이미지 스택·웨이브 구성 |
+| `MapInfo.csv` | `CCSVData_MapInfo` | 맵 크기·플레이어 속도·모양 마스크·이미지 스택·웨이브 구성 |
 
 #### Engine이 강제하는 CSV 규약 (어기면 표가 조용히 비어 버린다)
 - **구분자는 탭(`\t`).** 쉼표가 아니다. `Engine.CCSVData`가 `Split('\t')`로만 쪼갠다.
