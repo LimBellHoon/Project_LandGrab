@@ -63,8 +63,11 @@ Assets/
     ├── 01.UI/              CDebugHUD
     ├── 02.GameObject/      CPlayer, CEnemy  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler, CInputHandler
+    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCsvUtil
     ├── 98.Manager/         CStage_Manager
     └── 99.Defines/         Client_Enum, Client_Desc
+
+Assets/Data/                EnemyInfo.csv, MapInfo.csv  ← 기획 데이터
 ```
 
 ### 2-3. 핵심 — 영토 표현
@@ -77,20 +80,63 @@ Assets/
   몬스터가 하나도 없으면 가장 큰 영역만 남긴다.
 - 플레이어는 점령지 **경계선 위에서만** 안전하다. 점령지 내부는 통과 불가(260902 결정).
 - `CGridRenderer`는 셀을 픽셀로 찍는 마스크 텍스처로 그린다. **셰이더 없음.**
-  `IS_DIRTY` 플래그가 설 때만 갱신한다.
+  `IS_DIRTY`가 설 때만 갱신하고, 한두 칸만 바뀐 경우 `DIRTY_CELLS`로 그 칸만 다시 올린다
+  (점령처럼 한 번에 많이 바뀔 때는 `IS_FULL_DIRTY`로 전체 갱신). 자세한 건 2-5 참고.
 
 ### 2-4. enum (`99.Defines/Client_Enum.cs`)
 ```csharp
-CELL_STATE : byte   EMPTY=0(미점령/위험), OWNED=1(점령/안전), TRAIL=2(선분)
+CELL_STATE : byte   EMPTY=0(미점령/위험), OWNED=1(점령/안전), TRAIL=2(선분), BLOCK=3(맵 밖)
 MOVE_DIR            NONE=-1, UP=0, DOWN, LEFT, RIGHT
 STEP_RESULT         SAFE, DRAW, CAPTURE, DEAD
 STAGE_STATE         READY, PLAYING, CLEAR, FAIL
-CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images"
+ENEMY_GIMMICK       NONE, WEB(거미줄), PROJECTILE(투사체), SPAWN(부하 소환)
+CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 ```
 
-### 2-5. 스테이지 규칙 값
-`CStageDesc` (`99.Defines/Client_Desc.cs`)에 모여 있다 — 그리드 60x100, 셀 0.12,
-클리어 점령률 0.7, 제한시간 180초, 목숨 3, 몬스터 3마리 등. **추후 CSV/SO로 이관 예정.**
+### 2-5. 스테이지 규칙 값 — CSV (260904 이관 완료)
+규칙 숫자는 전부 `Assets/Data/*.csv`에 있다. **코드에 같은 숫자를 다시 적지 말 것.**
+`CStageDesc`에는 이제 '어떤 맵을 띄울지'(`iMapID`)만 남아 있다.
+
+| 파일 | 파싱 클래스 | 내용 |
+|---|---|---|
+| `EnemyInfo.csv` | `CCSVData_EnemyInfo` | 몬스터 종류별 기믹·속도·충돌반경 |
+| `MapInfo.csv` | `CCSVData_MapInfo` | 맵 크기·모양 마스크·이미지 스택·웨이브 구성 |
+
+#### Engine이 강제하는 CSV 규약 (어기면 표가 조용히 비어 버린다)
+- **구분자는 탭(`\t`).** 쉼표가 아니다. `Engine.CCSVData`가 `Split('\t')`로만 쪼갠다.
+- **0번 줄이 헤더.** 헤더 위에는 주석도 넣을 수 없다.
+- 헤더가 `NONE`인 열은 통째로 버려진다 → 맨 끝 '메모' 칸이 그 용도.
+- 첫 칸이 `;`로 시작하거나 비면 그 줄은 무시된다.
+- 클래스 이름이 **`Client.CCSVData_<파일명>`** 이어야 한다. `MapInfo.csv` ↔ `CCSVData_MapInfo`.
+  Engine이 파일명으로 타입을 찾아 `Activator`로 만든다 — 이름이 어긋나면 경고만 남기고 끝난다.
+- 조회는 `Get_CSVData("CCSVData_MapInfo")` (내부 키가 `"Client." + 인자`).
+- Addressable 라벨 `CSV`가 붙어 있어야 로드된다.
+
+#### 웨이브와 이미지 스택
+`MapInfo.csv`의 `strLayerTex`는 겹쳐 깔리는 이미지 목록이며 **(웨이브 수 + 1)장**이다.
+
+```
+[0] 마스크      ← 1웨이브의 가림막
+[1] 보상1       ← 1웨이브를 깨면 드러남 / 동시에 2웨이브의 가림막
+[2] 보상2       ← 2웨이브를 깨면 드러남 / 동시에 3웨이브의 가림막
+[3] 보상3       ← 3웨이브를 깨면 드러나는 최종 보상
+```
+
+즉 **N웨이브의 가림막은 `[N-1]`, 다 걷어내면 `[N]`이 나온다.**
+웨이브를 넘길 때 `CTerritoryGrid.Reset`으로 판을 새로 깔고 두 장을 갈아 끼운다.
+
+`strWaveEnemy`는 웨이브를 `|`, 웨이브 안의 몬스터를 `,`, 개수를 `*`로 적는다
+— `101*3|101*2,102*2|102*2,103*1,104*1`.
+
+#### 렌더링
+`CGridRenderer`는 두 SpriteRenderer를 쓴다 — 아래에 드러날 이미지(reveal), 위에 가림막(cover).
+가림막은 원본을 셀 격자에 맞춰 다시 찍은 마스크 텍스처이고 점령한 칸만 알파 0으로 뚫는다.
+그래서 **가림막·모양 마스크로 쓰는 텍스처는 임포트 설정에서 Read/Write Enabled가 켜져 있어야 한다.**
+셀 하나는 `PIXEL_PER_CELL`(현재 4)픽셀로 찍는다.
+
+#### 맵 모양 마스크
+`strShapeMask` 텍스처의 밝은 픽셀만 플레이 가능한 칸이 되고, 나머지는 `CELL_STATE.BLOCK`이 된다.
+BLOCK은 플레이어·몬스터 모두 못 들어가고 점령률 분모에서도 빠진다. `-`이면 직사각형 전체.
 
 ### 2-6. 스테이지 수명 주기
 `CStage_Manager.Tick`은 `STAGE_STATE.PLAYING`일 때만 규칙을 돌리지만,
@@ -118,6 +164,8 @@ Unity.exe -batchmode -nographics -quit -projectPath "D:\Unity Project\Project_La
 ```
 
 > 프리팹 누락이 스테이지 전체를 죽인 적이 있다(260903 수정). 에셋을 건드렸으면 **Validate Assets를 먼저 돌릴 것.**
+> Validate Assets는 260904부터 CSV(파일 존재 · 탭 구분 · 짝이 되는 파싱 클래스 · Addressable 라벨)와
+> 웨이브 이미지(Read/Write 여부)까지 함께 본다.
 
 ---
 

@@ -13,9 +13,11 @@ namespace Client
     /// </summary>
     public class CGameManager : SingletonBase_MonoBehaviour<CGameManager>
     {
+        // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
+        // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
         [SerializeField] private CStageDesc     m_cStageDesc = new CStageDesc();
-        [SerializeField] private SpriteRenderer m_srBackground;     // 뒤에 깔리는 보상 이미지
-        [SerializeField] private SpriteRenderer m_srOverlay;        // 미점령 영역을 가리는 마스크
+        [SerializeField] private SpriteRenderer m_srBackground;     // 드러날 보상 이미지
+        [SerializeField] private SpriteRenderer m_srOverlay;        // 미점령 영역을 덮는 가림막
 
         private CGameInstance   m_cGameInstance;
         private CStage_Manager  m_cStageManager;
@@ -77,14 +79,26 @@ namespace Client
         public static void Set_LayerTimeScale(OBJECT_TYPE eObjectType, float fLocalTimeScale) => CGameInstance.Instance.Set_LayerTimeScale(eObjectType, fLocalTimeScale);
         #endregion TIME_MANAGER
 
+        // 260904_스테이지 규칙은 전부 CSV에서 온다.
+        // CSV 라벨이 붙은 TextAsset은 Engine이 파일명으로 Client.CCSVData_<파일명> 클래스를 찾아
+        // 자동으로 파싱해 캐싱한다 — 그래서 여기서는 라벨만 읽어 오면 된다.
         private async void GameLogic_Async()
         {
             try
             {
                 // 에셋 메모리 로드 (Addressable 라벨)
                 await m_cGameInstance.LoadAssetAsync(CAddressableLabel.PREFAB);
+                await m_cGameInstance.LoadAssetAsync(CAddressableLabel.TEXTURE);
+                await m_cGameInstance.LoadAssetAsync(CAddressableLabel.CSV);
 
-                if (m_cStageManager.Initialize(m_cStageDesc, m_srBackground, m_srOverlay) == false)
+                if (Load_Table(out CCSVData_MapInfo cMapTable, out CCSVData_EnemyInfo cEnemyTable) == false)
+                    return;
+
+                CMapInfo cMapInfo = cMapTable.Get_Info(m_cStageDesc.iMapID);
+                if (cMapInfo == null)
+                    return;
+
+                if (m_cStageManager.Initialize(cMapInfo, cEnemyTable, m_srOverlay, m_srBackground) == false)
                     return;
 
                 if (m_cStageManager.Start_Stage() == false)
@@ -96,6 +110,34 @@ namespace Client
             {
                 Debug.LogError($"[CGameManager] 초기화 중 예외 : {e}");
             }
+        }
+
+        /// <summary>
+        /// 표가 없으면 스테이지를 띄울 수 없다. 무엇이 없는지 정확히 알려 준다 —
+        /// 거의 항상 Addressable 라벨(CSV)이 안 붙었거나 파일명과 클래스명이 어긋난 경우다.
+        /// </summary>
+        private bool Load_Table(out CCSVData_MapInfo cMapTable, out CCSVData_EnemyInfo cEnemyTable)
+        {
+            cMapTable   = m_cGameInstance.Get_CSVData(CCSVData_MapInfo.CSV_KEY) as CCSVData_MapInfo;
+            cEnemyTable = m_cGameInstance.Get_CSVData(CCSVData_EnemyInfo.CSV_KEY) as CCSVData_EnemyInfo;
+
+            if (cMapTable == null)
+            {
+                Debug.LogError("[CGameManager] MapInfo.csv를 읽지 못했습니다. "
+                             + $"Assets/Data/MapInfo.csv에 Addressable 라벨 '{CAddressableLabel.CSV}'가 "
+                             + "붙었는지, 클래스 이름이 CCSVData_MapInfo인지 확인하세요.");
+                return false;
+            }
+
+            if (cEnemyTable == null)
+            {
+                Debug.LogError("[CGameManager] EnemyInfo.csv를 읽지 못했습니다. "
+                             + $"Assets/Data/EnemyInfo.csv에 Addressable 라벨 '{CAddressableLabel.CSV}'가 "
+                             + "붙었는지, 클래스 이름이 CCSVData_EnemyInfo인지 확인하세요.");
+                return false;
+            }
+
+            return true;
         }
     }
 }

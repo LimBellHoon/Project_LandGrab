@@ -20,10 +20,30 @@ namespace Client
         private const string DIR_ART        = "Assets/Art";
         private const string DIR_PREFAB     = "Assets/Prefabs";
         private const string DIR_SCENE      = "Assets/Scenes";
+        private const string DIR_DATA       = "Assets/Data";
 
         private const string PATH_TEX_PLAYER = DIR_ART + "/Tex_PlayerBody.png";
         private const string PATH_TEX_ENEMY  = DIR_ART + "/Tex_EnemyBody.png";
         private const string PATH_TEX_BG     = DIR_ART + "/Tex_Reward_Placeholder.png";
+
+        // 260904_MapInfo.csv의 strLayerTex가 가리키는 이미지 스택.
+        // [0]=마스크(1웨이브 가림막) → [1][2][3]=웨이브별 보상. 이름이 CSV와 어긋나면 스테이지가 못 뜬다.
+        private static readonly string[] ARR_LAYER_TEX =
+        {
+            "Tex_Mask_01", "Tex_Reward_01", "Tex_Reward_02", "Tex_Reward_03",
+        };
+        private const string TEX_SHAPE_02 = "Tex_Shape_02";      // MapInfo.csv 2번 맵의 모양 마스크
+
+        // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo" };
+        // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
+        // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
+        private static readonly System.Type[] ARR_CSV_TYPE =
+        {
+            typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo),
+        };
+
+        private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
         private const string PATH_PREFAB     = DIR_PREFAB + "/Prefab_Player.prefab";
         private const string PATH_PREFAB_ENEMY = DIR_PREFAB + "/Prefab_Enemy.prefab";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
@@ -46,6 +66,7 @@ namespace Client
             Ensure_Folder(DIR_ART);
             Ensure_Folder(DIR_PREFAB);
             Ensure_Folder(DIR_SCENE);
+            Ensure_Folder(DIR_DATA);
 
             Create_Sprites();
             Create_Prefabs();
@@ -65,13 +86,98 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB, "Prefab_Player", typeof(CPlayer));
             iFail += Validate_ActorPrefab(PATH_PREFAB_ENEMY, "Prefab_Enemy", typeof(CEnemy));
 
+            // 260904_CSV 테이블과 웨이브 이미지가 빠지면 스테이지가 통째로 안 뜬다.
+            iFail += Validate_CsvTables();
+            iFail += Validate_LayerTextures();
+
             if (iFail == 0)
-                Debug.Log("[CProtoSetup] 에셋 검증 통과 — 프리팹 / 스프라이트 / Addressable 정상");
+                Debug.Log("[CProtoSetup] 에셋 검증 통과 — 프리팹 / 스프라이트 / CSV / Addressable 정상");
             else
                 Debug.LogError($"[CProtoSetup] 에셋 검증 실패 {iFail}건 — Tools/LandGrab/Setup Assets 를 실행하세요.");
 
             if (Application.isBatchMode == true)
                 EditorApplication.Exit(iFail == 0 ? 0 : 1);
+        }
+
+        // 260904_CSV는 파일 존재 · Addressable 라벨 · 짝이 되는 파싱 클래스까지 셋 다 봐야 한다.
+        // 셋 중 하나만 어긋나도 Engine은 조용히 경고만 남기고 표를 비운 채 넘어간다.
+        private static int Validate_CsvTables()
+        {
+            int iFail = 0;
+
+            for (int i = 0; i < ARR_CSV.Length; ++i)
+            {
+                string strName = ARR_CSV[i];
+                string strPath = $"{DIR_DATA}/{strName}.csv";
+
+                TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>(strPath);
+                if (cText == null)
+                {
+                    Debug.LogError($"  FAIL  CSV 없음 : {strPath}");
+                    ++iFail;
+                    continue;
+                }
+
+                // Engine.CCSVDataHolder가 찾는 이름 규칙 — 어긋나면 표가 조용히 비어 버린다.
+                string strExpect = "Client.CCSVData_" + strName;
+                string strActual = ARR_CSV_TYPE[i].FullName;
+
+                if (strActual != strExpect)
+                {
+                    Debug.LogError($"  FAIL  파싱 클래스 이름이 규칙과 다름 : {strActual} (기대 {strExpect})");
+                    ++iFail;
+                }
+                else
+                {
+                    Debug.Log($"  PASS  CSV / 파싱 클래스 : {strName} ↔ {strActual}");
+                }
+
+                // 구분자가 탭이 아니면 Engine이 한 덩어리로 읽어 전부 깨진다.
+                string strHeader = cText.text.Split('\n')[0];
+                if (strHeader.Contains("\t") == false)
+                {
+                    Debug.LogError($"  FAIL  {strName}.csv의 헤더에 탭이 없습니다. 쉼표가 아니라 탭으로 구분해야 합니다.");
+                    ++iFail;
+                }
+
+                iFail += Validate_AddressableEntry(strPath, strName, CAddressableLabel.CSV);
+            }
+
+            return iFail;
+        }
+
+        private static int Validate_LayerTextures()
+        {
+            int iFail = 0;
+
+            for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
+                iFail += Validate_Texture(ARR_LAYER_TEX[i]);
+
+            iFail += Validate_Texture(TEX_SHAPE_02);
+            return iFail;
+        }
+
+        private static int Validate_Texture(string strName)
+        {
+            string strPath = $"{DIR_ART}/{strName}.png";
+
+            if (AssetDatabase.LoadAssetAtPath<Texture2D>(strPath) == null)
+            {
+                Debug.LogError($"  FAIL  텍스처 없음 : {strPath}");
+                return 1;
+            }
+
+            int iFail = 0;
+
+            // 가림막과 모양 마스크는 런타임에 픽셀을 읽는다 — Read/Write가 꺼져 있으면 예외가 난다.
+            TextureImporter cImporter = AssetImporter.GetAtPath(strPath) as TextureImporter;
+            if (cImporter == null || cImporter.isReadable == false)
+            {
+                Debug.LogError($"  FAIL  '{strName}'의 Read/Write가 꺼져 있습니다.");
+                ++iFail;
+            }
+
+            return iFail + Validate_AddressableEntry(strPath, strName, CAddressableLabel.TEXTURE);
         }
 
         private static int Validate_ActorPrefab(string strPath, string strAddress, System.Type tComponent)
@@ -119,11 +225,11 @@ namespace Client
                 Debug.Log($"  PASS  스프라이트 할당 : {srBody.sprite.name} (sortingOrder {srBody.sortingOrder})");
             }
 
-            iFail += Validate_AddressableEntry(strPath, strAddress);
+            iFail += Validate_AddressableEntry(strPath, strAddress, CAddressableLabel.PREFAB);
             return iFail;
         }
 
-        private static int Validate_AddressableEntry(string strPath, string strAddress)
+        private static int Validate_AddressableEntry(string strPath, string strAddress, string strLabel)
         {
             AddressableAssetSettings cSettings = AddressableAssetSettingsDefaultObject.GetSettings(false);
             if (cSettings == null)
@@ -148,13 +254,13 @@ namespace Client
                 Debug.LogWarning($"  WARN  주소가 프리팹 이름과 다름 : {cEntry.address} != {strAddress}");
             }
 
-            if (cEntry.labels.Contains(CAddressableLabel.PREFAB) == false)
+            if (cEntry.labels.Contains(strLabel) == false)
             {
-                Debug.LogError($"  FAIL  '{CAddressableLabel.PREFAB}' 라벨 없음 : {strAddress}");
+                Debug.LogError($"  FAIL  '{strLabel}' 라벨 없음 : {strAddress}");
                 return 1;
             }
 
-            Debug.Log($"  PASS  Addressable : {cEntry.address} [{CAddressableLabel.PREFAB}]");
+            Debug.Log($"  PASS  Addressable : {cEntry.address} [{strLabel}]");
             return 0;
         }
 
@@ -174,7 +280,109 @@ namespace Client
             const int BG_W = 540;
             const int BG_H = 960;
             Write_Png(PATH_TEX_BG, Make_RewardPlaceholder(BG_W, BG_H));
-            Import_AsSprite(PATH_TEX_BG, 100);
+            Import_AsSprite(PATH_TEX_BG, 100, true);
+
+            Create_LayerTextures(BG_W, BG_H);
+        }
+
+        // 260904_웨이브 이미지 스택.
+        // [0]은 1웨이브를 덮는 '마스크'라 무채색으로, 나머지는 웨이브가 넘어갈수록 밝아지는
+        // 보상 이미지로 만들어 어느 장이 벗겨졌는지 눈으로 바로 구분되게 한다.
+        private static void Create_LayerTextures(int iWidth, int iHeight)
+        {
+            for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
+            {
+                string strPath = $"{DIR_ART}/{ARR_LAYER_TEX[i]}.png";
+
+                Texture2D tex = i == 0 ? Make_CoverMask(iWidth, iHeight)
+                                       : Make_RewardLayer(iWidth, iHeight, i);
+                Write_Png(strPath, tex);
+
+                // 가림막은 런타임에 픽셀을 읽어 마스크로 다시 찍으므로 Read/Write가 반드시 켜져 있어야 한다.
+                Import_AsSprite(strPath, 100, true);
+            }
+
+            string strShapePath = $"{DIR_ART}/{TEX_SHAPE_02}.png";
+            Write_Png(strShapePath, Make_ShapeMask(iWidth, iHeight));
+            Import_AsSprite(strShapePath, 100, true);
+        }
+
+        /// <summary> 1웨이브를 덮는 마스크 — 격자 무늬가 옅게 깔린 어두운 막. </summary>
+        private static Texture2D Make_CoverMask(int iWidth, int iHeight)
+        {
+            Texture2D tex = new Texture2D(iWidth, iHeight, TextureFormat.RGBA32, false);
+
+            for (int y = 0; y < iHeight; ++y)
+            {
+                for (int x = 0; x < iWidth; ++x)
+                {
+                    bool bGrid = (x % 48) < 2 || (y % 48) < 2;
+                    Color cColor = bGrid ? new Color(0.16f, 0.19f, 0.30f) : new Color(0.07f, 0.08f, 0.14f);
+                    cColor.a = 1f;
+                    tex.SetPixel(x, y, cColor);
+                }
+            }
+
+            tex.Apply();
+            return tex;
+        }
+
+        /// <summary> 웨이브별 보상 이미지 — 단계가 올라갈수록 밝고 채도가 높아진다. </summary>
+        private static Texture2D Make_RewardLayer(int iWidth, int iHeight, int iStep)
+        {
+            Texture2D tex = new Texture2D(iWidth, iHeight, TextureFormat.RGBA32, false);
+            float fStep = iStep / 3f;
+
+            Color cTop    = Color.Lerp(new Color(0.30f, 0.34f, 0.55f), new Color(1.00f, 0.78f, 0.30f), fStep);
+            Color cBottom = Color.Lerp(new Color(0.18f, 0.22f, 0.40f), new Color(0.95f, 0.35f, 0.55f), fStep);
+
+            for (int y = 0; y < iHeight; ++y)
+            {
+                float fT = (float)y / (iHeight - 1);
+                Color cBase = Color.Lerp(cBottom, cTop, fT);
+
+                for (int x = 0; x < iWidth; ++x)
+                {
+                    float fU = (float)x / (iWidth - 1);
+                    float fStripe = Mathf.Sin((fU * 10f) + (fT * 16f) + iStep) * 0.5f + 0.5f;
+                    Color cColor = Color.Lerp(cBase, cBase * 1.4f, fStripe * 0.4f);
+
+                    // 몇 번째 장인지 한눈에 보이도록 큰 숫자 대신 동심원 개수로 표시한다.
+                    float fDist = Vector2.Distance(new Vector2(fU, fT), new Vector2(0.5f, 0.6f));
+                    float fRing = Mathf.Repeat(fDist * iStep * 14f, 1f);
+                    if (fDist < 0.26f && fRing < 0.35f)
+                        cColor = Color.Lerp(cColor, Color.white, 0.45f);
+
+                    cColor.a = 1f;
+                    tex.SetPixel(x, y, cColor);
+                }
+            }
+
+            tex.Apply();
+            return tex;
+        }
+
+        /// <summary> 맵 모양 마스크 예시 — 가운데를 세로로 잘라낸 모래시계 형태. </summary>
+        private static Texture2D Make_ShapeMask(int iWidth, int iHeight)
+        {
+            Texture2D tex = new Texture2D(iWidth, iHeight, TextureFormat.RGBA32, false);
+
+            for (int y = 0; y < iHeight; ++y)
+            {
+                float fT = (float)y / (iHeight - 1);
+                // 가운데(0.5)에서 가장 좁아지는 폭
+                float fHalf = Mathf.Lerp(0.5f, 0.22f, 1f - Mathf.Abs(fT - 0.5f) * 2f);
+
+                for (int x = 0; x < iWidth; ++x)
+                {
+                    float fU = (float)x / (iWidth - 1);
+                    bool bInside = Mathf.Abs(fU - 0.5f) <= fHalf;
+                    tex.SetPixel(x, y, bInside ? Color.white : Color.black);
+                }
+            }
+
+            tex.Apply();
+            return tex;
         }
 
         private static Texture2D Make_CircleTexture(int iSize, Color cRim)
@@ -236,7 +444,9 @@ namespace Client
             AssetDatabase.ImportAsset(strPath, ImportAssetOptions.ForceUpdate);
         }
 
-        private static void Import_AsSprite(string strPath, float fPixelsPerUnit)
+        // 260904_bReadable : 런타임에 GetPixels32로 읽어야 하는 텍스처(가림막 / 모양 마스크)는 반드시 켠다.
+        // 꺼진 채로 두면 CGridRenderer.Fill_Cover가 예외를 던진다.
+        private static void Import_AsSprite(string strPath, float fPixelsPerUnit, bool bReadable = false)
         {
             TextureImporter cImporter = AssetImporter.GetAtPath(strPath) as TextureImporter;
             if (cImporter == null)
@@ -247,6 +457,7 @@ namespace Client
             cImporter.spritePixelsPerUnit   = fPixelsPerUnit;
             cImporter.alphaIsTransparency   = true;
             cImporter.mipmapEnabled         = false;
+            cImporter.isReadable            = bReadable;
             cImporter.SaveAndReimport();
         }
         #endregion 스프라이트 생성
@@ -289,16 +500,35 @@ namespace Client
             }
 
             cSettings.AddLabel(CAddressableLabel.PREFAB, false);
+            cSettings.AddLabel(CAddressableLabel.TEXTURE, false);
+            cSettings.AddLabel(CAddressableLabel.CSV, false);
 
-            Regist_Addressable(cSettings, PATH_PREFAB, "Prefab_Player");
-            Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy");
+            Regist_Addressable(cSettings, PATH_PREFAB, "Prefab_Player", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy", CAddressableLabel.PREFAB);
+
+            // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
+            for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
+                Regist_Addressable(cSettings, $"{DIR_ART}/{ARR_LAYER_TEX[i]}.png", ARR_LAYER_TEX[i], CAddressableLabel.TEXTURE);
+
+            Regist_Addressable(cSettings, $"{DIR_ART}/{TEX_SHAPE_02}.png", TEX_SHAPE_02, CAddressableLabel.TEXTURE);
+
+            // 260904_CSV 테이블. Engine이 TextAsset 이름으로 파싱 클래스를 찾으므로 주소도 파일명과 맞춘다.
+            for (int i = 0; i < ARR_CSV.Length; ++i)
+                Regist_Addressable(cSettings, $"{DIR_DATA}/{ARR_CSV[i]}.csv", ARR_CSV[i], CAddressableLabel.CSV);
 
             EditorUtility.SetDirty(cSettings);
         }
 
-        private static void Regist_Addressable(AddressableAssetSettings cSettings, string strAssetPath, string strAddress)
+        private static void Regist_Addressable(AddressableAssetSettings cSettings, string strAssetPath,
+                                               string strAddress, string strLabel)
         {
             string strGuid = AssetDatabase.AssetPathToGUID(strAssetPath);
+            if (string.IsNullOrEmpty(strGuid) == true)
+            {
+                Debug.LogError($"[CProtoSetup] 에셋이 없습니다 : {strAssetPath}");
+                return;
+            }
+
             AddressableAssetEntry cEntry = cSettings.CreateOrMoveEntry(strGuid, cSettings.DefaultGroup, false, false);
             if (cEntry == null)
             {
@@ -306,11 +536,37 @@ namespace Client
                 return;
             }
 
-            // Engine.CPrefabDataHolder는 GameObject.name을 키로 캐싱하므로 주소도 이름과 맞춰 둔다.
+            // Engine의 각 DataHolder가 에셋 이름을 키로 캐싱하므로 주소도 이름과 맞춰 둔다.
             cEntry.address = strAddress;
-            cEntry.SetLabel(CAddressableLabel.PREFAB, true, false, false);
+            cEntry.SetLabel(strLabel, true, false, false);
         }
         #endregion 프리팹 / Addressable
+
+        #region 데이터
+        // 260904_에디터도 런타임과 똑같은 파서를 쓴다.
+        // Engine.CCSVData.Read_CSVData는 public이라 Addressable을 거치지 않고 바로 먹일 수 있다 —
+        // 덕분에 맵 크기 같은 값을 에디터 코드에 다시 적지 않아도 된다.
+        public static CMapInfo Load_MapInfo(int iMapID)
+        {
+            CMapInfo cFallback = new CMapInfo
+            {
+                iMapID = iMapID, iGridWidth = 60, iGridHeight = 100, fCellSize = 0.12f, iBorderThick = 2,
+            };
+
+            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>($"{DIR_DATA}/MapInfo.csv");
+            if (cText == null)
+            {
+                Debug.LogWarning("[CProtoSetup] MapInfo.csv가 없어 기본값을 씁니다.");
+                return cFallback;
+            }
+
+            CCSVData_MapInfo cTable = new CCSVData_MapInfo();
+            cTable.Read_CSVData(cText);
+
+            CMapInfo cMapInfo = cTable.Get_Info(iMapID);
+            return cMapInfo ?? cFallback;
+        }
+        #endregion 데이터
 
         #region 씬 구성
         private static void Build_Scene()
@@ -323,10 +579,9 @@ namespace Client
             if (goLight != null)
                 Object.DestroyImmediate(goLight);
 
-            CStageDesc cStageDesc = new CStageDesc();
-            float fWorldHeight = cStageDesc.iGridHeight * cStageDesc.fCellSize;
-
-            Setup_Camera(fWorldHeight);
+            // 260904_카메라 크기는 맵 크기에서 나온다. 숫자를 여기 다시 적지 않고 MapInfo.csv를 읽는다.
+            CMapInfo cMapInfo = Load_MapInfo(DEFAULT_MAP_ID);
+            Setup_Camera(cMapInfo.iGridHeight * cMapInfo.fCellSize);
 
             SpriteRenderer srBackground = Create_Renderer("BG_Reward", 0,
                                             AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_BG));

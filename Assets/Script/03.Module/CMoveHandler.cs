@@ -171,6 +171,10 @@ namespace Client
             if (m_cGrid.Is_InBounds(vNext.x, vNext.y) == false)
                 return false;
 
+            // 260904_맵 모양 마스크로 잘라낸 칸은 맵 밖과 똑같이 취급한다.
+            if (m_cGrid.Is_Blocked(vNext) == true)
+                return false;
+
             // 선을 그리는 중 뒤로 꺾어 자기 선을 밟는 즉사를 막는다(입력 실수 방지).
             if (m_cGrid.IS_DRAWING == true
                 && m_cGrid.Try_Get_PrevTrailCell(out Vector2Int vPrevTrail) == true

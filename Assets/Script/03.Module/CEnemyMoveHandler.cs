@@ -87,8 +87,14 @@ namespace Client
             m_vPos = vNext;
         }
 
-        // 점령지만 벽. 맵 밖은 World_ToCell이 테두리로 clamp하고 테두리는 점령지라 자동으로 막힌다.
-        private bool Is_Blocked(Vector2 vWorld) => m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorld)) == CELL_STATE.OWNED;
+        // 점령지와 맵 밖(BLOCK)이 벽. 그리드 바깥은 World_ToCell이 테두리로 clamp하고
+        // 테두리는 점령지라 자동으로 막힌다.
+        // 260904_모양 마스크로 잘라낸 칸도 여기서 함께 막지 않으면 몬스터가 맵 밖으로 샌다.
+        private bool Is_Blocked(Vector2 vWorld)
+        {
+            CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorld));
+            return eState == CELL_STATE.OWNED || eState == CELL_STATE.BLOCK;
+        }
 
         private bool Escape_IfTrapped()
         {

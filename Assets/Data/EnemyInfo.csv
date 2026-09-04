@@ -1,0 +1,12 @@
+﻿iEnemyID	strName	strPrefabName	eGimmick	fSpeed	fChaseSpeed	fTurnRate	fHitRange	fGimmickCool	fGimmickValue	fGimmickRange	NONE
+;== 몬스터 기믹 테이블 ==	구분자는 반드시 [탭]. Engine.CCSVData가 \t 로만 쪼갠다
+;0번 줄이 헤더다. 헤더보다 위에는 아무것도 넣지 말 것 — 주석도 안 된다
+;헤더가 NONE인 컬럼은 Engine이 통째로 버린다 → 맨 끝 메모 칸이 그것
+;첫 칸이 ; 로 시작하거나 비어 있으면 그 줄은 무시된다
+;eGimmick : NONE(기본) / WEB(거미줄) / PROJECTILE(투사체) / SPAWN(부하 소환)
+;속도는 초당 셀, fHitRange / fGimmickRange 는 셀 단위
+;---	이름	프리팹	기믹	배회속도	추적속도	선회(rad/s)	충돌반경	기믹쿨(초)	기믹수치	기믹사거리	메모
+101	배회자	Prefab_Enemy	NONE	5	7	5	1.2	0	0	0	기본. 배회하다 플레이어가 나오면 추적
+102	거미	Prefab_Enemy	WEB	4.5	6	4	1.2	3.5	0.5	2.5	거미줄 설치. fGimmickValue=플레이어 속도 배율
+103	포수	Prefab_Enemy	PROJECTILE	4	4	3	1.2	2.5	6	12	투사체 발사. fGimmickValue=탄속(셀/초)
+104	분열체	Prefab_Enemy	SPAWN	4	5.5	4	1.2	8	2	0	부하 소환. fGimmickValue=소환 마리수

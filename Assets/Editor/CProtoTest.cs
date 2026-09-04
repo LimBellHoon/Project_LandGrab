@@ -39,6 +39,8 @@ namespace Client
             Test_BoundaryOnlyMove();
             Test_LineFollow();
             Test_Enemy();
+            Test_ShapeMask();
+            Test_DirtyCell();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -288,6 +290,67 @@ namespace Client
                   cGrid.Try_Find_NearestCell(new Vector2Int(0, 0), CELL_STATE.EMPTY, 4, out Vector2Int vNear)
                   && cGrid.Get_Cell(vNear) == CELL_STATE.EMPTY);
         }
+        // 260904_맵 모양 마스크 — 잘라낸 칸은 아무도 못 들어가고 점령률 분모에서도 빠진다
+        private static void Test_ShapeMask()
+        {
+            // 20x20에서 왼쪽 절반(x < 10)만 플레이 가능한 맵을 만든다
+            bool[] arrPlayable = new bool[GRID_SIZE * GRID_SIZE];
+            for (int y = 0; y < GRID_SIZE; ++y)
+            {
+                for (int x = 0; x < GRID_SIZE; ++x)
+                    arrPlayable[y * GRID_SIZE + x] = x < 10;
+            }
+
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            Check("모양 마스크로 초기화",
+                  cGrid.Initialize(GRID_SIZE, GRID_SIZE, 1f, Vector2.zero, BORDER_THICK, arrPlayable));
+
+            Check("잘라낸 칸은 BLOCK", cGrid.Get_Cell(15, 10) == CELL_STATE.BLOCK);
+            Check("잘라낸 칸 판정", cGrid.Is_Blocked(new Vector2Int(15, 10)));
+            Check("남긴 칸은 살아 있음", cGrid.Is_Blocked(new Vector2Int(5, 10)) == false);
+
+            // 점령률 분모는 BLOCK을 뺀 200칸
+            Check("점령률 분모에서 제외", cGrid.PLAYABLE_COUNT, GRID_SIZE * 10);
+
+            // 길이가 안 맞는 마스크는 거부한다
+            CTerritoryGrid cBadGrid = new CTerritoryGrid();
+            Check("길이가 틀린 마스크는 거부",
+                  cBadGrid.Initialize(GRID_SIZE, GRID_SIZE, 1f, Vector2.zero, BORDER_THICK, new bool[3]) == false);
+
+            // BLOCK 칸으로는 이동할 수 없다 — 잘린 경계(x=9)에서 오른쪽으로 밀어 본다
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2Int(9, 10), STEP_SPEED);
+            cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
+            Check("BLOCK으로는 진입 불가", cMove.CUR_CELL == new Vector2Int(9, 10));
+
+            // Reset을 해도 BLOCK은 되살아난다 (웨이브가 넘어갈 때마다 Reset을 탄다)
+            cGrid.Reset(BORDER_THICK);
+            Check("Reset 후에도 BLOCK 유지", cGrid.Get_Cell(15, 10) == CELL_STATE.BLOCK);
+            Check("Reset 후에도 분모 유지", cGrid.PLAYABLE_COUNT, GRID_SIZE * 10);
+        }
+
+        // 260904_렌더러 부분 갱신용 변경 셀 추적
+        private static void Test_DirtyCell()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            cGrid.Clear_Dirty();
+            Check("갱신 직후에는 깨끗함", cGrid.IS_DIRTY == false);
+
+            CMoveHandler cMove = Make_Move(cGrid);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 1, null);
+            Check("선을 그리면 더러워짐", cGrid.IS_DIRTY);
+            Check("바뀐 칸만 올라옴", cGrid.DIRTY_CELLS.Count, 1);
+            Check("한 칸만 바뀌면 전체 갱신이 아님", cGrid.IS_FULL_DIRTY == false);
+
+            cGrid.Clear_Dirty();
+            Check("목록도 비워짐", cGrid.DIRTY_CELLS.Count, 0);
+
+            // 점령은 한 번에 많이 바뀌므로 전체 갱신을 요청한다
+            Walk(cGrid, cMove, MOVE_DIR.UP, 4, null);
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7, null);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 5, null);
+            Check("점령은 전체 갱신", cGrid.IS_FULL_DIRTY);
+        }
         #endregion 테스트 케이스
 
         #region 프리뷰 렌더
@@ -299,14 +362,15 @@ namespace Client
         [MenuItem("Tools/LandGrab/Render Preview PNG")]
         public static void Render_Preview()
         {
-            CStageDesc cStageDesc = new CStageDesc();
+            // 260904_스테이지 규칙은 MapInfo.csv로 옮겼다. 프리뷰도 같은 표를 읽어 크기를 맞춘다.
+            CMapInfo cMapInfo = CProtoSetup.Load_MapInfo(1);
 
             CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(cStageDesc.iGridWidth, cStageDesc.iGridHeight, cStageDesc.fCellSize,
-                             Vector2.zero, cStageDesc.iBorderThick);
+            cGrid.Initialize(cMapInfo.iGridWidth, cMapInfo.iGridHeight, cMapInfo.fCellSize,
+                             Vector2.zero, cMapInfo.iBorderThick);
 
             CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2Int(cStageDesc.iGridWidth / 2, cStageDesc.iBorderThick - 1), STEP_SPEED);
+            cMove.Initialize(cGrid, new Vector2Int(cMapInfo.iGridWidth / 2, cMapInfo.iBorderThick - 1), STEP_SPEED);
 
             // 1차 점령 — 오른쪽 아래 사각형
             Walk(cGrid, cMove, MOVE_DIR.UP, 30, null);
@@ -325,10 +389,12 @@ namespace Client
 
             // 실제 런타임과 동일한 경로로 마스크를 만든다.
             GameObject goOverlay = new GameObject("Overlay_Preview");
-            CGridRenderer cRenderer = new CGridRenderer();
-            cRenderer.Initialize(cGrid, goOverlay.AddComponent<SpriteRenderer>());
+            SpriteRenderer srCover = goOverlay.AddComponent<SpriteRenderer>();
 
-            Texture2D texMask = goOverlay.GetComponent<SpriteRenderer>().sprite.texture;
+            CGridRenderer cRenderer = new CGridRenderer();
+            cRenderer.Initialize(cGrid, srCover, null);     // 프리뷰는 배경을 직접 합성하므로 reveal이 없다
+
+            Texture2D texMask = srCover.sprite.texture;
             // 임포트된 스프라이트는 Read/Write가 꺼져 있으므로 원본 PNG를 직접 디코드한다.
             Texture2D texBG = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             texBG.LoadImage(File.ReadAllBytes("Assets/Art/Tex_Reward_Placeholder.png"));

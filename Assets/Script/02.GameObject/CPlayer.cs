@@ -122,6 +122,20 @@ namespace Client
             }
         }
 
+        // 260904_웨이브가 넘어가면 판을 새로 깔기 때문에 플레이어도 새 시작 칸으로 옮겨야 한다.
+        // 목숨과 무적 상태는 웨이브를 넘어가도 이어진다.
+        /// <summary> 지정한 칸으로 옮기고 이동/입력 상태를 리셋한다. </summary>
+        public void Respawn(Vector2Int vCell)
+        {
+            if (m_cGrid == null)
+                return;
+
+            m_vLastSafeCell = vCell;
+            m_cMoveHandler.Teleport(vCell);
+            m_cInputHandler.Clear();
+            transform.position = m_cGrid.Cell_ToWorld(vCell);
+        }
+
         // 260904_이미 죽었거나 풀에 반납된 뒤의 호출을 막는다.
         // 같은 프레임에 여러 몬스터가 겹치거나 스테이지가 끝난 뒤에도 판정이 한 번 더 들어올 수 있어,
         // 목숨이 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.

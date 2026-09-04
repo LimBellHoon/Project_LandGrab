@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 using UnityEngine;
 
@@ -38,7 +37,15 @@ namespace Client
         private List<int>       m_lstTrail      = new List<int>();    // 현재 그리는 중인 트레일 셀 인덱스(순서 보존)
 
         private int             m_iOwnedCount;
-        private int             m_iTotalCount;
+        private int             m_iPlayableCount;   // BLOCK을 뺀 칸 수 = 점령률의 분모
+
+        // 260904_맵 모양 마스크. Reset이 BLOCK을 되살려야 하므로 셀 상태와 따로 들고 있는다.
+        private bool[]          m_arrBlocked;
+
+        // 260904_바뀐 칸만 다시 그리기 위한 목록.
+        // 그리는 중에는 매 프레임 한두 칸만 바뀌는데 전체를 다시 찍으면 모바일에서 낭비가 크다.
+        // 점령처럼 한 번에 많이 바뀔 때는 목록 대신 IS_FULL_DIRTY로 전체 갱신을 요청한다.
+        private readonly List<int> m_lstDirtyCell = new List<int>();
 
         public int      WIDTH           => m_iWidth;
         public int      HEIGHT          => m_iHeight;
@@ -46,9 +53,14 @@ namespace Client
         public Vector2  ORIGIN          => m_vOrigin;
         public bool     IS_DRAWING      => m_lstTrail.Count > 0;
         public int      TRAIL_COUNT     => m_lstTrail.Count;
-        public float    OWNED_RATIO     => m_iTotalCount > 0 ? (float)m_iOwnedCount / m_iTotalCount : 0f;
+        public float    OWNED_RATIO     => m_iPlayableCount > 0 ? (float)m_iOwnedCount / m_iPlayableCount : 0f;
+        public int      PLAYABLE_COUNT  => m_iPlayableCount;
         /// <summary> 렌더러가 다시 그려야 하는지 여부. 렌더 후 Clear_Dirty()로 내린다. </summary>
         public bool     IS_DIRTY        { get; private set; }
+        /// <summary> true면 DIRTY_CELLS를 무시하고 전부 다시 그려야 한다. </summary>
+        public bool     IS_FULL_DIRTY   { get; private set; }
+        /// <summary> 마지막 렌더 이후 바뀐 칸 목록 (IS_FULL_DIRTY일 때는 비어 있다). </summary>
+        public IReadOnlyList<int> DIRTY_CELLS => m_lstDirtyCell;
 
         public Vector2  WORLD_SIZE      => new Vector2(m_iWidth * m_fCellSize, m_iHeight * m_fCellSize);
         public Vector2  WORLD_CENTER    => m_vOrigin + WORLD_SIZE * 0.5f;
@@ -56,7 +68,12 @@ namespace Client
         #region Initialize
         /// <param name="vOrigin"> 셀 (0,0)의 좌하단 월드 좌표 </param>
         /// <param name="iBorderThick"> 시작 시 점령된 외곽 테두리 두께(셀). 플레이어의 최초 안전 지대. </param>
-        public bool Initialize(int iWidth, int iHeight, float fCellSize, Vector2 vOrigin, int iBorderThick)
+        /// <param name="arrPlayable">
+        /// 260904_맵 모양 마스크. 길이 iWidth*iHeight, false인 칸은 BLOCK이 된다.
+        /// null이면 직사각형 전체를 쓴다.
+        /// </param>
+        public bool Initialize(int iWidth, int iHeight, float fCellSize, Vector2 vOrigin, int iBorderThick,
+                               bool[] arrPlayable = null)
         {
             if (iWidth <= 0 || iHeight <= 0 || fCellSize <= 0f)
             {
@@ -64,28 +81,44 @@ namespace Client
                 return false;
             }
 
+            int iCellCount = iWidth * iHeight;
+
+            if (arrPlayable != null && arrPlayable.Length != iCellCount)
+            {
+                Debug.LogError($"[CTerritoryGrid] 모양 마스크 길이가 맞지 않는다 : "
+                             + $"{arrPlayable.Length}, 기대 {iCellCount}");
+                return false;
+            }
+
             m_iWidth        = iWidth;
             m_iHeight       = iHeight;
             m_fCellSize     = fCellSize;
             m_vOrigin       = vOrigin;
-            m_iTotalCount   = iWidth * iHeight;
 
-            if (m_arrCell == null || m_arrCell.Length != m_iTotalCount)
+            if (m_arrCell == null || m_arrCell.Length != iCellCount)
             {
-                m_arrCell   = new CELL_STATE[m_iTotalCount];
-                m_arrRegion = new int[m_iTotalCount];
+                m_arrCell    = new CELL_STATE[iCellCount];
+                m_arrRegion  = new int[iCellCount];
+                m_arrBlocked = new bool[iCellCount];
             }
+
+            for (int i = 0; i < iCellCount; ++i)
+                m_arrBlocked[i] = arrPlayable != null && arrPlayable[i] == false;
 
             Reset(iBorderThick);
             return true;
         }
 
-        /// <summary> 전 셀을 EMPTY로 되돌리고 외곽 테두리만 OWNED로 채운다. </summary>
+        /// <summary>
+        /// 전 셀을 EMPTY로 되돌리고 외곽 테두리만 OWNED로 채운다.
+        /// 260904_모양 마스크로 잘라낸 BLOCK 칸은 그대로 두고 점령률 분모에서도 뺀다.
+        /// 웨이브가 넘어갈 때마다 이 함수로 판을 다시 깐다.
+        /// </summary>
         public void Reset(int iBorderThick)
         {
-            Array.Clear(m_arrCell, 0, m_arrCell.Length);
             m_lstTrail.Clear();
-            m_iOwnedCount = 0;
+            m_iOwnedCount    = 0;
+            m_iPlayableCount = 0;
 
             iBorderThick = Mathf.Clamp(iBorderThick, 1, Mathf.Min(m_iWidth, m_iHeight) / 2);
 
@@ -93,18 +126,31 @@ namespace Client
             {
                 for (int x = 0; x < m_iWidth; ++x)
                 {
+                    int iIndex = To_Index(x, y);
+
+                    if (m_arrBlocked[iIndex] == true)
+                    {
+                        m_arrCell[iIndex] = CELL_STATE.BLOCK;
+                        continue;
+                    }
+
+                    ++m_iPlayableCount;
+
                     bool bBorder = x < iBorderThick || y < iBorderThick
                                 || x >= m_iWidth - iBorderThick || y >= m_iHeight - iBorderThick;
 
                     if (bBorder == true)
                     {
-                        m_arrCell[To_Index(x, y)] = CELL_STATE.OWNED;
+                        m_arrCell[iIndex] = CELL_STATE.OWNED;
                         ++m_iOwnedCount;
+                        continue;
                     }
+
+                    m_arrCell[iIndex] = CELL_STATE.EMPTY;
                 }
             }
 
-            IS_DIRTY = true;
+            Set_FullDirty();
         }
         #endregion Initialize
 
@@ -171,6 +217,13 @@ namespace Client
             return m_arrCell[To_Index(x, y)];
         }
         public CELL_STATE Get_Cell(Vector2Int vCell) => Get_Cell(vCell.x, vCell.y);
+        /// <summary> 셀 인덱스로 바로 읽는다 — 렌더러가 나눗셈 없이 훑기 위한 것. </summary>
+        public CELL_STATE Get_Cell(int iIndex) => m_arrCell[iIndex];
+        public Vector2Int To_Cell(int iIndex) => new Vector2Int(iIndex % m_iWidth, iIndex / m_iWidth);
+
+        // 260904_맵 모양 마스크로 잘라낸 칸 — 플레이어도 몬스터도 못 들어간다.
+        public bool Is_Blocked(int x, int y) => Get_Cell(x, y) == CELL_STATE.BLOCK;
+        public bool Is_Blocked(Vector2Int vCell) => Is_Blocked(vCell.x, vCell.y);
 
         // 260902_영토의 '선'만 따라 이동
         /// <summary>
@@ -192,7 +245,28 @@ namespace Client
         }
         public bool Is_Boundary(Vector2Int vCell) => Is_Boundary(vCell.x, vCell.y);
 
-        public void Clear_Dirty() => IS_DIRTY = false;
+        public void Clear_Dirty()
+        {
+            IS_DIRTY      = false;
+            IS_FULL_DIRTY = false;
+            m_lstDirtyCell.Clear();
+        }
+
+        private void Set_CellDirty(int iIndex)
+        {
+            IS_DIRTY = true;
+
+            // 이미 전체 갱신이 예약돼 있으면 목록을 쌓아 봐야 버려진다.
+            if (IS_FULL_DIRTY == false)
+                m_lstDirtyCell.Add(iIndex);
+        }
+
+        private void Set_FullDirty()
+        {
+            IS_DIRTY      = true;
+            IS_FULL_DIRTY = true;
+            m_lstDirtyCell.Clear();
+        }
 
         // 260902_몬스터가 점령지 안에 갇혔을 때 빠져나올 곳을 찾는 용도
         /// <summary> vFrom에서 가장 가까운 eState 칸을 링 탐색으로 찾는다. </summary>
@@ -242,17 +316,19 @@ namespace Client
 
             m_arrCell[iIndex] = CELL_STATE.TRAIL;
             m_lstTrail.Add(iIndex);
-            IS_DIRTY = true;
+            Set_CellDirty(iIndex);
         }
 
         /// <summary> 사망 등으로 점령에 실패했을 때 그리던 선분을 되돌린다. </summary>
         public void Clear_Trail()
         {
             for (int i = 0; i < m_lstTrail.Count; ++i)
+            {
                 m_arrCell[m_lstTrail[i]] = CELL_STATE.EMPTY;
+                Set_CellDirty(m_lstTrail[i]);
+            }
 
             m_lstTrail.Clear();
-            IS_DIRTY = true;
         }
 
         /// <summary> 트레일의 마지막에서 두 번째 셀 — 180도 반전 입력을 막는 데 쓴다. </summary>
@@ -281,6 +357,11 @@ namespace Client
 
             switch (Get_Cell(vCell))
             {
+                // 260904_맵 밖으로 잘라낸 칸. 이동 판정(CMoveHandler.Can_Move)이 이미 막으므로
+                // 여기까지 오지 않지만, 혹시 오더라도 점령 판정으로 새지 않게 명시해 둔다.
+                case CELL_STATE.BLOCK:
+                    return STEP_RESULT.SAFE;
+
                 // 자기가 그리던 선을 밟았다
                 case CELL_STATE.TRAIL:
                     return STEP_RESULT.DEAD;
@@ -326,7 +407,7 @@ namespace Client
             int iRegionCount = Label_EmptyRegions();
             if (iRegionCount == 0)
             {
-                IS_DIRTY = true;
+                Set_FullDirty();
                 return iCapturedCount;
             }
 
@@ -350,7 +431,7 @@ namespace Client
                 ++iCapturedCount;
             }
 
-            IS_DIRTY = true;
+            Set_FullDirty();
             return iCapturedCount;
         }
 
