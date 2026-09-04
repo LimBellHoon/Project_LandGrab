@@ -248,6 +248,42 @@ UI는 Engine의 `CUI`를 상속해 오브젝트 풀과 캔버스 관리에 그�
 버튼은 프리팹에 넣어 둔 비활성 템플릿을 복제해 쓰고, 겉모습은 프리팹에서 정한다.
 `CGameInstance.Set_UICanvas(Field/Main/Popup)`를 먼저 불러야 UI가 붙을 자리가 생긴다.
 
+#### Engine이 강제하는 UI 규약 (260904 — 컴파일 에러로 확인)
+UI를 여는 함수는 **제네릭**이다. `T`가 인자에 안 나오므로 **타입을 반드시 적어야 한다.**
+
+```csharp
+CUI Open_UI<T>(CUIDesc cUIDesc, Transform trParent = null)   // 반환은 T가 아니라 CUI
+```
+
+`Open_UI(cDesc, tr)`처럼 쓰면 `CS0411`(타입 인자 추론 실패)이 난다 → `Open_UI<CUI_Popup>(cDesc, tr)`.
+
+**더 중요한 건 프리팹 이름을 Engine이 덮어쓴다는 점이다.** `CUI_Manager.Open<T>`의 첫 줄이
+
+```csharp
+cUIDesc.strPrefabName = "Prefab_" + Engine_Utility.Convert_TypeToString<T>();
+```
+
+이고 `Convert_TypeToString<T>()`는 `typeof(T).Name`에서 **맨 앞 `C` 하나만** 떼어낸다.
+따라서 Desc에 무슨 이름을 적든 무시되고 **Addressable 주소가 `Prefab_<C 뗀 클래스명>`이어야** 로드된다.
+
+| 클래스 | 강제되는 프리팹 주소 |
+|---|---|
+| `CUI_StageSelect` | `Prefab_UI_StageSelect` |
+| `CUI_InGame` | `Prefab_UI_InGame` |
+| `CUI_Popup` | `Prefab_UI_Popup` |
+
+이름이 어긋나면 컴파일은 통과하고 **런타임에 조용히 UI가 안 뜬다.**
+그래서 `CGameManager`의 `PREFAB_UI_*` 상수와 `CProtoSetup`의 주소는 이 규칙을 그대로 따른다.
+
+액터(`Reuse_Object`)는 이 규칙을 타지 않는다 — `strPrefabName`을 적은 대로 쓴다(`Prefab_Player` 등).
+
+곁들여 확인한 것들:
+- `trParent`는 **선택 인자**다. 안 넘기면 `eObjectType`으로 캔버스를 알아서 찾는다.
+- `CLayer.Reuse_GameObject`는 **풀에서 꺼낸 경우에도 `Initialize(desc)`를 부른다.**
+  그래서 `Hide()`에서 참조를 끊어도 다음 재사용 때 되살아난다.
+- `Close_UI`는 오버로드가 둘이다 — 제네릭 `Close_UI<T>()`와 인스턴스 `Close_UI(CUI)`.
+  우리는 연 것을 그대로 닫으므로 후자를 쓴다.
+
 **일시정지 / 결과 화면은 `CUI_Popup` 하나를 돌려쓴다** (Popup 캔버스).
 제목·본문·버튼 두 개가 전부이고 무엇을 보여줄지는 `CUI_PopupDesc`가 정한다 —
 팝업이 늘어도 클래스와 프리팹을 새로 만들지 않기 위해서다.

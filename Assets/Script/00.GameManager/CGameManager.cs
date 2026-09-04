@@ -16,9 +16,15 @@ namespace Client
     /// </summary>
     public class CGameManager : SingletonBase_MonoBehaviour<CGameManager>
     {
-        private const string PREFAB_UI_STAGE_SELECT = "UI_StageSelect";
-        private const string PREFAB_UI_INGAME       = "UI_InGame";
-        private const string PREFAB_UI_POPUP        = "UI_Popup";
+        // 260904_UI 프리팹 이름은 Engine이 정한다 — 우리가 Desc에 적어도 덮어쓴다.
+        // Engine.CUI_Manager.Open<T>가 첫 줄에서 이렇게 한다:
+        //     cUIDesc.strPrefabName = "Prefab_" + Engine_Utility.Convert_TypeToString<T>();
+        // Convert_TypeToString은 typeof(T).Name에서 맨 앞 'C'만 떼어낸다.
+        // 따라서 CUI_StageSelect → "Prefab_UI_StageSelect"가 강제된다.
+        // 여기 상수는 Has_Prefab 사전 검사에만 쓰므로 그 규칙과 반드시 같아야 한다.
+        private const string PREFAB_UI_STAGE_SELECT = "Prefab_UI_StageSelect";
+        private const string PREFAB_UI_INGAME       = "Prefab_UI_InGame";
+        private const string PREFAB_UI_POPUP        = "Prefab_UI_Popup";
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
@@ -194,16 +200,16 @@ namespace Client
                 return;
             }
 
+            // strPrefabName은 Engine이 T로 채우므로 여기서 적지 않는다(위 상수 주석 참고).
             CUI_StageSelectDesc cDesc = new CUI_StageSelectDesc
             {
                 eObjectType     = OBJECT_TYPE.UI_MAIN,
-                strPrefabName   = PREFAB_UI_STAGE_SELECT,
                 cMapTable       = m_cMapTable,
                 cProgress       = m_cProgressManager,
                 OnSelect        = Start_Stage,
             };
 
-            m_cStageSelectUI = m_cGameInstance.Open_UI(cDesc, m_trUIMain);
+            m_cStageSelectUI = m_cGameInstance.Open_UI<CUI_StageSelect>(cDesc, m_trUIMain);
         }
 
         private void Close_StageSelect()
@@ -267,13 +273,12 @@ namespace Client
             CUI_InGameDesc cDesc = new CUI_InGameDesc
             {
                 eObjectType     = OBJECT_TYPE.UI_FIELD,
-                strPrefabName   = PREFAB_UI_INGAME,
                 cPlayer         = m_cStageManager.PLAYER,
                 cStage          = m_cStageManager,
                 OnPause         = Pause_Stage,
             };
 
-            m_cInGameUI = m_cGameInstance.Open_UI(cDesc, m_trUIField);
+            m_cInGameUI = m_cGameInstance.Open_UI<CUI_InGame>(cDesc, m_trUIField);
         }
 
         private void Close_InGameUI()
@@ -357,10 +362,9 @@ namespace Client
                 return;
             }
 
-            cDesc.eObjectType   = OBJECT_TYPE.UI_POPUP;
-            cDesc.strPrefabName = PREFAB_UI_POPUP;
+            cDesc.eObjectType = OBJECT_TYPE.UI_POPUP;
 
-            m_cPopupUI = m_cGameInstance.Open_UI(cDesc, m_trUIPopup);
+            m_cPopupUI = m_cGameInstance.Open_UI<CUI_Popup>(cDesc, m_trUIPopup);
         }
 
         private void Close_Popup()

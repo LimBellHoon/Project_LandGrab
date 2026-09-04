@@ -54,13 +54,18 @@ namespace Client
         private const string PATH_PREFAB_PROJECTILE = DIR_PREFAB + "/Prefab_Projectile.prefab";
         private const string PATH_PREFAB_WEB        = DIR_PREFAB + "/Prefab_Web.prefab";
         // 260904_스테이지 선택 UI
-        private const string PATH_PREFAB_UI_SELECT  = DIR_PREFAB + "/UI_StageSelect.prefab";
-        private const string UI_STAGE_SELECT        = "UI_StageSelect";
+        // 260904_UI 프리팹 이름은 Engine이 강제한다.
+        // Engine.CUI_Manager.Open<T>가 Desc의 strPrefabName을
+        //     "Prefab_" + Engine_Utility.Convert_TypeToString<T>()   (typeof(T).Name에서 앞 'C' 제거)
+        // 로 덮어쓰고, 그 이름으로 프리팹을 찾는다.
+        // 그래서 Addressable 주소가 반드시 "Prefab_UI_StageSelect" 꼴이어야 한다.
+        private const string PATH_PREFAB_UI_SELECT  = DIR_PREFAB + "/Prefab_UI_StageSelect.prefab";
+        private const string UI_STAGE_SELECT        = "Prefab_UI_StageSelect";
         // 260904_인게임 HUD (가상 조이스틱)
-        private const string PATH_PREFAB_UI_INGAME  = DIR_PREFAB + "/UI_InGame.prefab";
-        private const string UI_INGAME              = "UI_InGame";
-        private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/UI_Popup.prefab";
-        private const string UI_POPUP               = "UI_Popup";
+        private const string PATH_PREFAB_UI_INGAME  = DIR_PREFAB + "/Prefab_UI_InGame.prefab";
+        private const string UI_INGAME              = "Prefab_UI_InGame";
+        private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
+        private const string UI_POPUP               = "Prefab_UI_Popup";
         private const string PATH_TEX_JOY_BASE      = DIR_ART + "/Tex_JoystickBase.png";
         private const string PATH_TEX_JOY_HANDLE    = DIR_ART + "/Tex_JoystickHandle.png";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
@@ -85,6 +90,7 @@ namespace Client
             Ensure_Folder(DIR_SCENE);
             Ensure_Folder(DIR_DATA);
 
+            Delete_LegacyUIPrefabs();
             Create_Sprites();
             Create_Prefabs();
             Setup_Addressables();
@@ -92,6 +98,27 @@ namespace Client
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[CProtoSetup] 에셋 셋업 완료 (스프라이트 / 프리팹 / Addressable)");
+        }
+
+        // 260904_UI 프리팹 이름을 Engine 규칙("Prefab_" + T)에 맞추면서 옛 이름의 산출물이 남는다.
+        // 주소가 달라 로드되지도 않는데 Addressable 목록에는 남아 헷갈리므로 여기서 지운다.
+        private static readonly string[] ARR_LEGACY_UI_PREFAB =
+        {
+            DIR_PREFAB + "/UI_StageSelect.prefab",
+            DIR_PREFAB + "/UI_InGame.prefab",
+            DIR_PREFAB + "/UI_Popup.prefab",
+        };
+
+        private static void Delete_LegacyUIPrefabs()
+        {
+            foreach (string strPath in ARR_LEGACY_UI_PREFAB)
+            {
+                if (AssetDatabase.LoadAssetAtPath<GameObject>(strPath) == null)
+                    continue;
+
+                AssetDatabase.DeleteAsset(strPath);
+                Debug.Log($"[CProtoSetup] 옛 이름의 UI 프리팹을 정리했습니다 — {strPath}");
+            }
         }
 
         // 260903_에셋이 실제로 로드되는지 확인 (Play 전에 프리팹 누락을 잡는 용도)
