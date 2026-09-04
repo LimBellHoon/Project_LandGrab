@@ -20,9 +20,12 @@ namespace Client
         public float            fTurnRate;      // 선회 속도 (초당 라디안)
         public float            fHitRange;      // 플레이어와의 충돌 반경 (셀)
 
-        public float            fGimmickCool;   // 기믹 재사용 대기 (초)
-        public float            fGimmickValue;  // 기믹별 의미가 다른 수치 — CSV 메모 칸 참고
-        public float            fGimmickRange;  // 기믹 사거리 (셀)
+        // 기믹마다 의미가 다르다 — EnemyInfo.csv 머리의 주석을 볼 것.
+        public float            fGimmickCool;       // 발동 주기 (초)
+        public float            fGimmickValue;      // 주 수치 (탄속 / 속도배율 / 소환 마리수)
+        public float            fGimmickRange;      // 사거리 (셀)
+        public float            fGimmickDuration;   // 지속 시간 (초)
+        public int              iGimmickRefID;      // 참조할 몬스터 ID (SPAWN의 소환 대상)
     }
 
     /// <summary>
@@ -67,6 +70,8 @@ namespace Client
                 fGimmickCool    = CCSV_Utility.To_Float(arrField, 8),
                 fGimmickValue   = CCSV_Utility.To_Float(arrField, 9),
                 fGimmickRange   = CCSV_Utility.To_Float(arrField, 10),
+                fGimmickDuration= CCSV_Utility.To_Float(arrField, 11),
+                iGimmickRefID   = CCSV_Utility.To_Int(arrField, 12),
             };
 
             if (cInfo.iEnemyID <= 0)

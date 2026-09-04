@@ -25,6 +25,7 @@ namespace Client
         private Vector2Int      m_vLastSafeCell;        // 안전 지대를 벗어나기 직전 셀 — 사망 시 복귀 지점
         private int             m_iLife;
         private float           m_fInvincibleTimer;
+        private float           m_fBaseSpeed;       // 260904_거미줄 감속의 기준이 되는 원래 속도
 
         public int          LIFE            => m_iLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
@@ -54,6 +55,7 @@ namespace Client
             m_iLife             = cDesc.iLife;
             m_fInvincibleTimer  = 0f;
             m_vLastSafeCell     = cDesc.vStartCell;
+            m_fBaseSpeed        = cDesc.fMoveSpeed;
 
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
                 return false;
@@ -120,6 +122,13 @@ namespace Client
                     m_vLastSafeCell = vCell;
                     break;
             }
+        }
+
+        // 260904_거미줄 감속. 스테이지가 매 프레임 '지금 밟고 있는 칸'을 보고 넣어 준다.
+        /// <param name="fScale"> 원래 속도에 곱할 값. 1이면 감속 없음. </param>
+        public void Set_SpeedScale(float fScale)
+        {
+            m_cMoveHandler.SPEED = m_fBaseSpeed * Mathf.Max(0.1f, fScale);
         }
 
         // 260904_웨이브가 넘어가면 판을 새로 깔기 때문에 플레이어도 새 시작 칸으로 옮겨야 한다.

@@ -88,11 +88,12 @@ Assets/
 └── Script/
     ├── 00.GameManager/     CGameManager
     ├── 01.UI/              CDebugHUD
-    ├── 02.GameObject/      CPlayer, CEnemy  (Engine.CGameObject 상속)
+    ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler, CInputHandler
+    │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility
     ├── 98.Manager/         CStage_Manager
-    └── 99.Defines/         Client_Enum, Client_Desc
+    └── 99.Defines/         Client_Enum, Client_Desc, Client_Interface
 
 Assets/Data/                EnemyInfo.csv, MapInfo.csv  ← 기획 데이터
 ```
@@ -165,11 +166,38 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 `strShapeMask` 텍스처의 밝은 픽셀만 플레이 가능한 칸이 되고, 나머지는 `CELL_STATE.BLOCK`이 된다.
 BLOCK은 플레이어·몬스터 모두 못 들어가고 점령률 분모에서도 빠진다. `-`이면 직사각형 전체.
 
-### 2-6. 스테이지 수명 주기
+### 2-6. 몬스터 기믹 (260904)
+기믹은 **상속이 아니라 조합**이다. `CEnemy`가 `CEnemyGimmick` 모듈을 하나 들고 있고,
+`EnemyInfo.csv`의 `eGimmick` 한 칸으로 무엇을 붙일지 정한다.
+그래서 몬스터 종류가 늘어도 **프리팹은 `Prefab_Enemy` 하나면 된다.**
+
+```
+CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
+       └─ CEnemyGimmick       (쿨타임 → 발동)   ← eGimmick으로 결정, NONE이면 null
+```
+
+기믹은 소환물을 **직접 만들지 않는다.** `IGimmickHost`(`99.Defines/Client_Interface.cs`)로
+스테이지에 요청만 하고, 실제 생성·수명·플레이어 충돌은 `CStage_Manager`가 한곳에서 본다.
+그래야 웨이브가 넘어갈 때 통째로 회수할 수 있다.
+
+| 기믹 | Cool | Value | Range | Duration | RefID |
+|---|---|---|---|---|---|
+| `WEB` | 설치주기 | 플레이어 속도배율 | — | 거미줄 지속 | — |
+| `PROJECTILE` | 발사주기 | 탄속(셀/초) | 사거리(셀) | 탄 수명 | — |
+| `SPAWN` | 소환주기 | 소환 마리수 | — | — | 소환할 몬스터 ID |
+
+- 투사체·거미줄은 `OBJECT_TYPE.ENEMY_EFFECT` 레이어에 올라간다.
+  스테이지가 끝날 때 이 레이어도 함께 세워야 탄이 계속 날아가지 않는다(2-7).
+- 거미줄만 플레이어가 안전 지대에 있어도 계속 깔린다. 나머지는 플레이어가 나와 있을 때만 발동한다.
+- `SPAWN`의 `RefID`가 다시 `SPAWN` 몬스터를 가리키면 무한히 늘어나므로
+  `CStage_Manager.MAX_ENEMY`(32)로 총량을 막는다.
+
+### 2-7. 스테이지 수명 주기
 `CStage_Manager.Tick`은 `STAGE_STATE.PLAYING`일 때만 규칙을 돌리지만,
 **플레이어·몬스터의 `Tick`은 Engine의 레이어가 직접 돌린다.** 스테이지 상태만 바꿔서는 액터가 멈추지 않는다.
 그래서 `Set_State`가 CLEAR/FAIL로 넘어갈 때 `Set_LayerTimeScale(PLAYER/ENEMY, 0)`으로 두 레이어를 세우고,
 `Start_Stage`/`Release`에서 1로 되돌린다 (260904). 액터를 멈춰야 하는 기능은 이 경로를 쓸 것 — 별도 정지 플래그를 만들지 말 것.
+기믹 소환물이 올라가는 `ENEMY_EFFECT` 레이어도 같은 함수(`Set_ActorTimeScale`)가 함께 처리한다.
 
 ---
 

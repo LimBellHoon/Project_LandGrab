@@ -46,6 +46,11 @@ namespace Client
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
         private const string PATH_PREFAB     = DIR_PREFAB + "/Prefab_Player.prefab";
         private const string PATH_PREFAB_ENEMY = DIR_PREFAB + "/Prefab_Enemy.prefab";
+        // 260904_기믹 소환물
+        private const string PATH_TEX_PROJECTILE  = DIR_ART + "/Tex_Projectile.png";
+        private const string PATH_TEX_WEB         = DIR_ART + "/Tex_Web.png";
+        private const string PATH_PREFAB_PROJECTILE = DIR_PREFAB + "/Prefab_Projectile.prefab";
+        private const string PATH_PREFAB_WEB        = DIR_PREFAB + "/Prefab_Web.prefab";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
 
         [MenuItem("Tools/LandGrab/Setup Prototype (씬까지 새로 만듦)")]
@@ -85,6 +90,8 @@ namespace Client
 
             iFail += Validate_ActorPrefab(PATH_PREFAB, "Prefab_Player", typeof(CPlayer));
             iFail += Validate_ActorPrefab(PATH_PREFAB_ENEMY, "Prefab_Enemy", typeof(CEnemy));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_PROJECTILE, "Prefab_Projectile", typeof(CProjectile));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
 
             // 260904_CSV 테이블과 웨이브 이미지가 빠지면 스테이지가 통째로 안 뜬다.
             iFail += Validate_CsvTables();
@@ -283,6 +290,46 @@ namespace Client
             Import_AsSprite(PATH_TEX_BG, 100, true);
 
             Create_LayerTextures(BG_W, BG_H);
+
+            // 260904_기믹 소환물. 탄은 작고 밝게, 거미줄은 성기게 비치도록 반투명하게.
+            Write_Png(PATH_TEX_PROJECTILE, Make_CircleTexture(32, new Color(1f, 0.55f, 0.2f)));
+            Import_AsSprite(PATH_TEX_PROJECTILE, 32);
+
+            Write_Png(PATH_TEX_WEB, Make_WebTexture(64));
+            Import_AsSprite(PATH_TEX_WEB, 64);
+        }
+
+        /// <summary> 거미줄 — 방사선 + 동심원. 반투명이라 아래 가림막이 비친다. </summary>
+        private static Texture2D Make_WebTexture(int iSize)
+        {
+            Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
+            Vector2 vCenter = new Vector2(iSize * 0.5f, iSize * 0.5f);
+            float fRadius = iSize * 0.5f - 1f;
+
+            for (int y = 0; y < iSize; ++y)
+            {
+                for (int x = 0; x < iSize; ++x)
+                {
+                    Vector2 vPos = new Vector2(x + 0.5f, y + 0.5f) - vCenter;
+                    float fDist = vPos.magnitude;
+
+                    if (fDist > fRadius)
+                    {
+                        tex.SetPixel(x, y, Color.clear);
+                        continue;
+                    }
+
+                    float fAngle = Mathf.Atan2(vPos.y, vPos.x) / Mathf.PI * 4f;   // 8방향 방사선
+                    bool bSpoke = Mathf.Abs(Mathf.Repeat(fAngle, 1f) - 0.5f) > 0.42f;
+                    bool bRing  = Mathf.Repeat(fDist / fRadius * 3f, 1f) < 0.18f;
+
+                    Color cColor = new Color(0.85f, 0.92f, 1f, bSpoke || bRing ? 0.75f : 0.08f);
+                    tex.SetPixel(x, y, cColor);
+                }
+            }
+
+            tex.Apply();
+            return tex;
         }
 
         // 260904_웨이브 이미지 스택.
@@ -467,6 +514,9 @@ namespace Client
         {
             Create_ActorPrefab<CPlayer>("Prefab_Player", PATH_TEX_PLAYER, PATH_PREFAB, 20);
             Create_ActorPrefab<CEnemy>("Prefab_Enemy", PATH_TEX_ENEMY, PATH_PREFAB_ENEMY, 15);
+            // 260904_탄은 몬스터보다 앞에, 거미줄은 바닥에 깔리도록 정렬 순서를 나눈다.
+            Create_ActorPrefab<CProjectile>("Prefab_Projectile", PATH_TEX_PROJECTILE, PATH_PREFAB_PROJECTILE, 18);
+            Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -505,6 +555,8 @@ namespace Client
 
             Regist_Addressable(cSettings, PATH_PREFAB, "Prefab_Player", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_PROJECTILE, "Prefab_Projectile", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
             for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)

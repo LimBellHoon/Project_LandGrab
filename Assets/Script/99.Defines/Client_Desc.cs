@@ -49,6 +49,42 @@ namespace Client
         public float            fGimmickCool    { get; set; }
         public float            fGimmickValue   { get; set; }
         public float            fGimmickRange   { get; set; }
+        public float            fGimmickDuration{ get; set; }
+        public int              iGimmickRefID   { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
+
+    // 260904_몬스터 기믹이 소환하는 것들
+    /// <summary> CProjectile 생성 Desc. 속도·사거리는 셀 단위로 받아 안에서 월드로 환산한다. </summary>
+    public class CProjectileDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid       { get; set; }
+        public Vector2          vStartPos   { get; set; }
+        public Vector2          vDir        { get; set; }
+        public float            fSpeed      { get; set; }   // 초당 셀
+        public float            fLifeTime   { get; set; }   // 초
+        public float            fMaxRange   { get; set; }   // 셀. 0 이하면 수명까지 날아간다
+        public float            fHitRange   { get; set; }   // 셀
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
+
+    /// <summary> CWeb 생성 Desc. 밟은 플레이어를 fSlowRatio 배로 느리게 만든다. </summary>
+    public class CWebDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid       { get; set; }
+        public Vector2Int       vCell       { get; set; }
+        public float            fLifeTime   { get; set; }   // 초
+        public float            fSlowRatio  { get; set; }   // 1이면 감속 없음
 
         public override void OnReturn()
         {

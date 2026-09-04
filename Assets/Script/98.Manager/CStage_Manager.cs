@@ -15,10 +15,19 @@ namespace Client
     /// 웨이브: N웨이브를 fClearRatio만큼 점령하면 그리드를 다시 깔고 이미지 스택을 한 장 벗긴다.
     /// 마지막 웨이브까지 넘기면 CLEAR.
     /// </summary>
-    public class CStage_Manager
+    public class CStage_Manager : IGimmickHost
     {
         private const string PREFAB_PLAYER      = "Prefab_Player";
+        private const string PREFAB_PROJECTILE  = "Prefab_Projectile";
+        private const string PREFAB_WEB         = "Prefab_Web";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
+
+        // 260904_소환 기믹의 안전장치. RefID가 다시 SPAWN 몬스터를 가리키면 끝없이 늘어난다.
+        // 규칙 값이 아니라 사고 방지용 상한이라 CSV로 빼지 않는다.
+        private const int    MAX_ENEMY          = 32;
+
+        // 탄의 충돌 반경(셀). 몬스터와 달리 종류가 하나뿐이라 CSV로 뺄 이유가 아직 없다.
+        private const float  PROJECTILE_HIT_RANGE = 0.7f;
 
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
@@ -26,12 +35,17 @@ namespace Client
         private readonly List<CEnemy>       m_lstEnemy      = new List<CEnemy>();
         private readonly List<Vector2Int>   m_lstEnemyCell  = new List<Vector2Int>();  // 점령 판정용 재사용 버퍼
 
+        // 260904_기믹이 소환한 것들. 수명과 충돌을 여기서 한꺼번에 본다.
+        private readonly List<CProjectile>  m_lstProjectile = new List<CProjectile>();
+        private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
+
         private CMapInfo            m_cMapInfo;
         private CCSVData_EnemyInfo  m_cEnemyTable;
         private CPlayer             m_cPlayer;
         private STAGE_STATE         m_eState = STAGE_STATE.READY;
         private int                 m_iWave;
         private float               m_fRemainTime;
+        private bool                m_bPlayerExposed;   // 기믹 발동 조건 — 매 프레임 Tick_Enemy가 갱신한다
 
         public CTerritoryGrid   GRID            => m_cGrid;
         public CPlayer          PLAYER          => m_cPlayer;
@@ -172,6 +186,8 @@ namespace Client
                 return;
 
             Tick_Enemy();
+            Tick_Projectile();
+            Tick_Web();
 
             m_fRemainTime -= fDeltaTime;
             if (m_fRemainTime <= 0f)
@@ -319,21 +335,24 @@ namespace Client
 
                 for (int n = 0; n < cEntry.iCount; ++n)
                 {
-                    Spawn_Enemy(cInfo, iSpawned, iTotal);
+                    Spawn_Enemy(cInfo, Find_EnemySpawnCell(iSpawned, iTotal), Get_EnemySpawnDir(iSpawned));
                     ++iSpawned;
                 }
             }
         }
 
-        private void Spawn_Enemy(CEnemyInfo cInfo, int iIndex, int iTotal)
+        private void Spawn_Enemy(CEnemyInfo cInfo, Vector2Int vCell, Vector2 vDir)
         {
+            if (m_lstEnemy.Count >= MAX_ENEMY)
+                return;
+
             CEnemyDesc cEnemyDesc = new CEnemyDesc
             {
                 eObjectType     = OBJECT_TYPE.ENEMY,
                 strPrefabName   = cInfo.strPrefabName,
                 cGrid           = m_cGrid,
-                vStartCell      = Find_EnemySpawnCell(iIndex, iTotal),
-                vStartDir       = Get_EnemySpawnDir(iIndex),
+                vStartCell      = vCell,
+                vStartDir       = vDir,
                 iEnemyID        = cInfo.iEnemyID,
                 eGimmick        = cInfo.eGimmick,
                 fSpeed          = cInfo.fSpeed,
@@ -343,6 +362,8 @@ namespace Client
                 fGimmickCool    = cInfo.fGimmickCool,
                 fGimmickValue   = cInfo.fGimmickValue,
                 fGimmickRange   = cInfo.fGimmickRange,
+                fGimmickDuration= cInfo.fGimmickDuration,
+                iGimmickRefID   = cInfo.iGimmickRefID,
             };
 
             GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
@@ -359,19 +380,28 @@ namespace Client
                 return;
             }
 
+            cEnemy.Set_GimmickHost(this);
             m_lstEnemy.Add(cEnemy);
         }
 
-        /// <summary> 웨이브가 바뀔 때 이전 몬스터를 풀에 돌려준다. </summary>
+        /// <summary> 웨이브가 바뀔 때 몬스터와 기믹 소환물을 전부 풀에 돌려준다. </summary>
         private void Collect_Enemies()
         {
-            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            Collect_All(m_lstEnemy);
+            Collect_All(m_lstProjectile);
+            Collect_All(m_lstWeb);
+        }
+
+        // 목록 세 개가 같은 일을 하므로 하나로 묶는다.
+        private static void Collect_All<T>(List<T> lstObject) where T : CGameObject
+        {
+            for (int i = 0; i < lstObject.Count; ++i)
             {
-                if (m_lstEnemy[i] != null)
-                    CGameInstance.Instance.Collect_Object(m_lstEnemy[i]);
+                if (lstObject[i] != null)
+                    CGameInstance.Instance.Collect_Object(lstObject[i]);
             }
 
-            m_lstEnemy.Clear();
+            lstObject.Clear();
         }
 
         // 플레이어 시작 지점(아래쪽)에서 멀리 떨어진 가운데~위쪽 대역에 고르게 배치한다.
@@ -405,6 +435,8 @@ namespace Client
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
             bool bHit = false;
+
+            m_bPlayerExposed = bExposed;
 
             // 260904_피격이 확정돼도 루프를 끊지 않는다 — break로 빠지면 뒤쪽 몬스터의 추적 상태가 갱신되지
             // 않아, 플레이어가 안전 지대로 돌아간 뒤에도 한 프레임 더 추적 속도로 달려든다.
@@ -447,6 +479,151 @@ namespace Client
         }
         #endregion 몬스터
 
+        #region 기믹 소환물 (IGimmickHost)
+        // 260904_투사체·거미줄·부하는 전부 여기서 만들고 여기서 회수한다.
+        // 기믹 모듈이 직접 풀을 만지면 웨이브가 넘어갈 때 회수할 방법이 없어진다.
+        public bool IS_PLAYER_EXPOSED => m_bPlayerExposed;
+
+        public void Spawn_Projectile(Vector2 vPos, Vector2 vDir, float fSpeed, float fRange, float fLifeTime)
+        {
+            if (Has_Prefab(PREFAB_PROJECTILE) == false)
+                return;
+
+            CProjectileDesc cDesc = new CProjectileDesc
+            {
+                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName   = PREFAB_PROJECTILE,
+                cGrid           = m_cGrid,
+                vStartPos       = vPos,
+                vDir            = vDir,
+                fSpeed          = fSpeed,
+                fMaxRange       = fRange,
+                fLifeTime       = fLifeTime,
+                fHitRange       = PROJECTILE_HIT_RANGE,
+            };
+
+            GameObject goProjectile = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goProjectile == null)
+                return;
+
+            CProjectile cProjectile = goProjectile.GetComponent<CProjectile>();
+            if (cProjectile != null)
+                m_lstProjectile.Add(cProjectile);
+        }
+
+        public void Spawn_Web(Vector2Int vCell, float fLifeTime, float fSlowRatio)
+        {
+            if (Has_Prefab(PREFAB_WEB) == false)
+                return;
+
+            // 같은 칸에 겹쳐 깔아 봐야 효과는 같고 오브젝트만 는다.
+            for (int i = 0; i < m_lstWeb.Count; ++i)
+            {
+                if (m_lstWeb[i].CELL == vCell)
+                    return;
+            }
+
+            CWebDesc cDesc = new CWebDesc
+            {
+                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName   = PREFAB_WEB,
+                cGrid           = m_cGrid,
+                vCell           = vCell,
+                fLifeTime       = fLifeTime,
+                fSlowRatio      = fSlowRatio,
+            };
+
+            GameObject goWeb = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goWeb == null)
+                return;
+
+            CWeb cWeb = goWeb.GetComponent<CWeb>();
+            if (cWeb != null)
+                m_lstWeb.Add(cWeb);
+        }
+
+        public void Spawn_Minion(int iEnemyID, int iCount, Vector2 vPos)
+        {
+            if (m_cEnemyTable == null)
+                return;
+
+            CEnemyInfo cInfo = m_cEnemyTable.Get_Info(iEnemyID);
+            if (cInfo == null || Has_Prefab(cInfo.strPrefabName) == false)
+                return;
+
+            Vector2Int vFrom = m_cGrid.World_ToCell(vPos);
+
+            for (int i = 0; i < iCount; ++i)
+            {
+                // 소환된 자리가 점령지면 몬스터가 갇힌다 — 가장 가까운 미점령 칸을 찾아 준다.
+                if (m_cGrid.Try_Find_NearestCell(vFrom, CELL_STATE.EMPTY, SPAWN_SEARCH_RADIUS,
+                                                 out Vector2Int vCell) == false)
+                    return;
+
+                Spawn_Enemy(cInfo, vCell, Get_EnemySpawnDir(m_lstEnemy.Count));
+            }
+        }
+
+        private void Tick_Projectile()
+        {
+            Vector2 vPlayerPos = m_cPlayer != null ? (Vector2)m_cPlayer.transform.position : Vector2.zero;
+            bool bHit = false;
+
+            // 뒤에서부터 지운다 — 앞에서 지우면 인덱스가 밀린다.
+            for (int i = m_lstProjectile.Count - 1; i >= 0; --i)
+            {
+                CProjectile cProjectile = m_lstProjectile[i];
+
+                if (cProjectile == null || cProjectile.IS_EXPIRED == true)
+                {
+                    if (cProjectile != null)
+                        CGameInstance.Instance.Collect_Object(cProjectile);
+
+                    m_lstProjectile.RemoveAt(i);
+                    continue;
+                }
+
+                // 몬스터 충돌과 같은 규칙 — 땅을 먹으러 나와 있을 때만 맞는다.
+                // 탄은 점령지에 닿는 순간 사라지므로 안전 지대까지 쫓아오지 못한다.
+                if (m_bPlayerExposed == true
+                    && Vector2.Distance(cProjectile.POS, vPlayerPos) <= cProjectile.HIT_RANGE * m_cGrid.CELL_SIZE)
+                {
+                    bHit = true;
+                    cProjectile.Expire();
+                }
+            }
+
+            if (bHit == true && m_cPlayer != null)
+                m_cPlayer.Damage();
+        }
+
+        private void Tick_Web()
+        {
+            Vector2Int vPlayerCell = m_cPlayer != null ? m_cPlayer.CUR_CELL : Vector2Int.zero;
+            float fSlowRatio = 1f;
+
+            for (int i = m_lstWeb.Count - 1; i >= 0; --i)
+            {
+                CWeb cWeb = m_lstWeb[i];
+
+                if (cWeb == null || cWeb.IS_EXPIRED == true)
+                {
+                    if (cWeb != null)
+                        CGameInstance.Instance.Collect_Object(cWeb);
+
+                    m_lstWeb.RemoveAt(i);
+                    continue;
+                }
+
+                if (cWeb.CELL == vPlayerCell)
+                    fSlowRatio = Mathf.Min(fSlowRatio, cWeb.SLOW_RATIO);
+            }
+
+            // 밟고 있지 않으면 1이 들어가 원래 속도로 돌아온다.
+            m_cPlayer?.Set_SpeedScale(fSlowRatio);
+        }
+        #endregion 기믹 소환물 (IGimmickHost)
+
         #region 콜백
         private void On_PlayerCapture(int iCapturedCount)
         {
@@ -471,6 +648,8 @@ namespace Client
         {
             CGameInstance.Instance.Set_LayerTimeScale(OBJECT_TYPE.PLAYER, fTimeScale);
             CGameInstance.Instance.Set_LayerTimeScale(OBJECT_TYPE.ENEMY, fTimeScale);
+            // 260904_투사체·거미줄은 ENEMY_EFFECT 레이어에 올라간다. 같이 세우지 않으면 탄만 계속 날아간다.
+            CGameInstance.Instance.Set_LayerTimeScale(OBJECT_TYPE.ENEMY_EFFECT, fTimeScale);
         }
 
         private void Set_State(STAGE_STATE eState)
