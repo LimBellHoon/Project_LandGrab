@@ -87,7 +87,7 @@ Assets/
 ├── Editor/                 CProtoSetup(씬·프리팹·Addressable 자동 생성), CProtoTest(코어 테스트)
 └── Script/
     ├── 00.GameManager/     CGameManager
-    ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame (Engine.CUI 상속)
+    ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame, CUI_Popup (Engine.CUI 상속)
     ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
     │                       CInputHandler, CVirtualJoystick
@@ -163,6 +163,22 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 그래서 **가림막·모양 마스크로 쓰는 텍스처는 임포트 설정에서 Read/Write Enabled가 켜져 있어야 한다.**
 셀 하나는 `PIXEL_PER_CELL`(현재 4)픽셀로 찍는다.
 
+#### 보상 공개 연출 (260904)
+웨이브를 넘길 때 바로 갈아 끼우지 않는다. **드러나는 순간이 이 게임 재미의 전부**라
+그냥 툭 바꾸면 남는 게 없기 때문이다. `CStage_Manager`가 3단계로 돌린다.
+
+```
+REVEAL(0.5초)  가림막 알파 1→0   보상이 전부 드러남
+HOLD  (0.9초)  그대로 유지        감상할 틈
+COVER (0.5초)  알파 0→1          다음 가림막이 덮임 (그 사이 Reset + 텍스처 교체)
+```
+
+마지막 웨이브면 COVER 없이 **드러난 채로 CLEAR**로 끝난다.
+연출 중에는 액터를 세우고 제한 시간도 멈춘다 — 연출 때문에 시간을 잃으면 억울하다.
+
+알파는 마스크 텍스처를 다시 찍지 않고 **`SpriteRenderer.color`만** 건드린다
+(`CGridRenderer.Set_CoverAlpha`). 매 프레임 픽셀을 다시 올리면 모바일에서 감당이 안 된다.
+
 #### 맵 모양 마스크
 `strShapeMask` 텍스처의 밝은 픽셀만 플레이 가능한 칸이 되고, 나머지는 `CELL_STATE.BLOCK`이 된다.
 BLOCK은 플레이어·몬스터 모두 못 들어가고 점령률 분모에서도 빠진다. `-`이면 직사각형 전체.
@@ -231,6 +247,15 @@ UI는 Engine의 `CUI`를 상속해 오브젝트 풀과 캔버스 관리에 그�
 목록은 `MapInfo.csv`를 훑어 런타임에 만든다 — 맵이 늘어도 UI 코드는 고치지 않는다.
 버튼은 프리팹에 넣어 둔 비활성 템플릿을 복제해 쓰고, 겉모습은 프리팹에서 정한다.
 `CGameInstance.Set_UICanvas(Field/Main/Popup)`를 먼저 불러야 UI가 붙을 자리가 생긴다.
+
+**일시정지 / 결과 화면은 `CUI_Popup` 하나를 돌려쓴다** (Popup 캔버스).
+제목·본문·버튼 두 개가 전부이고 무엇을 보여줄지는 `CUI_PopupDesc`가 정한다 —
+팝업이 늘어도 클래스와 프리팹을 새로 만들지 않기 위해서다.
+
+- 일시정지는 `CStage_Manager.Set_Pause` → `Set_ActorTimeScale(0)`. 새 정지 플래그를 만들지 말 것.
+  연출 중에 일시정지를 풀어도 타임스케일은 0을 유지한다(연출이 끝나야 풀린다).
+- **앱이 백그라운드로 가면 자동 일시정지**된다(`CGameManager.OnApplicationPause`).
+  돌아올 때 자동으로 풀지는 않는다 — 갑자기 움직이면 그대로 죽는다.
 
 인게임 HUD(`CUI_InGame`, Field 캔버스)는 스테이지가 있는 동안만 떠서 조이스틱과 진행 상황을 그린다.
 Engine 레이어가 UI까지 Tick하는지 확실하지 않아 이 클래스만 Unity `Update`를 쓴다 —

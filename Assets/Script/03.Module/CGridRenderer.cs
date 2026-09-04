@@ -119,6 +119,20 @@ namespace Client
         }
         #endregion 초기화 / 해제
 
+        // 260904_보상 공개 연출.
+        // 픽셀을 다시 찍지 않고 SpriteRenderer의 알파만 건드린다 —
+        // 마스크 텍스처를 매 프레임 다시 올리면 모바일에서 감당이 안 되기 때문이다.
+        /// <param name="fAlpha"> 1이면 평소대로 가림, 0이면 완전히 걷힘 </param>
+        public void Set_CoverAlpha(float fAlpha)
+        {
+            if (m_srCover == null)
+                return;
+
+            Color cColor = m_srCover.color;
+            cColor.a = Mathf.Clamp01(fAlpha);
+            m_srCover.color = cColor;
+        }
+
         #region 웨이브 이미지
         // 260904_웨이브가 넘어갈 때마다 두 장을 갈아 끼운다.
         /// <param name="texCover"> 이번 웨이브를 덮을 가림막 (이미지 스택의 [웨이브-1]) </param>

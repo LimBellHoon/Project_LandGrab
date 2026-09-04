@@ -219,7 +219,6 @@ namespace Client
         public CELL_STATE Get_Cell(Vector2Int vCell) => Get_Cell(vCell.x, vCell.y);
         /// <summary> 셀 인덱스로 바로 읽는다 — 렌더러가 나눗셈 없이 훑기 위한 것. </summary>
         public CELL_STATE Get_Cell(int iIndex) => m_arrCell[iIndex];
-        public Vector2Int To_Cell(int iIndex) => new Vector2Int(iIndex % m_iWidth, iIndex / m_iWidth);
 
         // 260904_맵 모양 마스크로 잘라낸 칸 — 플레이어도 몬스터도 못 들어간다.
         public bool Is_Blocked(int x, int y) => Get_Cell(x, y) == CELL_STATE.BLOCK;

@@ -35,15 +35,11 @@ namespace Client
         private Vector2         m_vTargetPos;
 
         // 260904_EnemyInfo.csv에서 들어온다. 기믹 수치는 m_cGimmick이 들고 있으므로 여기 두지 않는다.
-        private int             m_iEnemyID;
         private ENEMY_GIMMICK   m_eGimmick;
         private float           m_fHitRange;        // 셀
 
         public Vector2Int       CUR_CELL        => m_cMoveHandler.CELL;
         public Vector2          POS             => m_cMoveHandler.POS;
-        public bool             IS_CHASING      => m_bChase;
-        public int              ENEMY_ID        => m_iEnemyID;
-        public ENEMY_GIMMICK    GIMMICK         => m_eGimmick;
         /// <summary> 플레이어와의 충돌 반경(셀). 월드 거리로 쓰려면 CELL_SIZE를 곱한다. </summary>
         public float            HIT_RANGE       => m_fHitRange;
 
@@ -72,7 +68,6 @@ namespace Client
             m_fChaseSpeed = cDesc.fChaseSpeed * m_cGrid.CELL_SIZE;
             m_fTurnRate   = cDesc.fTurnRate;
 
-            m_iEnemyID      = cDesc.iEnemyID;
             m_eGimmick      = cDesc.eGimmick;
             m_fHitRange     = cDesc.fHitRange;
 

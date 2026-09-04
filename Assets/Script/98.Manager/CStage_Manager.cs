@@ -30,6 +30,14 @@ namespace Client
         // 탄의 충돌 반경(셀). 몬스터와 달리 종류가 하나뿐이라 CSV로 뺄 이유가 아직 없다.
         private const float  PROJECTILE_HIT_RANGE = 0.7f;
 
+        // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
+        private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
+        private const float  HOLD_TIME   = 0.9f;     // 드러난 보상을 보여주는 시간
+        private const float  COVER_TIME  = 0.5f;     // 다음 가림막이 덮이는 시간
+
+        /// <summary> 웨이브를 넘길 때의 연출 단계. NONE이면 평소대로 게임이 돌아간다. </summary>
+        private enum WAVE_PHASE { NONE, REVEAL, HOLD, COVER }
+
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
 
@@ -47,10 +55,17 @@ namespace Client
         private int                 m_iWave;
         private float               m_fRemainTime;
         private bool                m_bPlayerExposed;   // 기믹 발동 조건 — 매 프레임 Tick_Enemy가 갱신한다
+        private bool                m_bPaused;
+
+        // 260904_웨이브 전환 연출
+        private WAVE_PHASE          m_eWavePhase;
+        private float               m_fPhaseTimer;
+        private int                 m_iNextWave;        // 0이면 이번이 마지막 웨이브였다는 뜻
 
         // 260904_클리어/실패를 밖(CGameManager)이 알아야 진행도를 저장하고 선택 화면으로 돌아갈 수 있다.
         public event Action<STAGE_STATE> OnStateChanged;
 
+        public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
         public CTerritoryGrid   GRID            => m_cGrid;
         public CPlayer          PLAYER          => m_cPlayer;
@@ -108,6 +123,9 @@ namespace Client
             Set_ActorTimeScale(1f);
 
             OnStateChanged = null;
+            m_bPaused      = false;
+            m_eWavePhase   = WAVE_PHASE.NONE;
+
             Collect_Player();
             Collect_Enemies();
             m_cGridRenderer.Release();
@@ -189,6 +207,10 @@ namespace Client
             // 이전 스테이지가 CLEAR/FAIL로 끝나며 0으로 내려둔 타임스케일을 되돌린다.
             Set_ActorTimeScale(1f);
 
+            m_bPaused    = false;
+            m_eWavePhase = WAVE_PHASE.NONE;
+            m_cGridRenderer.Set_CoverAlpha(1f);
+
             m_eState = STAGE_STATE.PLAYING;
             Enter_Wave(1);
             return true;
@@ -198,8 +220,16 @@ namespace Client
         {
             m_cGridRenderer.Tick();
 
-            if (m_eState != STAGE_STATE.PLAYING)
+            if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true)
                 return;
+
+            // 260904_연출 중에는 규칙을 멈추고 연출만 돌린다.
+            // 제한 시간도 같이 멈춘다 — 연출 때문에 시간을 잃으면 억울하다.
+            if (m_eWavePhase != WAVE_PHASE.NONE)
+            {
+                Tick_WaveTransition(fDeltaTime);
+                return;
+            }
 
             Tick_Enemy();
             Tick_Projectile();
@@ -239,15 +269,81 @@ namespace Client
                     + $"(목표 {cWave.fClearRatio:P0}, {cWave.fTimeLimit:F0}초, 몬스터 {cWave.TOTAL_ENEMY}마리)");
         }
 
+        // 260904_웨이브를 넘길 때 바로 갈아 끼우지 않는다.
+        // 가림막을 걷어 보상을 보여주고, 잠깐 감상할 틈을 준 뒤에 다음 판을 덮는다.
+        // 이 게임에서 '드러났다'는 순간이 재미의 전부라 그냥 툭 바꾸면 남는 게 없다.
         private void Next_Wave()
         {
-            if (m_iWave >= m_cMapInfo.iWaveCount)
-            {
-                Set_State(STAGE_STATE.CLEAR);
-                return;
-            }
+            Begin_WaveTransition(m_iWave >= m_cMapInfo.iWaveCount ? 0 : m_iWave + 1);
+        }
 
-            Enter_Wave(m_iWave + 1);
+        private void Begin_WaveTransition(int iNextWave)
+        {
+            m_iNextWave   = iNextWave;
+            m_eWavePhase  = WAVE_PHASE.REVEAL;
+            m_fPhaseTimer = 0f;
+
+            Set_ActorTimeScale(0f);     // 연출 동안에는 아무도 움직이지 않는다
+        }
+
+        private void Tick_WaveTransition(float fDeltaTime)
+        {
+            m_fPhaseTimer += fDeltaTime;
+
+            switch (m_eWavePhase)
+            {
+                case WAVE_PHASE.REVEAL:
+                    m_cGridRenderer.Set_CoverAlpha(1f - Mathf.Clamp01(m_fPhaseTimer / REVEAL_TIME));
+                    if (m_fPhaseTimer >= REVEAL_TIME)
+                        Go_Phase(WAVE_PHASE.HOLD);
+                    break;
+
+                case WAVE_PHASE.HOLD:
+                    if (m_fPhaseTimer < HOLD_TIME)
+                        break;
+
+                    // 마지막 웨이브였다면 최종 보상이 드러난 화면 그대로 끝낸다.
+                    if (m_iNextWave <= 0)
+                    {
+                        m_eWavePhase = WAVE_PHASE.NONE;
+                        Set_State(STAGE_STATE.CLEAR);
+                        break;
+                    }
+
+                    Enter_Wave(m_iNextWave);
+                    m_cGridRenderer.Set_CoverAlpha(0f);
+                    Go_Phase(WAVE_PHASE.COVER);
+                    break;
+
+                case WAVE_PHASE.COVER:
+                    m_cGridRenderer.Set_CoverAlpha(Mathf.Clamp01(m_fPhaseTimer / COVER_TIME));
+                    if (m_fPhaseTimer < COVER_TIME)
+                        break;
+
+                    m_cGridRenderer.Set_CoverAlpha(1f);
+                    m_eWavePhase = WAVE_PHASE.NONE;
+                    Set_ActorTimeScale(1f);
+                    break;
+            }
+        }
+
+        private void Go_Phase(WAVE_PHASE ePhase)
+        {
+            m_eWavePhase  = ePhase;
+            m_fPhaseTimer = 0f;
+        }
+
+        // 260904_일시정지. 액터를 세우는 길은 Set_ActorTimeScale 하나뿐이다(2-8).
+        public void Set_Pause(bool bPause)
+        {
+            if (m_eState != STAGE_STATE.PLAYING || m_bPaused == bPause)
+                return;
+
+            m_bPaused = bPause;
+
+            // 연출 중이면 원래도 멈춰 있어야 하므로 풀어 줄 때도 0을 유지한다.
+            bool bResume = bPause == false && m_eWavePhase == WAVE_PHASE.NONE;
+            Set_ActorTimeScale(bResume == true ? 1f : 0f);
         }
         #endregion 스테이지 / 웨이브 진행
 
@@ -369,7 +465,6 @@ namespace Client
                 cGrid           = m_cGrid,
                 vStartCell      = vCell,
                 vStartDir       = vDir,
-                iEnemyID        = cInfo.iEnemyID,
                 eGimmick        = cInfo.eGimmick,
                 fSpeed          = cInfo.fSpeed,
                 fChaseSpeed     = cInfo.fChaseSpeed,

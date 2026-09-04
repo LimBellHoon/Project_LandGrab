@@ -18,6 +18,7 @@ namespace Client
     {
         private const string PREFAB_UI_STAGE_SELECT = "UI_StageSelect";
         private const string PREFAB_UI_INGAME       = "UI_InGame";
+        private const string PREFAB_UI_POPUP        = "UI_Popup";
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
@@ -43,7 +44,9 @@ namespace Client
         private CCSVData_EnemyInfo  m_cEnemyTable;
         private CUI                 m_cStageSelectUI;
         private CUI                 m_cInGameUI;
+        private CUI                 m_cPopupUI;
         private bool                m_bReady;
+        private bool                m_bLastCleared;
 
         public static CStage_Manager    STAGE_MANAGER    => instance.m_cStageManager;
         public static CProgress_Manager PROGRESS_MANAGER => instance.m_cProgressManager;
@@ -96,6 +99,14 @@ namespace Client
                 return;
 
             m_cGameInstance.LateTick();
+        }
+
+        // 260904_전화가 오거나 홈으로 나가면 게임이 계속 돌아가면 안 된다.
+        // 돌아올 때 자동으로 풀지는 않는다 — 갑자기 움직이면 그대로 죽는다.
+        public void OnApplicationPause(bool bPause)
+        {
+            if (bPause == true && m_bReady == true)
+                Pause_Stage();
         }
         #endregion Unity
 
@@ -259,6 +270,7 @@ namespace Client
                 strPrefabName   = PREFAB_UI_INGAME,
                 cPlayer         = m_cStageManager.PLAYER,
                 cStage          = m_cStageManager,
+                OnPause         = Pause_Stage,
             };
 
             m_cInGameUI = m_cGameInstance.Open_UI(cDesc, m_trUIField);
@@ -281,14 +293,89 @@ namespace Client
             if (eState != STAGE_STATE.CLEAR && eState != STAGE_STATE.FAIL)
                 return;
 
-            // 결과를 잠깐 보여준 뒤 선택 화면으로 돌아간다.
-            Invoke(nameof(Return_ToStageSelect), RESULT_HOLD_TIME);
+            // 260904_클리어는 드러난 보상을 조금 더 보여준 뒤 결과를 띄운다.
+            // 실패는 굳이 끌 이유가 없어 빨리 띄운다.
+            m_bLastCleared = eState == STAGE_STATE.CLEAR;
+            Invoke(nameof(Show_Result), m_bLastCleared == true ? RESULT_HOLD_CLEAR : RESULT_HOLD_FAIL);
         }
 
-        private const float RESULT_HOLD_TIME = 1.5f;
+        private const float RESULT_HOLD_CLEAR = 1.4f;
+        private const float RESULT_HOLD_FAIL  = 0.8f;
+
+        // 260904_결과 화면. 일시정지와 같은 팝업 프리팹을 쓴다.
+        private void Show_Result()
+        {
+            string strBody = $"{m_cStageManager.MAP_NAME}\n"
+                           + $"{m_cStageManager.WAVE} / {m_cStageManager.WAVE_COUNT} 웨이브"
+                           + $"    점령률 {m_cStageManager.OWNED_RATIO:P0}";
+
+            Open_Popup(new CUI_PopupDesc
+            {
+                strTitle    = m_bLastCleared == true ? "클리어!" : "실패",
+                strBody     = strBody,
+                strPrimary  = "확인",
+                OnPrimary   = Return_ToStageSelect,
+            });
+        }
+
+        // 260904_일시정지. 액터를 세우는 것은 스테이지가, 화면은 여기가 맡는다.
+        private void Pause_Stage()
+        {
+            if (m_cStageManager.STATE != STAGE_STATE.PLAYING || m_cStageManager.IS_PAUSED == true)
+                return;
+
+            m_cStageManager.Set_Pause(true);
+            (m_cInGameUI as CUI_InGame)?.Set_Interactable(false);
+
+            Open_Popup(new CUI_PopupDesc
+            {
+                strTitle     = "일시정지",
+                strBody      = $"{m_cStageManager.MAP_NAME}    "
+                             + $"{m_cStageManager.WAVE} / {m_cStageManager.WAVE_COUNT} 웨이브",
+                strPrimary   = "계속하기",
+                strSecondary = "나가기",
+                OnPrimary    = Resume_Stage,
+                OnSecondary  = Return_ToStageSelect,
+            });
+        }
+
+        private void Resume_Stage()
+        {
+            Close_Popup();
+            (m_cInGameUI as CUI_InGame)?.Set_Interactable(true);
+            m_cStageManager.Set_Pause(false);
+        }
+
+        private void Open_Popup(CUI_PopupDesc cDesc)
+        {
+            Close_Popup();
+
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_POPUP) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_POPUP}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            cDesc.eObjectType   = OBJECT_TYPE.UI_POPUP;
+            cDesc.strPrefabName = PREFAB_UI_POPUP;
+
+            m_cPopupUI = m_cGameInstance.Open_UI(cDesc, m_trUIPopup);
+        }
+
+        private void Close_Popup()
+        {
+            if (m_cPopupUI == null)
+                return;
+
+            m_cGameInstance.Close_UI(m_cPopupUI);
+            m_cPopupUI = null;
+        }
 
         private void Return_ToStageSelect()
         {
+            CancelInvoke();
+            Close_Popup();
             Close_InGameUI();
             m_cStageManager.Release();
             Open_StageSelect();

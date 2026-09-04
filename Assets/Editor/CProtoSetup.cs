@@ -59,6 +59,8 @@ namespace Client
         // 260904_인게임 HUD (가상 조이스틱)
         private const string PATH_PREFAB_UI_INGAME  = DIR_PREFAB + "/UI_InGame.prefab";
         private const string UI_INGAME              = "UI_InGame";
+        private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/UI_Popup.prefab";
+        private const string UI_POPUP               = "UI_Popup";
         private const string PATH_TEX_JOY_BASE      = DIR_ART + "/Tex_JoystickBase.png";
         private const string PATH_TEX_JOY_HANDLE    = DIR_ART + "/Tex_JoystickHandle.png";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
@@ -104,7 +106,9 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
-                        new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus" });
+                        new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus", "m_btnPause" });
+            iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
+                        new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
             // 260904_CSV 테이블과 웨이브 이미지가 빠지면 스테이지가 통째로 안 뜬다.
             iFail += Validate_CsvTables();
@@ -610,6 +614,7 @@ namespace Client
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_StageSelectUI();
             Create_InGameUI();
+            Create_PopupUI();
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -652,6 +657,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
             for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
@@ -770,15 +776,104 @@ namespace Client
             RectTransform trBase   = Make_JoystickPart("Joystick_Base", goRoot.transform, PATH_TEX_JOY_BASE);
             RectTransform trHandle = Make_JoystickPart("Joystick_Handle", goRoot.transform, PATH_TEX_JOY_HANDLE);
 
+            // 260904_일시정지 버튼은 오른쪽 위. 조이스틱이 아래 60%만 잡으므로 겹치지 않는다.
+            GameObject goPause = Create_UIObject("Btn_Pause", goRoot.transform);
+            RectTransform trPause = goPause.GetComponent<RectTransform>();
+            trPause.anchorMin = new Vector2(1f, 1f);
+            trPause.anchorMax = new Vector2(1f, 1f);
+            trPause.pivot     = new Vector2(1f, 1f);
+            trPause.anchoredPosition = new Vector2(-24f, -110f);
+            trPause.sizeDelta = new Vector2(120f, 120f);
+            goPause.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 0.85f);
+            Button cPause = goPause.AddComponent<Button>();
+
+            GameObject goPauseLabel = Create_UIObject("Label", goPause.transform);
+            Stretch_Full(goPauseLabel.GetComponent<RectTransform>());
+            Make_Text(goPauseLabel, "II", 40, TextAnchor.MiddleCenter).raycastTarget = false;
+
             CUI_InGame cUI = goRoot.AddComponent<CUI_InGame>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trJoystickBase").objectReferenceValue   = trBase;
             cSerialized.FindProperty("m_trJoystickHandle").objectReferenceValue = trHandle;
             cSerialized.FindProperty("m_txtStatus").objectReferenceValue        = txtStatus;
+            cSerialized.FindProperty("m_btnPause").objectReferenceValue         = cPause;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);
             Object.DestroyImmediate(goRoot);
+        }
+
+        // 260904_공용 팝업 프리팹. 일시정지와 결과 화면이 이걸 돌려쓴다.
+        private static void Create_PopupUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_POPUP, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            // 뒤를 어둡게 덮어 팝업에 시선이 가게 하고, 뒤쪽 클릭도 막는다.
+            GameObject goDim = Create_UIObject("Dim", goRoot.transform);
+            Stretch_Full(goDim.GetComponent<RectTransform>());
+            goDim.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.7f);
+
+            GameObject goPanel = Create_UIObject("Panel", goRoot.transform);
+            RectTransform trPanel = goPanel.GetComponent<RectTransform>();
+            trPanel.anchorMin = new Vector2(0.5f, 0.5f);
+            trPanel.anchorMax = new Vector2(0.5f, 0.5f);
+            trPanel.pivot     = new Vector2(0.5f, 0.5f);
+            trPanel.sizeDelta = new Vector2(760f, 460f);
+            goPanel.AddComponent<Image>().color = new Color(0.10f, 0.12f, 0.20f, 1f);
+
+            GameObject goTitle = Create_UIObject("Txt_Title", goPanel.transform);
+            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
+            trTitle.anchorMin = new Vector2(0f, 1f);
+            trTitle.anchorMax = new Vector2(1f, 1f);
+            trTitle.pivot     = new Vector2(0.5f, 1f);
+            trTitle.offsetMin = new Vector2(30f, -130f);
+            trTitle.offsetMax = new Vector2(-30f, -30f);
+            Text txtTitle = Make_Text(goTitle, "제목", 48, TextAnchor.MiddleCenter);
+            txtTitle.raycastTarget = false;
+
+            GameObject goBody = Create_UIObject("Txt_Body", goPanel.transform);
+            RectTransform trBody = goBody.GetComponent<RectTransform>();
+            trBody.anchorMin = new Vector2(0f, 0f);
+            trBody.anchorMax = new Vector2(1f, 1f);
+            trBody.offsetMin = new Vector2(30f, 150f);
+            trBody.offsetMax = new Vector2(-30f, -140f);
+            Text txtBody = Make_Text(goBody, "본문", 30, TextAnchor.MiddleCenter);
+            txtBody.raycastTarget = false;
+
+            Button cSecondary = Make_PopupButton("Btn_Secondary", goPanel.transform, -190f, "나가기");
+            Button cPrimary   = Make_PopupButton("Btn_Primary", goPanel.transform, 190f, "확인");
+
+            CUI_Popup cUI = goRoot.AddComponent<CUI_Popup>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue     = txtTitle;
+            cSerialized.FindProperty("m_txtBody").objectReferenceValue      = txtBody;
+            cSerialized.FindProperty("m_btnPrimary").objectReferenceValue   = cPrimary;
+            cSerialized.FindProperty("m_btnSecondary").objectReferenceValue = cSecondary;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_POPUP);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        private static Button Make_PopupButton(string strName, Transform trParent, float fOffsetX, string strLabel)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform trButton = go.GetComponent<RectTransform>();
+            trButton.anchorMin = new Vector2(0.5f, 0f);
+            trButton.anchorMax = new Vector2(0.5f, 0f);
+            trButton.pivot     = new Vector2(0.5f, 0f);
+            trButton.anchoredPosition = new Vector2(fOffsetX, 36f);
+            trButton.sizeDelta = new Vector2(320f, 96f);
+
+            go.AddComponent<Image>().color = new Color(0.20f, 0.26f, 0.44f, 1f);
+            Button cButton = go.AddComponent<Button>();
+
+            GameObject goLabel = Create_UIObject("Label", go.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Make_Text(goLabel, strLabel, 32, TextAnchor.MiddleCenter).raycastTarget = false;
+
+            return cButton;
         }
 
         private static RectTransform Make_JoystickPart(string strName, Transform trParent, string strTexPath)

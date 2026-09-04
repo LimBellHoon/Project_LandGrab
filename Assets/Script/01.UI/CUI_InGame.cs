@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System;
+
+using UnityEngine;
 using UnityEngine.UI;
 
 using Engine;
@@ -20,10 +22,12 @@ namespace Client
         [SerializeField] private RectTransform  m_trJoystickBase;
         [SerializeField] private RectTransform  m_trJoystickHandle;
         [SerializeField] private Text           m_txtStatus;
+        [SerializeField] private Button         m_btnPause;
 
         private CPlayer         m_cPlayer;
         private CStage_Manager  m_cStage;
         private Canvas          m_cCanvas;
+        private Action          m_OnPause;
 
         #region Engine.CUI
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -45,7 +49,15 @@ namespace Client
 
             m_cPlayer = cDesc.cPlayer;
             m_cStage  = cDesc.cStage;
+            m_OnPause = cDesc.OnPause;
             m_cCanvas = GetComponentInParent<Canvas>();
+
+            // 260904_일시정지 버튼. 조이스틱이 화면 아래 60%만 잡으므로 위쪽은 버튼 자리다.
+            if (m_btnPause != null)
+            {
+                m_btnPause.onClick.RemoveAllListeners();
+                m_btnPause.onClick.AddListener(() => m_OnPause?.Invoke());
+            }
 
             Show_Joystick(false);
             return true;
@@ -53,8 +65,10 @@ namespace Client
 
         public override void Hide()
         {
+            m_btnPause?.onClick.RemoveAllListeners();
             m_cPlayer = null;
             m_cStage  = null;
+            m_OnPause = null;
             base.Hide();
         }
         #endregion Engine.CUI
@@ -65,11 +79,22 @@ namespace Client
             Refresh_Status();
         }
 
+        /// <summary> 일시정지 중에는 조이스틱을 감춘다 (입력도 어차피 멈춰 있다). </summary>
+        public void Set_Interactable(bool bInteractable)
+        {
+            if (m_btnPause != null)
+                m_btnPause.interactable = bInteractable;
+
+            if (bInteractable == false)
+                Show_Joystick(false);
+        }
+
         private void Refresh_Joystick()
         {
             CVirtualJoystick cJoystick = m_cPlayer != null ? m_cPlayer.JOYSTICK : null;
+            bool bPaused = m_cStage != null && m_cStage.IS_PAUSED;
 
-            if (cJoystick == null || cJoystick.IS_ACTIVE == false)
+            if (cJoystick == null || cJoystick.IS_ACTIVE == false || bPaused == true)
             {
                 Show_Joystick(false);
                 return;
