@@ -281,7 +281,8 @@ namespace Client
             // 260905_강화 수치를 반영한다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
             m_cStageManager.Set_PlayerUpgrade(
                 1f + m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.SPEED),
-                m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.EVASION));
+                m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.EVASION),
+                Mathf.RoundToInt(m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.HP)));
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 

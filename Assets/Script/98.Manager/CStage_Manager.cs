@@ -82,13 +82,16 @@ namespace Client
         // 260905_능력치 강화 반영. Start_Stage 전에 넣어 둔다.
         private float           m_fSpeedRate = 1f;      // 이동 속도 배율
         private float           m_fEvasion;             // 피격 회피 확률 0~1
+        private int             m_iBonusLife;           // 강화로 늘어난 시작 목숨
 
         /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
         /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
-        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion)
+        /// <param name="iBonusLife"> 맵 기본 목숨에 더할 개수 </param>
+        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion, int iBonusLife)
         {
             m_fSpeedRate = Mathf.Max(0.1f, fSpeedRate);
             m_fEvasion   = Mathf.Clamp01(fEvasion);
+            m_iBonusLife = Mathf.Max(0, iBonusLife);
         }
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
         public string           MAP_NAME        => m_cMapInfo != null ? m_cMapInfo.strMapName : string.Empty;
@@ -393,7 +396,7 @@ namespace Client
                 // 260905_능력치 강화 반영
                 fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate,
                 fEvasion        = m_fEvasion,
-                iLife           = m_cMapInfo.iLife,
+                iLife           = m_cMapInfo.iLife + m_iBonusLife,
             };
 
             GameObject goPlayer = CGameInstance.Instance.Reuse_Object(cPlayerDesc);

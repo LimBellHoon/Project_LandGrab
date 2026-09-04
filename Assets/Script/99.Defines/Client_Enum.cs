@@ -41,6 +41,7 @@
         NONE = 0,
         SPEED,      // 플레이어 이동 속도 배율
         EVASION,    // 피격 회피 확률
+        HP,         // 시작 목숨 추가
     }
 
     /// <summary> 스테이지 진행 상태 </summary>
