@@ -21,12 +21,15 @@ namespace Client
         private float           m_fMaxDistance;     // 월드 유닛
         private float           m_fTravelled;
         private float           m_fHitRange;        // 셀
-        private bool            m_bExpired;
 
         public Vector2  POS         => m_vPos;
         /// <summary> 플레이어와의 충돌 반경(셀). </summary>
         public float    HIT_RANGE   => m_fHitRange;
-        public bool     IS_EXPIRED  => m_bExpired;
+        /// <summary>
+        /// 260904_Engine은 bCollect가 선 오브젝트를 레이어 Tick 뒤에 알아서 풀로 돌려준다.
+        /// 따로 만료 플래그를 두면 같은 일을 두 번 하는 셈이라 프레임워크 것을 그대로 쓴다.
+        /// </summary>
+        public bool     IS_EXPIRED  => bCollect;
 
         #region Engine.CGameObject
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -53,7 +56,7 @@ namespace Client
             m_fMaxDistance  = cDesc.fMaxRange > 0f ? cDesc.fMaxRange * m_cGrid.CELL_SIZE : 0f;
             m_fHitRange     = cDesc.fHitRange;
             m_fTravelled    = 0f;
-            m_bExpired      = false;
+            bCollect        = false;    // 풀에서 재사용되므로 반드시 내려 둔다
 
             transform.position   = m_vPos;
             transform.localScale = Vector3.one * m_cGrid.CELL_SIZE * 0.9f;
@@ -62,13 +65,13 @@ namespace Client
 
         public override void Tick(float fDeltaTime)
         {
-            if (m_cGrid == null || m_bExpired == true)
+            if (m_cGrid == null || bCollect == true)
                 return;
 
             m_fLifeTime -= fDeltaTime;
             if (m_fLifeTime <= 0f)
             {
-                m_bExpired = true;
+                Expire();
                 return;
             }
 
@@ -80,7 +83,7 @@ namespace Client
             CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vNext));
             if (eState == CELL_STATE.OWNED || eState == CELL_STATE.BLOCK)
             {
-                m_bExpired = true;
+                Expire();
                 return;
             }
 
@@ -89,7 +92,7 @@ namespace Client
 
             if (m_fMaxDistance > 0f && m_fTravelled >= m_fMaxDistance)
             {
-                m_bExpired = true;
+                Expire();
                 return;
             }
 
@@ -104,6 +107,6 @@ namespace Client
         #endregion Engine.CGameObject
 
         /// <summary> 플레이어에게 맞았을 때처럼 밖에서 끝내야 할 때 부른다. </summary>
-        public void Expire() => m_bExpired = true;
+        public void Expire() => bCollect = true;
     }
 }

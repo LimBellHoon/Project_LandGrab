@@ -19,12 +19,12 @@ namespace Client
         private float           m_fLifeTime;
         private float           m_fMaxLifeTime;     // 옅어지는 정도를 계산할 기준
         private float           m_fSlowRatio;
-        private bool            m_bExpired;
 
         public Vector2Int   CELL        => m_vCell;
         /// <summary> 플레이어 속도에 곱할 값. 1이면 감속 없음. </summary>
         public float        SLOW_RATIO  => m_fSlowRatio;
-        public bool         IS_EXPIRED  => m_bExpired;
+        /// <summary> Engine이 bCollect가 선 오브젝트를 알아서 풀로 돌려준다 (CProjectile 설명 참고). </summary>
+        public bool         IS_EXPIRED  => bCollect;
 
         #region Engine.CGameObject
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -48,7 +48,7 @@ namespace Client
             m_fLifeTime    = cDesc.fLifeTime;
             m_fMaxLifeTime = Mathf.Max(0.01f, cDesc.fLifeTime);
             m_fSlowRatio   = Mathf.Clamp(cDesc.fSlowRatio, 0.1f, 1f);
-            m_bExpired     = false;
+            bCollect       = false;     // 풀에서 재사용되므로 반드시 내려 둔다
 
             Refresh_Alpha();
 
@@ -59,14 +59,15 @@ namespace Client
 
         public override void Tick(float fDeltaTime)
         {
-            if (m_cGrid == null || m_bExpired == true)
+            if (m_cGrid == null || bCollect == true)
                 return;
 
             m_fLifeTime -= fDeltaTime;
 
+            // 플레이어가 그 칸을 점령해 버리면 남아 있을 이유가 없다.
             if (m_fLifeTime <= 0f || m_cGrid.Get_Cell(m_vCell) != CELL_STATE.EMPTY)
             {
-                m_bExpired = true;
+                bCollect = true;
                 return;
             }
 

@@ -13,8 +13,11 @@ namespace Client
     /// </summary>
     public class CEnemy : CGameObject
     {
-        private static readonly Color COLOR_WANDER = new Color(1f, 0.35f, 0.35f);
-        private static readonly Color COLOR_CHASE  = new Color(1f, 0.85f, 0.25f);
+        // 260904_기믹별로 색을 달리해 어떤 위협인지 한눈에 읽히게 한다. 추적 중에는 밝아진다.
+        private static readonly Color COLOR_NONE       = new Color(1f, 0.35f, 0.35f);
+        private static readonly Color COLOR_WEB        = new Color(0.65f, 0.95f, 0.35f);
+        private static readonly Color COLOR_PROJECTILE = new Color(1f, 0.55f, 0.2f);
+        private static readonly Color COLOR_SPAWN      = new Color(0.75f, 0.5f, 1f);
 
         [SerializeField] private SpriteRenderer m_srBody;
 
@@ -134,7 +137,16 @@ namespace Client
             if (m_srBody == null)
                 return;
 
-            m_srBody.color = m_bChase == true ? COLOR_CHASE : COLOR_WANDER;
+            Color cBase;
+            switch (m_eGimmick)
+            {
+                case ENEMY_GIMMICK.WEB:        cBase = COLOR_WEB;        break;
+                case ENEMY_GIMMICK.PROJECTILE: cBase = COLOR_PROJECTILE; break;
+                case ENEMY_GIMMICK.SPAWN:      cBase = COLOR_SPAWN;      break;
+                default:                       cBase = COLOR_NONE;       break;
+            }
+
+            m_srBody.color = m_bChase == true ? Color.Lerp(cBase, Color.white, 0.45f) : cBase;
         }
     }
 }

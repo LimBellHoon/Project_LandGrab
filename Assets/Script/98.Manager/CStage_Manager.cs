@@ -409,6 +409,7 @@ namespace Client
         }
 
         // 목록 세 개가 같은 일을 하므로 하나로 묶는다.
+        // 이쪽은 아직 살아 있는 오브젝트를 즉시 걷어내는 길이라 Engine의 자동 회수를 기다리지 않는다.
         private static void Collect_All<T>(List<T> lstObject) where T : CGameObject
         {
             for (int i = 0; i < lstObject.Count; ++i)
@@ -590,11 +591,11 @@ namespace Client
             {
                 CProjectile cProjectile = m_lstProjectile[i];
 
+                // 260904_만료된 것은 Engine이 bCollect를 보고 알아서 풀로 돌려준다.
+                // 여기서 Collect_Object까지 부르면 같은 오브젝트를 두 번 반납하게 되므로
+                // 목록에서 빼기만 한다.
                 if (cProjectile == null || cProjectile.IS_EXPIRED == true)
                 {
-                    if (cProjectile != null)
-                        CGameInstance.Instance.Collect_Object(cProjectile);
-
                     m_lstProjectile.RemoveAt(i);
                     continue;
                 }
@@ -624,9 +625,6 @@ namespace Client
 
                 if (cWeb == null || cWeb.IS_EXPIRED == true)
                 {
-                    if (cWeb != null)
-                        CGameInstance.Instance.Collect_Object(cWeb);
-
                     m_lstWeb.RemoveAt(i);
                     continue;
                 }
