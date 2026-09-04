@@ -134,6 +134,9 @@ namespace Client
                 await m_cGameInstance.LoadAssetAsync(CAddressableLabel.TEXTURE);
                 await m_cGameInstance.LoadAssetAsync(CAddressableLabel.CSV);
 
+                if (Check_AssetsReady() == false)
+                    return;
+
                 if (Load_Table() == false)
                     return;
 
@@ -151,6 +154,23 @@ namespace Client
             {
                 Debug.LogError($"[CGameManager] 초기화 중 예외 : {e}");
             }
+        }
+
+        // 260904_Setup Assets를 한 번도 안 돌린 클론에서 Play를 누르면
+        // Addressable이 'No Location found for Key=...' 예외를 라벨마다 토해내고,
+        // 그 뒤에 CSV를 못 읽었다는 메시지가 따라붙어 원인이 CSV처럼 보인다.
+        // 실제 원인은 라벨 자체가 없다는 것이므로, 그 사실을 먼저 한 줄로 말해 준다.
+        // 프리팹은 Addressable을 거쳐 들어오므로 하나만 물어봐도 라벨이 살아 있는지 알 수 있다.
+        private bool Check_AssetsReady()
+        {
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_STAGE_SELECT) == true)
+                return true;
+
+            Debug.LogError($"[CGameManager] Addressable에 '{PREFAB_UI_STAGE_SELECT}'가 없습니다 — "
+                         + "에셋이 아직 만들어지지 않았습니다. "
+                         + "Unity 메뉴 Tools/LandGrab/Setup Assets 를 먼저 실행하세요. "
+                         + "(스프라이트 · UI 프리팹 · Addressable 라벨을 한꺼번에 만듭니다)");
+            return false;
         }
 
         /// <summary>

@@ -328,6 +328,29 @@ Unity.exe -batchmode -nographics -quit -projectPath "D:\Unity Project\Project_La
 > Validate Assets는 260904부터 CSV(파일 존재 · 탭 구분 · 짝이 되는 파싱 클래스 · Addressable 라벨)와
 > 웨이브 이미지(Read/Write 여부)까지 함께 본다.
 
+### 3-1. 스프라이트·UI 프리팹·Addressable은 커밋되지 않는다 (260904)
+`Assets/Art`의 대부분과 `Assets/Prefabs`의 UI 프리팹, 그리고 그 Addressable 등록은
+**`Setup Assets`가 만들어 내는 산출물**이라 리포에 들어 있지 않다.
+리포에 커밋된 Addressable 설정에는 액터 프리팹 4개와 `Prefabs` 라벨만 있다.
+
+그래서 **clone 직후나 새 PC에서 Play를 누르면 이렇게 터진다.**
+
+```
+InvalidKeyException: No Location found for Key=...
+Failed to load label: Images
+Failed to load label: CSV
+[CGameManager] MapInfo.csv를 읽지 못했습니다. ...
+```
+
+`Images` / `CSV` 라벨이 **존재하지 않아서** 나는 것이지 CSV 파일이 잘못된 게 아니다.
+(마지막 줄이 CSV를 지목해 오해하기 쉽다.)
+
+**Play 전에 `Tools/LandGrab/Setup Assets`를 한 번 돌리면 끝난다.**
+스프라이트 생성 → UI 프리팹 생성 → 라벨 등록까지 한꺼번에 한다.
+
+`CGameManager.Check_AssetsReady`가 이 상황을 먼저 잡아 한 줄로 알려 준다 —
+Addressable 예외 더미를 읽기 전에 이 메시지부터 볼 것.
+
 ---
 
 ## 4. Git / 원격 작업
