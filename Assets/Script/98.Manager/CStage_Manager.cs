@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 using UnityEngine;
 
@@ -47,6 +48,10 @@ namespace Client
         private float               m_fRemainTime;
         private bool                m_bPlayerExposed;   // 기믹 발동 조건 — 매 프레임 Tick_Enemy가 갱신한다
 
+        // 260904_클리어/실패를 밖(CGameManager)이 알아야 진행도를 저장하고 선택 화면으로 돌아갈 수 있다.
+        public event Action<STAGE_STATE> OnStateChanged;
+
+        public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
         public CTerritoryGrid   GRID            => m_cGrid;
         public CPlayer          PLAYER          => m_cPlayer;
         public STAGE_STATE      STATE           => m_eState;
@@ -102,8 +107,19 @@ namespace Client
         {
             Set_ActorTimeScale(1f);
 
+            OnStateChanged = null;
+            Collect_Player();
             Collect_Enemies();
             m_cGridRenderer.Release();
+            m_eState = STAGE_STATE.READY;
+        }
+
+        // 260904_스테이지를 다시 고를 수 있으므로 플레이어도 풀에 돌려줘야 한다.
+        private void Collect_Player()
+        {
+            if (m_cPlayer != null)
+                CGameInstance.Instance.Collect_Object(m_cPlayer);
+
             m_cPlayer = null;
         }
 
@@ -663,6 +679,7 @@ namespace Client
                 Set_ActorTimeScale(0f);
 
             Debug.Log($"[CStage_Manager] STAGE {eState} — {m_iWave}웨이브, 점령률 {m_cGrid.OWNED_RATIO:P1}");
+            OnStateChanged?.Invoke(eState);
         }
         #endregion 콜백
     }

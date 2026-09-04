@@ -6,7 +6,9 @@ using UnityEditor.AddressableAssets.Settings;
 using UnityEditor.SceneManagement;
 
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.UI;
 
 namespace Client
 {
@@ -51,6 +53,9 @@ namespace Client
         private const string PATH_TEX_WEB         = DIR_ART + "/Tex_Web.png";
         private const string PATH_PREFAB_PROJECTILE = DIR_PREFAB + "/Prefab_Projectile.prefab";
         private const string PATH_PREFAB_WEB        = DIR_PREFAB + "/Prefab_Web.prefab";
+        // 260904_스테이지 선택 UI
+        private const string PATH_PREFAB_UI_SELECT  = DIR_PREFAB + "/UI_StageSelect.prefab";
+        private const string UI_STAGE_SELECT        = "UI_StageSelect";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
 
         [MenuItem("Tools/LandGrab/Setup Prototype (씬까지 새로 만듦)")]
@@ -92,6 +97,7 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_ENEMY, "Prefab_Enemy", typeof(CEnemy));
             iFail += Validate_ActorPrefab(PATH_PREFAB_PROJECTILE, "Prefab_Projectile", typeof(CProjectile));
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
+            iFail += Validate_StageSelectUI();
 
             // 260904_CSV 테이블과 웨이브 이미지가 빠지면 스테이지가 통째로 안 뜬다.
             iFail += Validate_CsvTables();
@@ -108,6 +114,47 @@ namespace Client
 
         // 260904_CSV는 파일 존재 · Addressable 라벨 · 짝이 되는 파싱 클래스까지 셋 다 봐야 한다.
         // 셋 중 하나만 어긋나도 Engine은 조용히 경고만 남기고 표를 비운 채 넘어간다.
+        // 260904_UI 프리팹은 m_srBody가 없으므로 Validate_ActorPrefab을 쓸 수 없다. 따로 본다.
+        private static int Validate_StageSelectUI()
+        {
+            GameObject goPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(PATH_PREFAB_UI_SELECT);
+            if (goPrefab == null)
+            {
+                Debug.LogError($"  FAIL  UI 프리팹 없음 : {PATH_PREFAB_UI_SELECT}");
+                return 1;
+            }
+
+            int iFail = 0;
+
+            CUI_StageSelect cUI = goPrefab.GetComponent<CUI_StageSelect>();
+            if (cUI == null)
+            {
+                Debug.LogError("  FAIL  CUI_StageSelect 컴포넌트 없음");
+                ++iFail;
+            }
+            else
+            {
+                SerializedObject cSerialized = new SerializedObject(cUI);
+                string[] arrField = { "m_trContent", "m_btnTemplate", "m_txtTitle" };
+
+                for (int i = 0; i < arrField.Length; ++i)
+                {
+                    SerializedProperty cProperty = cSerialized.FindProperty(arrField[i]);
+                    if (cProperty == null || cProperty.objectReferenceValue == null)
+                    {
+                        Debug.LogError($"  FAIL  CUI_StageSelect.{arrField[i]} 미연결");
+                        ++iFail;
+                    }
+                }
+
+                if (iFail == 0)
+                    Debug.Log("  PASS  CUI_StageSelect 참조 연결됨");
+            }
+
+            return iFail + Validate_AddressableEntry(PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT,
+                                                     CAddressableLabel.PREFAB);
+        }
+
         private static int Validate_CsvTables()
         {
             int iFail = 0;
@@ -517,6 +564,7 @@ namespace Client
             // 260904_탄은 몬스터보다 앞에, 거미줄은 바닥에 깔리도록 정렬 순서를 나눈다.
             Create_ActorPrefab<CProjectile>("Prefab_Projectile", PATH_TEX_PROJECTILE, PATH_PREFAB_PROJECTILE, 18);
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
+            Create_StageSelectUI();
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -557,6 +605,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_PROJECTILE, "Prefab_Projectile", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
             for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
@@ -591,6 +640,102 @@ namespace Client
             // Engine의 각 DataHolder가 에셋 이름을 키로 캐싱하므로 주소도 이름과 맞춰 둔다.
             cEntry.address = strAddress;
             cEntry.SetLabel(strLabel, true, false, false);
+        }
+        // 260904_스테이지 선택 UI 프리팹.
+        // 목록은 런타임에 채워지므로 여기서는 '틀'만 만든다 —
+        // 배경 패널 / 제목 / 버튼이 쌓일 Content / 복제될 버튼 템플릿(비활성).
+        // 겉모습을 다듬는 것은 Unity에서 이 프리팹을 직접 여는 편이 빠르다.
+        private static void Create_StageSelectUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_STAGE_SELECT, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            GameObject goPanel = Create_UIObject("Panel", goRoot.transform);
+            Stretch_Full(goPanel.GetComponent<RectTransform>());
+            goPanel.AddComponent<Image>().color = new Color(0.05f, 0.06f, 0.10f, 0.92f);
+
+            GameObject goTitle = Create_UIObject("Title", goRoot.transform);
+            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
+            trTitle.anchorMin = new Vector2(0f, 1f);
+            trTitle.anchorMax = new Vector2(1f, 1f);
+            trTitle.pivot     = new Vector2(0.5f, 1f);
+            trTitle.offsetMin = new Vector2(40f, -140f);
+            trTitle.offsetMax = new Vector2(-40f, -40f);
+            Text txtTitle = Make_Text(goTitle, "스테이지 선택", 44, TextAnchor.MiddleCenter);
+
+            GameObject goContent = Create_UIObject("Content", goRoot.transform);
+            RectTransform trContent = goContent.GetComponent<RectTransform>();
+            trContent.anchorMin = new Vector2(0f, 0f);
+            trContent.anchorMax = new Vector2(1f, 1f);
+            trContent.offsetMin = new Vector2(80f, 80f);
+            trContent.offsetMax = new Vector2(-80f, -160f);
+
+            VerticalLayoutGroup cLayout = goContent.AddComponent<VerticalLayoutGroup>();
+            cLayout.spacing              = 16f;
+            cLayout.childAlignment       = TextAnchor.UpperCenter;
+            cLayout.childForceExpandWidth  = true;
+            cLayout.childForceExpandHeight = false;
+            cLayout.childControlWidth      = true;
+            cLayout.childControlHeight     = false;
+
+            GameObject goButton = Create_UIObject("Btn_Template", goContent.transform);
+            RectTransform trButton = goButton.GetComponent<RectTransform>();
+            trButton.sizeDelta = new Vector2(0f, 110f);
+            goButton.AddComponent<LayoutElement>().minHeight = 110f;
+            goButton.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 1f);
+            Button cButton = goButton.AddComponent<Button>();
+
+            GameObject goLabel = Create_UIObject("Label", goButton.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Make_Text(goLabel, "MAP", 32, TextAnchor.MiddleCenter);
+
+            goButton.SetActive(false);       // 템플릿은 항상 꺼 둔다
+
+            CUI_StageSelect cUI = goRoot.AddComponent<CUI_StageSelect>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_trContent").objectReferenceValue   = goContent.transform;
+            cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cButton;
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_SELECT);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        private static GameObject Create_UIObject(string strName, Transform trParent)
+        {
+            GameObject go = new GameObject(strName, typeof(RectTransform));
+            if (trParent != null)
+                go.transform.SetParent(trParent, false);
+
+            return go;
+        }
+
+        private static void Stretch_Full(RectTransform trTarget)
+        {
+            trTarget.anchorMin = Vector2.zero;
+            trTarget.anchorMax = Vector2.one;
+            trTarget.offsetMin = Vector2.zero;
+            trTarget.offsetMax = Vector2.zero;
+        }
+
+        // 레거시 Text를 쓴다 — 이 프로젝트에는 TextMeshPro 패키지가 없다.
+        // 내장 폰트 이름이 Unity 버전마다 달라서 둘 다 시도한다.
+        private static Text Make_Text(GameObject goTarget, string strContent, int iFontSize, TextAnchor eAnchor)
+        {
+            Text cText = goTarget.AddComponent<Text>();
+            cText.text      = strContent;
+            cText.fontSize  = iFontSize;
+            cText.alignment = eAnchor;
+            cText.color     = Color.white;
+
+            cText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf")
+                      ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+
+            if (cText.font == null)
+                Debug.LogWarning("[CProtoSetup] 내장 폰트를 찾지 못했습니다. 프리팹에서 폰트를 직접 지정하세요.");
+
+            return cText;
         }
         #endregion 프리팹 / Addressable
 
@@ -643,13 +788,49 @@ namespace Client
             CGameManager cGameManager = goGameManager.AddComponent<CGameManager>();
             goGameManager.AddComponent<CDebugHUD>();
 
+            // 260904_UI 캔버스. Engine이 UI를 붙일 자리를 알아야 해서 세 개로 나눠 둔다.
+            Create_UICanvas(out Transform trField, out Transform trMain, out Transform trPopup);
+
             SerializedObject cSerialized = new SerializedObject(cGameManager);
             cSerialized.FindProperty("m_srBackground").objectReferenceValue = srBackground;
             cSerialized.FindProperty("m_srOverlay").objectReferenceValue    = srOverlay;
+            cSerialized.FindProperty("m_trUIField").objectReferenceValue    = trField;
+            cSerialized.FindProperty("m_trUIMain").objectReferenceValue     = trMain;
+            cSerialized.FindProperty("m_trUIPopup").objectReferenceValue    = trPopup;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             EditorSceneManager.SaveScene(cScene, PATH_SCENE);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(PATH_SCENE, true) };
+        }
+
+        // 260904_Engine.CUI_Manager가 OBJECT_TYPE으로 캔버스를 골라 쓰므로 세 자리를 만들어 둔다.
+        private static void Create_UICanvas(out Transform trField, out Transform trMain, out Transform trPopup)
+        {
+            GameObject goCanvas = new GameObject("UICanvas",
+                typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+
+            Canvas cCanvas = goCanvas.GetComponent<Canvas>();
+            cCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+            CanvasScaler cScaler = goCanvas.GetComponent<CanvasScaler>();
+            cScaler.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            cScaler.referenceResolution = new Vector2(1080f, 1920f);
+            cScaler.matchWidthOrHeight  = 0.5f;
+
+            trField = Create_CanvasLayer(goCanvas.transform, "Field");
+            trMain  = Create_CanvasLayer(goCanvas.transform, "Main");
+            trPopup = Create_CanvasLayer(goCanvas.transform, "Popup");
+
+            // 버튼을 누르려면 EventSystem이 있어야 한다. 없으면 UI가 떠도 반응하지 않는다.
+            if (Object.FindFirstObjectByType<EventSystem>() == null)
+                new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+        }
+
+        private static Transform Create_CanvasLayer(Transform trParent, string strName)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            Stretch_Full(go.GetComponent<RectTransform>());
+            return go.transform;
         }
 
         private static void Setup_Camera(float fWorldHeight)

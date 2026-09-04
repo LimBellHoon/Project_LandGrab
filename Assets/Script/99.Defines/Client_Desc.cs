@@ -78,6 +78,27 @@ namespace Client
         }
     }
 
+    // 260904_스테이지 선택 UI
+    /// <summary>
+    /// CUIDesc는 Engine에서 CGameObjectDesc를 상속하므로 strPrefabName / eObjectType을 그대로 쓴다.
+    /// 표와 진행도를 넘겨 UI가 스스로 목록을 그리게 한다.
+    /// </summary>
+    public class CUI_StageSelectDesc : CUIDesc
+    {
+        public CCSVData_MapInfo     cMapTable   { get; set; }
+        public CProgress_Manager    cProgress   { get; set; }
+        /// <summary> 맵을 고르면 그 iMapID를 넘긴다. </summary>
+        public Action<int>          OnSelect    { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cMapTable = null;
+            cProgress = null;
+            OnSelect  = null;
+        }
+    }
+
     /// <summary> CWeb 생성 Desc. 밟은 플레이어를 fSlowRatio 배로 느리게 만든다. </summary>
     public class CWebDesc : CGameObjectDesc
     {

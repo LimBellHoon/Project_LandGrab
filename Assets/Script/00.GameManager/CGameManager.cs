@@ -7,23 +7,44 @@ using Engine;
 namespace Client
 {
     // 260901_땅따먹기 프로토타입: 진입점 (Engine 초기화 + Tick 펌프)
+    // 260904_스테이지 선택 → 플레이 → 결과 → 선택 흐름
     /// <summary>
     /// Portfolio_SoloLeveling의 CGameManager와 같은 역할.
     /// Engine을 초기화하고 매 프레임 Tick을 흘려보낸 뒤, 클라이언트 매니저를 구동한다.
+    ///
+    /// 화면 흐름은 여기서만 갈아탄다 — 스테이지도 UI도 서로를 모른다.
     /// </summary>
     public class CGameManager : SingletonBase_MonoBehaviour<CGameManager>
     {
+        private const string PREFAB_UI_STAGE_SELECT = "UI_StageSelect";
+
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
         [SerializeField] private CStageDesc     m_cStageDesc = new CStageDesc();
         [SerializeField] private SpriteRenderer m_srBackground;     // 드러날 보상 이미지
         [SerializeField] private SpriteRenderer m_srOverlay;        // 미점령 영역을 덮는 가림막
 
-        private CGameInstance   m_cGameInstance;
-        private CStage_Manager  m_cStageManager;
-        private bool            m_bReady;
+        // 260904_UI 캔버스. Engine이 UI를 붙일 자리를 알아야 한다.
+        [Header("UI Canvas")]
+        [SerializeField] private Transform m_trUIField;
+        [SerializeField] private Transform m_trUIMain;
+        [SerializeField] private Transform m_trUIPopup;
 
-        public static CStage_Manager STAGE_MANAGER => instance.m_cStageManager;
+        [Header("Debug")]
+        [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
+        [SerializeField] private bool m_bDebugUnlockAll;
+
+        private CGameInstance       m_cGameInstance;
+        private CStage_Manager      m_cStageManager;
+        private CProgress_Manager   m_cProgressManager;
+
+        private CCSVData_MapInfo    m_cMapTable;
+        private CCSVData_EnemyInfo  m_cEnemyTable;
+        private CUI                 m_cStageSelectUI;
+        private bool                m_bReady;
+
+        public static CStage_Manager    STAGE_MANAGER    => instance.m_cStageManager;
+        public static CProgress_Manager PROGRESS_MANAGER => instance.m_cProgressManager;
 
         #region Unity
         public void Start()
@@ -37,7 +58,8 @@ namespace Client
             }
 
             /* 클라이언트 매니저 초기화 */
-            m_cStageManager = new CStage_Manager();
+            m_cStageManager    = new CStage_Manager();
+            m_cProgressManager = new CProgress_Manager();
 
             GameLogic_Async();
         }
@@ -79,6 +101,7 @@ namespace Client
         public static void Set_LayerTimeScale(OBJECT_TYPE eObjectType, float fLocalTimeScale) => CGameInstance.Instance.Set_LayerTimeScale(eObjectType, fLocalTimeScale);
         #endregion TIME_MANAGER
 
+        #region 초기 구동
         // 260904_스테이지 규칙은 전부 CSV에서 온다.
         // CSV 라벨이 붙은 TextAsset은 Engine이 파일명으로 Client.CCSVData_<파일명> 클래스를 찾아
         // 자동으로 파싱해 캐싱한다 — 그래서 여기서는 라벨만 읽어 오면 된다.
@@ -91,20 +114,18 @@ namespace Client
                 await m_cGameInstance.LoadAssetAsync(CAddressableLabel.TEXTURE);
                 await m_cGameInstance.LoadAssetAsync(CAddressableLabel.CSV);
 
-                if (Load_Table(out CCSVData_MapInfo cMapTable, out CCSVData_EnemyInfo cEnemyTable) == false)
+                if (Load_Table() == false)
                     return;
 
-                CMapInfo cMapInfo = cMapTable.Get_Info(m_cStageDesc.iMapID);
-                if (cMapInfo == null)
+                if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local()) == false)
                     return;
 
-                if (m_cStageManager.Initialize(cMapInfo, cEnemyTable, m_srOverlay, m_srBackground) == false)
-                    return;
+                m_cProgressManager.Set_UnlockAll(m_bDebugUnlockAll);
 
-                if (m_cStageManager.Start_Stage() == false)
-                    return;
+                m_cGameInstance.Set_UICanvas(m_trUIField, m_trUIMain, m_trUIPopup);
 
                 m_bReady = true;
+                Open_StageSelect();
             }
             catch (Exception e)
             {
@@ -116,12 +137,12 @@ namespace Client
         /// 표가 없으면 스테이지를 띄울 수 없다. 무엇이 없는지 정확히 알려 준다 —
         /// 거의 항상 Addressable 라벨(CSV)이 안 붙었거나 파일명과 클래스명이 어긋난 경우다.
         /// </summary>
-        private bool Load_Table(out CCSVData_MapInfo cMapTable, out CCSVData_EnemyInfo cEnemyTable)
+        private bool Load_Table()
         {
-            cMapTable   = m_cGameInstance.Get_CSVData(CCSVData_MapInfo.CSV_KEY) as CCSVData_MapInfo;
-            cEnemyTable = m_cGameInstance.Get_CSVData(CCSVData_EnemyInfo.CSV_KEY) as CCSVData_EnemyInfo;
+            m_cMapTable   = m_cGameInstance.Get_CSVData(CCSVData_MapInfo.CSV_KEY) as CCSVData_MapInfo;
+            m_cEnemyTable = m_cGameInstance.Get_CSVData(CCSVData_EnemyInfo.CSV_KEY) as CCSVData_EnemyInfo;
 
-            if (cMapTable == null)
+            if (m_cMapTable == null)
             {
                 Debug.LogError("[CGameManager] MapInfo.csv를 읽지 못했습니다. "
                              + $"Assets/Data/MapInfo.csv에 Addressable 라벨 '{CAddressableLabel.CSV}'가 "
@@ -129,7 +150,7 @@ namespace Client
                 return false;
             }
 
-            if (cEnemyTable == null)
+            if (m_cEnemyTable == null)
             {
                 Debug.LogError("[CGameManager] EnemyInfo.csv를 읽지 못했습니다. "
                              + $"Assets/Data/EnemyInfo.csv에 Addressable 라벨 '{CAddressableLabel.CSV}'가 "
@@ -139,5 +160,101 @@ namespace Client
 
             return true;
         }
+        #endregion 초기 구동
+
+        #region 화면 흐름
+        // 260904_선택 → 플레이 → 결과 → 선택. 갈아타는 지점을 여기 한곳에 모아 둔다.
+        private void Open_StageSelect()
+        {
+            if (m_cStageSelectUI != null)
+            {
+                // 이미 떠 있으면 해금 상태만 다시 반영한다.
+                (m_cStageSelectUI as CUI_StageSelect)?.Refresh_List();
+                return;
+            }
+
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_STAGE_SELECT) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_STAGE_SELECT}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            CUI_StageSelectDesc cDesc = new CUI_StageSelectDesc
+            {
+                eObjectType     = OBJECT_TYPE.UI_MAIN,
+                strPrefabName   = PREFAB_UI_STAGE_SELECT,
+                cMapTable       = m_cMapTable,
+                cProgress       = m_cProgressManager,
+                OnSelect        = Start_Stage,
+            };
+
+            m_cStageSelectUI = m_cGameInstance.Open_UI(cDesc, m_trUIMain);
+        }
+
+        private void Close_StageSelect()
+        {
+            if (m_cStageSelectUI == null)
+                return;
+
+            m_cGameInstance.Close_UI(m_cStageSelectUI);
+            m_cStageSelectUI = null;
+        }
+
+        private void Start_Stage(int iMapID)
+        {
+            CMapInfo cMapInfo = m_cMapTable.Get_Info(iMapID);
+            if (cMapInfo == null)
+                return;
+
+            if (m_cProgressManager.Is_Unlocked(iMapID) == false)
+            {
+                Debug.LogWarning($"[CGameManager] 맵 {iMapID}는 아직 잠겨 있습니다.");
+                return;
+            }
+
+            Close_StageSelect();
+
+            // 이전 스테이지가 남아 있을 수 있다 — 완전히 정리하고 새로 깐다.
+            m_cStageManager.Release();
+
+            if (m_cStageManager.Initialize(cMapInfo, m_cEnemyTable, m_srOverlay, m_srBackground) == false)
+            {
+                Open_StageSelect();
+                return;
+            }
+
+            m_cStageManager.OnStateChanged += On_StageStateChanged;
+
+            if (m_cStageManager.Start_Stage() == false)
+            {
+                Open_StageSelect();
+                return;
+            }
+
+            m_cProgressManager.Set_LastMap(iMapID);
+            m_cStageDesc.iMapID = iMapID;
+        }
+
+        private void On_StageStateChanged(STAGE_STATE eState)
+        {
+            if (eState == STAGE_STATE.CLEAR)
+                m_cProgressManager.Set_Cleared(m_cStageManager.MAP_ID);
+
+            if (eState != STAGE_STATE.CLEAR && eState != STAGE_STATE.FAIL)
+                return;
+
+            // 결과를 잠깐 보여준 뒤 선택 화면으로 돌아간다.
+            Invoke(nameof(Return_ToStageSelect), RESULT_HOLD_TIME);
+        }
+
+        private const float RESULT_HOLD_TIME = 1.5f;
+
+        private void Return_ToStageSelect()
+        {
+            m_cStageManager.Release();
+            Open_StageSelect();
+        }
+        #endregion 화면 흐름
     }
 }

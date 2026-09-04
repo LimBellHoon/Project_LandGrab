@@ -41,6 +41,7 @@ namespace Client
             Test_Enemy();
             Test_ShapeMask();
             Test_DirtyCell();
+            Test_StageProgress();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -350,6 +351,87 @@ namespace Client
             Walk(cGrid, cMove, MOVE_DIR.LEFT, 7, null);
             Walk(cGrid, cMove, MOVE_DIR.DOWN, 5, null);
             Check("점령은 전체 갱신", cGrid.IS_FULL_DIRTY);
+        }
+        // 260904_진행도 / 순차 해금
+        private static void Test_StageProgress()
+        {
+            CCSVData_MapInfo cTable = Load_MapTable();
+            if (cTable == null || cTable.COUNT < 2)
+            {
+                Check("MapInfo.csv에 맵이 2개 이상", false);
+                return;
+            }
+
+            int iFirst  = cTable.ALL[0].iMapID;
+            int iSecond = cTable.ALL[1].iMapID;
+
+            CFakeProgressRepository cRepo = new CFakeProgressRepository();
+            CProgress_Manager cProgress = new CProgress_Manager();
+            Check("진행도 초기화", cProgress.Initialize(cTable, cRepo));
+
+            // 처음에는 첫 맵만 열려 있다
+            Check("첫 맵은 항상 열림", cProgress.Is_Unlocked(iFirst));
+            Check("두 번째 맵은 잠김", cProgress.Is_Unlocked(iSecond) == false);
+            Check("표에 없는 맵은 잠김", cProgress.Is_Unlocked(99999) == false);
+
+            // 첫 맵을 깨면 다음이 열린다
+            cProgress.Set_Cleared(iFirst);
+            Check("클리어 기록됨", cProgress.Is_Cleared(iFirst));
+            Check("클리어하면 다음 맵이 열림", cProgress.Is_Unlocked(iSecond));
+            Check("클리어 수", cProgress.CLEARED_COUNT, 1);
+            Check("저장이 호출됨", cRepo.SAVE_COUNT > 0);
+
+            // 같은 맵을 또 깨도 기록은 늘지 않는다
+            int iSaveCount = cRepo.SAVE_COUNT;
+            cProgress.Set_Cleared(iFirst);
+            Check("중복 클리어는 저장하지 않음", cRepo.SAVE_COUNT, iSaveCount);
+            Check("중복 클리어로 수가 늘지 않음", cProgress.CLEARED_COUNT, 1);
+
+            // 디버그 전체 개방
+            CProgress_Manager cFresh = new CProgress_Manager();
+            cFresh.Initialize(cTable, new CFakeProgressRepository());
+            Check("개방 전에는 잠김", cFresh.Is_Unlocked(iSecond) == false);
+            cFresh.Set_UnlockAll(true);
+            Check("디버그 개방 시 전부 열림", cFresh.Is_Unlocked(iSecond));
+            Check("개방 플래그 반영", cFresh.IS_UNLOCK_ALL);
+
+            // 마지막 맵 기억 — 잠긴 맵을 기억하고 있으면 첫 맵으로 되돌린다
+            cProgress.Set_LastMap(iSecond);
+            Check("마지막 맵 기억", cProgress.Get_LastMapID(), iSecond);
+
+            // 저장 왕복 (JSON 직렬화가 깨지지 않는지)
+            CStageProgress cSaved = cRepo.STORED;
+            Check("저장된 기록에 클리어가 담김", cSaved != null && cSaved.Is_Cleared(iFirst));
+        }
+
+        /// <summary> 테스트용 메모리 저장소 — PlayerPrefs를 건드리지 않는다. </summary>
+        private class CFakeProgressRepository : IStageProgress
+        {
+            private CStageProgress m_cStored = new CStageProgress();
+            private int m_iSaveCount;
+
+            public CStageProgress STORED     => m_cStored;
+            public int            SAVE_COUNT => m_iSaveCount;
+
+            public CStageProgress Load() => m_cStored;
+
+            public void Save(CStageProgress cProgress)
+            {
+                // 실제 저장소처럼 JSON을 한 번 왕복시켜 직렬화가 깨지는지 함께 본다.
+                m_cStored = JsonUtility.FromJson<CStageProgress>(JsonUtility.ToJson(cProgress));
+                ++m_iSaveCount;
+            }
+        }
+
+        private static CCSVData_MapInfo Load_MapTable()
+        {
+            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/MapInfo.csv");
+            if (cText == null)
+                return null;
+
+            CCSVData_MapInfo cTable = new CCSVData_MapInfo();
+            cTable.Read_CSVData(cText);
+            return cTable;
         }
         #endregion 테스트 케이스
 

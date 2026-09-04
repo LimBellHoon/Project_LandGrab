@@ -87,12 +87,12 @@ Assets/
 ├── Editor/                 CProtoSetup(씬·프리팹·Addressable 자동 생성), CProtoTest(코어 테스트)
 └── Script/
     ├── 00.GameManager/     CGameManager
-    ├── 01.UI/              CDebugHUD
+    ├── 01.UI/              CDebugHUD, CUI_StageSelect (Engine.CUI 상속)
     ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler, CInputHandler
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
-    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility
-    ├── 98.Manager/         CStage_Manager
+    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress
+    ├── 98.Manager/         CStage_Manager, CProgress_Manager
     └── 99.Defines/         Client_Enum, Client_Desc, Client_Interface
 
 Assets/Data/                EnemyInfo.csv, MapInfo.csv  ← 기획 데이터
@@ -192,7 +192,29 @@ CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
 - `SPAWN`의 `RefID`가 다시 `SPAWN` 몬스터를 가리키면 무한히 늘어나므로
   `CStage_Manager.MAX_ENEMY`(32)로 총량을 막는다.
 
-### 2-7. 스테이지 수명 주기
+### 2-7. 화면 흐름 / 진행도 (260904)
+```
+선택 화면(CUI_StageSelect) ──고름──> 스테이지 ──CLEAR/FAIL──> 1.5초 뒤 선택 화면
+```
+갈아타는 지점은 `CGameManager`에만 있다. 스테이지도 UI도 서로를 모른다.
+`CStage_Manager.OnStateChanged`로 결과만 올려보내고, 기록 저장과 화면 전환은 매니저가 한다.
+
+**해금은 순차** — `MapInfo.csv`에 적힌 **순서**로 바로 앞 맵을 깨야 다음이 열린다.
+ID 산술이 아니라 표의 순서를 본다. 기획이 중간에 맵을 끼워 넣어도 ID를 다시 매기지 않아도 된다.
+`CGameManager`의 인스펙터 `m_bDebugUnlockAll`을 켜면 규칙을 무시하고 전부 열린다.
+
+**저장은 `IStageProgress`로 추상화**되어 있다 (`99.Defines/Client_Interface.cs`).
+지금 구현은 `CStageProgress_Local` 하나뿐 — 진행도를 JSON으로 만들어 PlayerPrefs에 넣는다.
+저장하는 알맹이가 JSON이라 **뒤끝·Firebase를 붙일 때 이 인터페이스만 새로 구현하면 되고
+스테이지/UI 코드는 손대지 않는다.** 백엔드를 붙여도 로컬 구현은 남는다 —
+통신이 끊겼다고 진행이 막히면 안 되므로 로컬을 먼저 읽고 나중에 동기화하는 형태가 된다.
+
+UI는 Engine의 `CUI`를 상속해 오브젝트 풀과 캔버스 관리에 그대로 올라탄다.
+목록은 `MapInfo.csv`를 훑어 런타임에 만든다 — 맵이 늘어도 UI 코드는 고치지 않는다.
+버튼은 프리팹에 넣어 둔 비활성 템플릿을 복제해 쓰고, 겉모습은 프리팹에서 정한다.
+`CGameInstance.Set_UICanvas(Field/Main/Popup)`를 먼저 불러야 UI가 붙을 자리가 생긴다.
+
+### 2-8. 스테이지 수명 주기
 `CStage_Manager.Tick`은 `STAGE_STATE.PLAYING`일 때만 규칙을 돌리지만,
 **플레이어·몬스터의 `Tick`은 Engine의 레이어가 직접 돌린다.** 스테이지 상태만 바꿔서는 액터가 멈추지 않는다.
 그래서 `Set_State`가 CLEAR/FAIL로 넘어갈 때 `Set_LayerTimeScale(PLAYER/ENEMY, 0)`으로 두 레이어를 세우고,

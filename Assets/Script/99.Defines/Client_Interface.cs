@@ -22,4 +22,21 @@ namespace Client
         /// <summary> 기믹이 발동 조건을 판단할 때 쓴다 (플레이어가 안전 지대 밖인가). </summary>
         bool IS_PLAYER_EXPOSED { get; }
     }
+
+    // 260904_진행도 저장소
+    /// <summary>
+    /// 클리어 기록을 어디에 두는지를 게임 로직에서 떼어 놓는다.
+    /// 지금은 로컬(CStageProgress_Local)뿐이지만, 뒤끝·Firebase 같은 백엔드를 붙일 때
+    /// 이 인터페이스만 새로 구현하면 되고 스테이지/UI 코드는 손대지 않는다.
+    ///
+    /// 백엔드를 붙여도 로컬 구현은 남는다 — 모바일에서 통신이 끊겼다고 진행이 막히면 안 되므로
+    /// 로컬을 먼저 읽고 나중에 동기화하는 형태가 된다.
+    /// </summary>
+    public interface IStageProgress
+    {
+        /// <summary> 저장된 기록을 읽어 온다. 없으면 빈 기록을 돌려준다. </summary>
+        CStageProgress Load();
+
+        void Save(CStageProgress cProgress);
+    }
 }
