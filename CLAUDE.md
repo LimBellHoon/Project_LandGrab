@@ -26,17 +26,44 @@
 
 ### 1-3. 네이밍 / 파일 규칙
 자매 프로젝트 `Portfolio_SoloLeveling`의 컨벤션을 그대로 따른다.
+**애매하면 Engine이 실제로 쓰는 표기가 기준이다** (아래 1-5에 뽑아 두었다).
 
 | 대상 | 규칙 | 예 |
 |---|---|---|
 | 클래스 | `C` 접두사 | `CTerritoryGrid`, `CMoveHandler` |
-| enum | 전부 대문자 + 언더바 | `CELL_STATE`, `STEP_RESULT` |
+| 매니저 | `C<이름>_Manager` | `CStage_Manager` (Engine: `CData_Manager`) |
+| 정적 유틸 | `C<이름>_Utility` | `CCSV_Utility` (Engine: `Math_Utility`) |
+| enum | 전부 대문자 + 언더바 | `CELL_STATE`, `ENEMY_GIMMICK` |
 | 프로퍼티(공개 상태) | 전부 대문자 | `OWNED_RATIO`, `IS_DRAWING` |
-| 멤버 변수 | `m_` + 타입 접두사 | `m_arrCell`, `m_iWidth`, `m_fCellSize`, `m_lstTrail` |
+| 상수 | 전부 대문자 | `PIXEL_PER_CELL`, `PREFAB_PLAYER` |
+| 멤버 변수 | `m_` + 타입 접두사 | `m_arrCell`, `m_iWidth`, `m_lstTrail` |
+| 정적 멤버 | `s_` + 타입 접두사 | `s_iPass`, `s_sbLog` |
 | 지역/인자 | 타입 접두사 | `iWidth`, `fCellSize`, `vCell`, `eDir` |
 | 메서드 | `동사_명사` | `Step_To`, `Cell_ToWorld`, `Try_Find_NearestCell` |
 
-### 1-4. 인코딩
+**타입 접두사**
+`i`=int, `f`=float, `b`=bool, `str`=string, `v`=Vector, `e`=enum, `c`=클래스 인스턴스,
+`arr`=배열, `lst`=List, `dic`=Dictionary, `hs`=HashSet, `stk`=Stack, `q`=Queue,
+`go`=GameObject, `tr`=Transform, `sr`=SpriteRenderer, `tex`=Texture, `sp`=Sprite, `ch`=char.
+
+**예외 — 이건 규칙 위반이 아니다**
+- **Desc 클래스의 멤버**는 대문자가 아니라 타입 접두사 lowerCamel이다.
+  Engine의 `CGameObjectDesc`(`eObjectType`, `strPrefabName`, `vPosition`)를 그대로 따른다.
+  데이터 홀더(`CMapInfo`, `CEnemyInfo`)도 같다 — `iMapID`, `fCellSize`, `bIsValid`.
+- **수명주기 메서드는 단일 동사**로 둔다. `Tick`, `Hide`, `Show`, `Release`, `Initialize`, `Respawn`.
+  Engine이 그렇게 쓰고 있으므로 억지로 `동사_명사`로 쪼개지 말 것.
+- **CSV 파싱 클래스 이름은 Engine이 강제**한다 → `CCSVData_<파일명>` (2-5 참고).
+
+**축약 금지.** `Util`, `Mgr`, `Info2` 같은 임의 축약은 쓰지 않는다.
+(`CSV`, `UI`, `ID`처럼 이미 통용되는 대문자 약어는 예외)
+
+### 1-4. Engine 표기를 다시 확인해야 할 때
+Engine은 DLL이라 소스를 볼 수 없지만 **메타데이터는 읽을 수 있다.**
+`Assets/Plugins/Engine/Engine.dll`을 PE → CLI 헤더 → `#~`/`#Strings` 스트림 순으로 파싱하면
+타입·필드·메서드·인자 이름과 시그니처가 전부 나온다. IL까지 읽으면 동작도 역추적된다.
+(260904에 CSV 규약을 이렇게 확정했다 — 추측으로 짜다 틀리는 것보다 이 쪽이 훨씬 빠르다.)
+
+### 1-5. 인코딩
 소스는 **UTF-8 BOM**으로 정규화되어 있다. 새 파일도 동일하게 유지할 것.
 (자매 프로젝트에서 CP949 파일을 그냥 편집했다가 한글 주석이 영구 손상된 적이 있음.)
 
