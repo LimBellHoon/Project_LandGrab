@@ -34,9 +34,9 @@
 
     // 260905_재화로 올리는 능력치
     /// <summary>
-    /// 이름이 UpgradeInfo.csv의 eType 열과 정확히 같아야 한다 (CCSV_Utility.To_Enum이 이름으로 찾는다).
-    /// </summary>
-    public enum UPGRADE_TYPE
+    // 260905_능력치 — 강화와 장비가 같은 것을 올리므로 enum 하나로 묶는다.
+    /// <summary> 이름이 UpgradeInfo.csv / EquipInfo.csv의 열과 정확히 같아야 한다. </summary>
+    public enum STAT_TYPE
     {
         NONE = 0,
         SPEED,      // 플레이어 이동 속도 배율
@@ -57,6 +57,24 @@
     {
         ACTIVE = 0,
         PASSIVE,
+    }
+
+    // 260905_장비
+    /// <summary> 슬롯당 하나씩 착용한다. 소모품은 개수로 갖고 있다가 쓴다. </summary>
+    public enum EQUIP_SLOT
+    {
+        NONE = 0,
+        SHOES,          // 신발
+        BAG,            // 가방
+        NECKLACE,       // 목걸이
+        CONSUMABLE,     // 1회성 소모품 (방어막 / 포션)
+    }
+
+    /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>
+    public enum INVENTORY_TAB
+    {
+        EQUIP = 0,
+        SKILL,
     }
 
     // 260905_로비 하단 탭

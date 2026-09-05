@@ -69,6 +69,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Images
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: a1e3033d3e2cc364da2c50d11b7438c6
+    m_Address: EquipInfo
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - CSV
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: aa9bf227765b1d943b0a61f37584e1b3
     m_Address: Tex_Reward_03
     m_ReadOnly: 0

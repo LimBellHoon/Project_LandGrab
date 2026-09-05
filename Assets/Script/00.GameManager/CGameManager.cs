@@ -53,6 +53,7 @@ namespace Client
         private CCSVData_EnemyInfo  m_cEnemyTable;
         private CCSVData_UpgradeInfo m_cUpgradeTable;   // 260905_능력치 강화 표
         private CCSVData_SkillInfo  m_cSkillTable;      // 260905_스킬 표
+        private CCSVData_EquipInfo  m_cEquipTable;      // 260905_장비 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cInGameUI;
@@ -151,7 +152,7 @@ namespace Client
                 if (Load_Table() == false)
                     return;
 
-                if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local()) == false)
+                if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local(), m_cEquipTable) == false)
                     return;
 
                 m_cProgressManager.Set_UnlockAll(m_bDebugUnlockAll);
@@ -204,6 +205,7 @@ namespace Client
             // 260905_강화 표는 없어도 게임은 돌아간다(강화가 전부 0레벨일 뿐).
             // 260905_스킬 표도 없으면 스킬 없이 진행한다.
             m_cSkillTable = m_cGameInstance.Get_CSVData(CCSVData_SkillInfo.CSV_KEY) as CCSVData_SkillInfo;
+            m_cEquipTable = m_cGameInstance.Get_CSVData(CCSVData_EquipInfo.CSV_KEY) as CCSVData_EquipInfo;
 
             m_cUpgradeTable = m_cGameInstance.Get_CSVData(CCSVData_UpgradeInfo.CSV_KEY) as CCSVData_UpgradeInfo;
             if (m_cUpgradeTable == null)
@@ -301,6 +303,20 @@ namespace Client
             }
         }
 
+        // 260905_장착한 스킬을 골라 준다. 스킬은 통틀어 하나만 낌다.
+        // 아직 골라 놓은 게 없으면 표의 첫 액티브 스킬을 기본으로 준다.
+        private CSkillInfo Get_EquippedSkill()
+        {
+            if (m_cSkillTable == null)
+                return null;
+
+            int iSkillID = m_cProgressManager.EQUIPPED_SKILL_ID;
+            if (iSkillID > 0)
+                return m_cSkillTable.Get_Info(iSkillID);
+
+            return m_cSkillTable.Find_ByType(SKILL_TYPE.WARP);
+        }
+
         private void Open_TabBattle(Transform trParent)
         {
             if (m_cGameInstance.Has_Prefab(PREFAB_UI_STAGE_SELECT) == false)
@@ -366,15 +382,14 @@ namespace Client
                 return;
             }
 
-            // 260905_강화 수치를 반영한다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
+            // 260905_강화와 장비를 합친 최종 수치를 넣는다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
             m_cStageManager.Set_PlayerUpgrade(
-                1f + m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.SPEED),
-                m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.EVASION),
-                Mathf.RoundToInt(m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.HP)));
+                1f + m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.SPEED),
+                m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.EVASION),
+                Mathf.RoundToInt(m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.HP)));
 
-            // 260905_장착 시스템이 없으므로 지금은 표에서 워프를 골라 넣는다.
-            m_cStageManager.Set_PlayerSkill(m_cSkillTable != null
-                                          ? m_cSkillTable.Find_ByType(SKILL_TYPE.WARP) : null);
+            // 260905_장착한 스킬을 넣는다.
+            m_cStageManager.Set_PlayerSkill(Get_EquippedSkill());
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 

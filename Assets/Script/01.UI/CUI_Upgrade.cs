@@ -97,7 +97,7 @@ namespace Client
                 cButton.interactable = bAfford;
                 Set_Label(goButton, cInfo, bMax, iCost);
 
-                UPGRADE_TYPE eType = cInfo.eType;   // 클로저 대비 지역 복사
+                STAT_TYPE eType = cInfo.eType;   // 클로저 대비 지역 복사
                 cButton.onClick.AddListener(() => On_ClickUpgrade(eType));
 
                 m_lstButton.Add(cButton);
@@ -117,7 +117,7 @@ namespace Client
                           : $"{cInfo.strName}   Lv.{iLevel}  →  Lv.{iLevel + 1}   {iCost} 코인\n{cInfo.strDesc}";
         }
 
-        private void On_ClickUpgrade(UPGRADE_TYPE eType)
+        private void On_ClickUpgrade(STAT_TYPE eType)
         {
             if (m_cProgress.Try_Upgrade(m_cTable, eType) == false)
                 return;

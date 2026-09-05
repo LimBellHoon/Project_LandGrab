@@ -45,6 +45,7 @@ namespace Client
             Test_Star();
             Test_Currency();
             Test_Skill();
+            Test_Inventory();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -414,6 +415,108 @@ namespace Client
             Object.DestroyImmediate(goPlayer);
         }
 
+        // 260905_인벤토리 — 보유 / 장착(슬롯당 하나) / 소모품 / 스탯 합산
+        private static void Test_Inventory()
+        {
+            CStageProgress cProgress = new CStageProgress();
+
+            // 보유 개수
+            Check("처음에는 없음", cProgress.Has_Item(101) == false);
+            cProgress.Add_Item(101, 1);
+            Check("장비 획득", cProgress.Has_Item(101));
+            Check("개수", cProgress.Get_ItemCount(101), 1);
+
+            // 소모품은 쌓인다
+            cProgress.Add_Item(401, 2);
+            cProgress.Add_Item(401, 3);
+            Check("소모품 누적", cProgress.Get_ItemCount(401), 5);
+
+            Check("소모품 사용", cProgress.Use_Item(401, 2));
+            Check("쓴 만큼 줄어듦", cProgress.Get_ItemCount(401), 3);
+            Check("가진 것보다 많이는 못 쓴다", cProgress.Use_Item(401, 99) == false);
+
+            cProgress.Use_Item(401, 3);
+            Check("다 쓰면 0", cProgress.Get_ItemCount(401), 0);
+            Check("다 쓴 항목은 목록에서 빠짐", cProgress.Has_Item(401) == false);
+
+            // 장착 — 같은 슬롯은 하나만
+            List<int> lstShoes = new List<int> { 101, 102 };
+            cProgress.Equip(101, lstShoes);
+            Check("장착됨", cProgress.Is_Equipped(101));
+
+            cProgress.Equip(102, lstShoes);
+            Check("같은 슬롯 새 장비 장착", cProgress.Is_Equipped(102));
+            Check("이전 장비는 자동으로 벗겨짐", cProgress.Is_Equipped(101) == false);
+
+            cProgress.Unequip(102);
+            Check("해제됨", cProgress.Is_Equipped(102) == false);
+
+            // 스킬은 통틀어 하나
+            cProgress.iEquippedSkillID = 1;
+            Check("스킬 장착 저장", cProgress.iEquippedSkillID, 1);
+
+            // 매니저 — 장비 스탯 합산
+            CCSVData_EquipInfo cEquipTable = Load_EquipTable();
+            if (cEquipTable == null || cEquipTable.COUNT == 0)
+            {
+                Check("EquipInfo.csv 로드", false);
+                return;
+            }
+
+            Check("EquipInfo 행 수", cEquipTable.COUNT > 0);
+
+            CCSVData_MapInfo cMapTable = Load_MapTable();
+            if (cMapTable == null)
+                return;
+
+            CProgress_Manager cManager = new CProgress_Manager();
+            cManager.Initialize(cMapTable, new CFakeProgressRepository(), cEquipTable);
+
+            Check("아무것도 안 꼈으면 0", Mathf.RoundToInt(cManager.Get_EquipStat(STAT_TYPE.SPEED) * 100f), 0);
+
+            // 갖고 있지 않으면 장착되지 않는다
+            Check("미보유 장비는 장착 불가", cManager.Try_Equip(101) == false);
+
+            cManager.Add_Item(101);
+            Check("보유 후 장착 성공", cManager.Try_Equip(101));
+            Check("신발 스탯 반영", Mathf.RoundToInt(cManager.Get_EquipStat(STAT_TYPE.SPEED) * 100f), 8);
+
+            // 같은 슬롯으로 갈아끼우면 이전 것이 빠진다 (합산이 두 배가 되면 안 된다)
+            cManager.Add_Item(102);
+            Check("상위 신발 장착", cManager.Try_Equip(102));
+            Check("갈아끼우면 합산이 겹치지 않음",
+                  Mathf.RoundToInt(cManager.Get_EquipStat(STAT_TYPE.SPEED) * 100f), 18);
+
+            // 다른 슬롯은 함께 적용된다
+            cManager.Add_Item(201);
+            cManager.Try_Equip(201);
+            Check("가방은 회피", Mathf.RoundToInt(cManager.Get_EquipStat(STAT_TYPE.EVASION) * 100f), 6);
+            Check("신발은 그대로", Mathf.RoundToInt(cManager.Get_EquipStat(STAT_TYPE.SPEED) * 100f), 18);
+
+            Check("슬롯으로 조회", cManager.Get_Equipped(EQUIP_SLOT.SHOES)?.iEquipID ?? 0, 102);
+            Check("빈 슬롯은 null", cManager.Get_Equipped(EQUIP_SLOT.NECKLACE) == null);
+
+            // 소모품은 장착되지 않는다
+            cManager.Add_Item(401);
+            Check("소모품은 장착 불가", cManager.Try_Equip(401) == false);
+
+            // 스킬 장착
+            cManager.Set_EquippedSkill(1);
+            Check("스킬 장착", cManager.EQUIPPED_SKILL_ID, 1);
+        }
+
+        private static CCSVData_EquipInfo Load_EquipTable()
+        {
+            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/EquipInfo.csv");
+            if (cText == null)
+                return null;
+
+            CCSVData_EquipInfo cTable = new CCSVData_EquipInfo();
+            cTable.Read_CSVData(cText);
+            return cTable;
+        }
+
+
         private static void Test_Currency()
         {
             CStageProgress cProgress = new CStageProgress();
@@ -431,15 +534,15 @@ namespace Client
             Check("쓴 만큼 줄어듦", cProgress.iCoin, 40);
 
             // 강화 레벨
-            Check("처음에는 0레벨", cProgress.Get_UpgradeLevel(UPGRADE_TYPE.SPEED), 0);
-            cProgress.Set_UpgradeLevel(UPGRADE_TYPE.SPEED, 2);
-            Check("레벨 저장", cProgress.Get_UpgradeLevel(UPGRADE_TYPE.SPEED), 2);
-            Check("다른 항목은 그대로", cProgress.Get_UpgradeLevel(UPGRADE_TYPE.EVASION), 0);
+            Check("처음에는 0레벨", cProgress.Get_UpgradeLevel(STAT_TYPE.SPEED), 0);
+            cProgress.Set_UpgradeLevel(STAT_TYPE.SPEED, 2);
+            Check("레벨 저장", cProgress.Get_UpgradeLevel(STAT_TYPE.SPEED), 2);
+            Check("다른 항목은 그대로", cProgress.Get_UpgradeLevel(STAT_TYPE.EVASION), 0);
 
             // 비용 공식 : iCostBase + iCostAdd * 현재레벨
             CUpgradeInfo cInfo = new CUpgradeInfo
             {
-                eType = UPGRADE_TYPE.SPEED, iMaxLevel = 3,
+                eType = STAT_TYPE.SPEED, iMaxLevel = 3,
                 iCostBase = 100, iCostAdd = 80, fValuePerLevel = 0.04f,
             };
 

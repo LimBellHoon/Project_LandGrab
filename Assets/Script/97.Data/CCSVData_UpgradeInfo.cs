@@ -10,7 +10,7 @@ namespace Client
     /// <summary> UpgradeInfo.csv 한 행 = 강화 항목 하나. </summary>
     public class CUpgradeInfo
     {
-        public UPGRADE_TYPE eType;
+        public STAT_TYPE eType;
         public string       strName;
         public string       strDesc;
 
@@ -40,13 +40,13 @@ namespace Client
         private const string TABLE_NAME = "UpgradeInfo";
         public  const string CSV_KEY    = "CCSVData_UpgradeInfo";
 
-        private readonly Dictionary<UPGRADE_TYPE, CUpgradeInfo> m_dicInfo = new Dictionary<UPGRADE_TYPE, CUpgradeInfo>();
+        private readonly Dictionary<STAT_TYPE, CUpgradeInfo> m_dicInfo = new Dictionary<STAT_TYPE, CUpgradeInfo>();
         private readonly List<CUpgradeInfo>                     m_lstInfo = new List<CUpgradeInfo>();
 
         public IReadOnlyList<CUpgradeInfo> ALL   => m_lstInfo;
         public int                         COUNT => m_lstInfo.Count;
 
-        public CUpgradeInfo Get_Info(UPGRADE_TYPE eType)
+        public CUpgradeInfo Get_Info(STAT_TYPE eType)
         {
             if (m_dicInfo.TryGetValue(eType, out CUpgradeInfo cInfo) == true)
                 return cInfo;
@@ -60,7 +60,7 @@ namespace Client
         {
             CUpgradeInfo cInfo = new CUpgradeInfo
             {
-                eType           = CCSV_Utility.To_Enum(arrField, 0, UPGRADE_TYPE.NONE),
+                eType           = CCSV_Utility.To_Enum(arrField, 0, STAT_TYPE.NONE),
                 strName         = CCSV_Utility.To_String(arrField, 1),
                 strDesc         = CCSV_Utility.To_String(arrField, 2),
                 iMaxLevel       = CCSV_Utility.To_Int(arrField, 3, 1),
@@ -69,10 +69,10 @@ namespace Client
                 fValuePerLevel  = CCSV_Utility.To_Float(arrField, 6),
             };
 
-            if (cInfo.eType == UPGRADE_TYPE.NONE)
+            if (cInfo.eType == STAT_TYPE.NONE)
             {
                 Debug.LogError($"[{TABLE_NAME}] eType이 없는 행을 건너뛴다. "
-                             + "UPGRADE_TYPE 이름과 철자가 같아야 한다.");
+                             + "STAT_TYPE 이름과 철자가 같아야 한다.");
                 return;
             }
 

@@ -26,9 +26,18 @@ namespace Client
     [Serializable]
     public class CUpgradeRecord
     {
-        public UPGRADE_TYPE eType;
+        public STAT_TYPE eType;
         public int          iLevel;
     }
+
+    // 260905_인벤토리 — 보유 개수. 장비는 1개씩만 갖게 두고, 소모품만 여러 개 쌓인다.
+    [Serializable]
+    public class CItemRecord
+    {
+        public int iEquipID;
+        public int iCount;
+    }
+
 
     [Serializable]
     public class CStageProgress
@@ -39,6 +48,11 @@ namespace Client
         // 260905_재화·강화도 같은 덩어리에 둔다 — 세이브가 하나여야 저장 타이밍이 꼬이지 않는다.
         public int                   iCoin;
         public List<CUpgradeRecord>  lstUpgrade = new List<CUpgradeRecord>();
+
+        // 260905_인벤토리. 장착은 슬롯당 하나, 스킬은 통틀어 하나.
+        public List<CItemRecord>    lstItem      = new List<CItemRecord>();
+        public List<int>            lstEquipped  = new List<int>();   // 장착 중인 장비 ID
+        public int                  iEquippedSkillID;
 
         // 260905_구버전(별이 없던 시절) 기록. Migrate_Legacy로 옮기고 비운다.
         // 필드를 지우면 JsonUtility가 옛 저장본을 읽을 때 그냥 버려서 진행도가 날아간다.
@@ -128,15 +142,15 @@ namespace Client
         }
 
         // 260905_강화
-        public int Get_UpgradeLevel(UPGRADE_TYPE eType)
+        public int Get_UpgradeLevel(STAT_TYPE eType)
         {
             CUpgradeRecord cRecord = Find_Upgrade(eType);
             return cRecord != null ? cRecord.iLevel : 0;
         }
 
-        public void Set_UpgradeLevel(UPGRADE_TYPE eType, int iLevel)
+        public void Set_UpgradeLevel(STAT_TYPE eType, int iLevel)
         {
-            if (eType == UPGRADE_TYPE.NONE || iLevel < 0)
+            if (eType == STAT_TYPE.NONE || iLevel < 0)
                 return;
 
             CUpgradeRecord cRecord = Find_Upgrade(eType);
@@ -149,7 +163,81 @@ namespace Client
             cRecord.iLevel = iLevel;
         }
 
-        private CUpgradeRecord Find_Upgrade(UPGRADE_TYPE eType)
+        // 260905_인벤토리
+        public int Get_ItemCount(int iEquipID)
+        {
+            CItemRecord cRecord = Find_Item(iEquipID);
+            return cRecord != null ? cRecord.iCount : 0;
+        }
+
+        public bool Has_Item(int iEquipID) => Get_ItemCount(iEquipID) > 0;
+
+        public void Add_Item(int iEquipID, int iCount)
+        {
+            if (iEquipID <= 0 || iCount <= 0)
+                return;
+
+            CItemRecord cRecord = Find_Item(iEquipID);
+            if (cRecord == null)
+            {
+                lstItem.Add(new CItemRecord { iEquipID = iEquipID, iCount = iCount });
+                return;
+            }
+
+            cRecord.iCount += iCount;
+        }
+
+        /// <returns> 실제로 썼으면 true </returns>
+        public bool Use_Item(int iEquipID, int iCount)
+        {
+            CItemRecord cRecord = Find_Item(iEquipID);
+            if (cRecord == null || iCount <= 0 || cRecord.iCount < iCount)
+                return false;
+
+            cRecord.iCount -= iCount;
+
+            // 다 쓴 항목은 목록에서 지운다 — 0개짜리가 쌓이면 UI에서 걸러야 할 게 늘어난다.
+            if (cRecord.iCount <= 0)
+                lstItem.Remove(cRecord);
+
+            return true;
+        }
+
+        public bool Is_Equipped(int iEquipID) => lstEquipped.Contains(iEquipID);
+
+        /// <summary>
+        /// 같은 슬롯의 기존 장비를 벗기고 새로 낀다. 슬롯 판별은 표를 아는 쪽(CProgress_Manager)이 해서 넘긴다.
+        /// </summary>
+        /// <param name="lstSameSlotID"> 같은 슬롯에 속하는 모든 장비 ID </param>
+        public void Equip(int iEquipID, IReadOnlyList<int> lstSameSlotID)
+        {
+            if (iEquipID <= 0)
+                return;
+
+            if (lstSameSlotID != null)
+            {
+                for (int i = 0; i < lstSameSlotID.Count; ++i)
+                    lstEquipped.Remove(lstSameSlotID[i]);
+            }
+
+            lstEquipped.Add(iEquipID);
+        }
+
+        public void Unequip(int iEquipID) => lstEquipped.Remove(iEquipID);
+
+        private CItemRecord Find_Item(int iEquipID)
+        {
+            for (int i = 0; i < lstItem.Count; ++i)
+            {
+                if (lstItem[i].iEquipID == iEquipID)
+                    return lstItem[i];
+            }
+
+            return null;
+        }
+
+
+        private CUpgradeRecord Find_Upgrade(STAT_TYPE eType)
         {
             for (int i = 0; i < lstUpgrade.Count; ++i)
             {

@@ -17,6 +17,7 @@ namespace Client
     {
         private IStageProgress      m_cRepository;
         private CCSVData_MapInfo    m_cMapTable;
+        private CCSVData_EquipInfo  m_cEquipTable;
         private CStageProgress      m_cProgress = new CStageProgress();
         private bool                m_bUnlockAll;
 
@@ -26,7 +27,9 @@ namespace Client
         // 260905_재화·강화에서 쓸 총 별 개수
         public int  TOTAL_STAR    => m_cProgress.Get_TotalStar();
 
-        public bool Initialize(CCSVData_MapInfo cMapTable, IStageProgress cRepository)
+        // 260905_장비 표는 슬롯 판별과 스탯 합산에 필요하다. 없으면 인벤토리 기능만 꺼진다.
+        public bool Initialize(CCSVData_MapInfo cMapTable, IStageProgress cRepository,
+                               CCSVData_EquipInfo cEquipTable = null)
         {
             if (cMapTable == null || cRepository == null)
             {
@@ -35,6 +38,7 @@ namespace Client
             }
 
             m_cMapTable   = cMapTable;
+            m_cEquipTable = cEquipTable;
             m_cRepository = cRepository;
             m_cProgress   = cRepository.Load();
 
@@ -98,30 +102,30 @@ namespace Client
         }
 
         // 260905_능력치 강화
-        public int Get_UpgradeLevel(UPGRADE_TYPE eType) => m_cProgress.Get_UpgradeLevel(eType);
+        public int Get_UpgradeLevel(STAT_TYPE eType) => m_cProgress.Get_UpgradeLevel(eType);
 
         /// <summary> 지금 레벨에서 적용될 수치. 표가 없으면 0(강화 없음)으로 본다. </summary>
-        public float Get_UpgradeValue(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        public float Get_UpgradeValue(CCSVData_UpgradeInfo cTable, STAT_TYPE eType)
         {
             CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
             return cInfo != null ? cInfo.Get_Value(Get_UpgradeLevel(eType)) : 0f;
         }
 
         /// <summary> 다음 레벨 비용. 만렙이면 0. </summary>
-        public int Get_UpgradeCost(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        public int Get_UpgradeCost(CCSVData_UpgradeInfo cTable, STAT_TYPE eType)
         {
             CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
             return cInfo != null ? cInfo.Get_Cost(Get_UpgradeLevel(eType)) : 0;
         }
 
-        public bool Is_UpgradeMax(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        public bool Is_UpgradeMax(CCSVData_UpgradeInfo cTable, STAT_TYPE eType)
         {
             CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
             return cInfo != null && Get_UpgradeLevel(eType) >= cInfo.iMaxLevel;
         }
 
         /// <summary> 코인이 모자라거나 만렙이면 아무 일도 일어나지 않는다. </summary>
-        public bool Try_Upgrade(CCSVData_UpgradeInfo cTable, UPGRADE_TYPE eType)
+        public bool Try_Upgrade(CCSVData_UpgradeInfo cTable, STAT_TYPE eType)
         {
             CUpgradeInfo cInfo = cTable != null ? cTable.Get_Info(eType) : null;
             if (cInfo == null)
@@ -138,6 +142,133 @@ namespace Client
             m_cRepository.Save(m_cProgress);
             return true;
         }
+
+        #region 260905_인벤토리 (장비 · 소모품 · 스킬)
+        public int  Get_ItemCount(int iEquipID)  => m_cProgress.Get_ItemCount(iEquipID);
+        public bool Has_Item(int iEquipID)       => m_cProgress.Has_Item(iEquipID);
+        public bool Is_Equipped(int iEquipID)    => m_cProgress.Is_Equipped(iEquipID);
+        public int  EQUIPPED_SKILL_ID            => m_cProgress.iEquippedSkillID;
+
+        public void Add_Item(int iEquipID, int iCount = 1)
+        {
+            if (iEquipID <= 0 || iCount <= 0)
+                return;
+
+            m_cProgress.Add_Item(iEquipID, iCount);
+            m_cRepository.Save(m_cProgress);
+        }
+
+        /// <summary> 소모품을 쓴다. 없으면 아무 일도 없다. </summary>
+        public bool Use_Item(int iEquipID, int iCount = 1)
+        {
+            if (m_cProgress.Use_Item(iEquipID, iCount) == false)
+                return false;
+
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        /// <summary> 갖고 있지 않거나 소모품이면 장착하지 않는다. </summary>
+        public bool Try_Equip(int iEquipID)
+        {
+            CEquipInfo cInfo = Get_EquipInfo(iEquipID);
+            if (cInfo == null || cInfo.IS_CONSUMABLE == true)
+                return false;
+
+            if (m_cProgress.Has_Item(iEquipID) == false)
+                return false;
+
+            m_cProgress.Equip(iEquipID, Collect_SlotIDs(cInfo.eSlot));
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        public void Unequip(int iEquipID)
+        {
+            if (m_cProgress.Is_Equipped(iEquipID) == false)
+                return;
+
+            m_cProgress.Unequip(iEquipID);
+            m_cRepository.Save(m_cProgress);
+        }
+
+        /// <summary> 그 슬롯에 지금 낀 장비. 없으면 null. </summary>
+        public CEquipInfo Get_Equipped(EQUIP_SLOT eSlot)
+        {
+            if (m_cEquipTable == null)
+                return null;
+
+            for (int i = 0; i < m_cProgress.lstEquipped.Count; ++i)
+            {
+                CEquipInfo cInfo = m_cEquipTable.Get_Info(m_cProgress.lstEquipped[i]);
+                if (cInfo != null && cInfo.eSlot == eSlot)
+                    return cInfo;
+            }
+
+            return null;
+        }
+
+        // 260905_스킬은 통틀어 하나만 장착한다.
+        public void Set_EquippedSkill(int iSkillID)
+        {
+            if (m_cProgress.iEquippedSkillID == iSkillID)
+                return;
+
+            m_cProgress.iEquippedSkillID = iSkillID;
+            m_cRepository.Save(m_cProgress);
+        }
+
+        /// <summary>
+        /// 장착한 장비가 주는 능력치 합. 강화(Get_UpgradeValue)와 더해서 쓴다 —
+        /// 둘을 합치는 곳을 한 군데(CGameManager)로 모으기 위해 여기서는 장비만 센다.
+        /// </summary>
+        public float Get_EquipStat(STAT_TYPE eStat)
+        {
+            if (m_cEquipTable == null || eStat == STAT_TYPE.NONE)
+                return 0f;
+
+            float fSum = 0f;
+
+            for (int i = 0; i < m_cProgress.lstEquipped.Count; ++i)
+            {
+                CEquipInfo cInfo = m_cEquipTable.Get_Info(m_cProgress.lstEquipped[i]);
+                if (cInfo != null && cInfo.eStat == eStat)
+                    fSum += cInfo.fStatValue;
+            }
+
+            return fSum;
+        }
+
+        /// <summary> 강화 + 장비를 합친 최종 수치. 스테이지에 넣을 값은 이것 하나뿐이다. </summary>
+        public float Get_TotalStat(CCSVData_UpgradeInfo cUpgradeTable, STAT_TYPE eStat)
+        {
+            return Get_UpgradeValue(cUpgradeTable, eStat) + Get_EquipStat(eStat);
+        }
+
+        private CEquipInfo Get_EquipInfo(int iEquipID)
+        {
+            return m_cEquipTable != null ? m_cEquipTable.Get_Info(iEquipID) : null;
+        }
+
+        // 같은 슬롯의 장비를 벗기려면 그 슬롯에 속한 ID를 전부 알아야 한다.
+        private readonly List<CEquipInfo> m_lstSlotBuffer = new List<CEquipInfo>();
+        private readonly List<int>        m_lstSlotID     = new List<int>();
+
+        private IReadOnlyList<int> Collect_SlotIDs(EQUIP_SLOT eSlot)
+        {
+            m_lstSlotID.Clear();
+
+            if (m_cEquipTable == null)
+                return m_lstSlotID;
+
+            m_cEquipTable.Collect_BySlot(eSlot, m_lstSlotBuffer);
+            for (int i = 0; i < m_lstSlotBuffer.Count; ++i)
+                m_lstSlotID.Add(m_lstSlotBuffer[i].iEquipID);
+
+            return m_lstSlotID;
+        }
+        #endregion 260905_인벤토리 (장비 · 소모품 · 스킬)
+
 
         /// <summary> 마지막으로 고른 맵을 기억한다 — 선택 화면을 다시 열 때 그 자리로 돌아간다. </summary>
         public void Set_LastMap(int iMapID)
