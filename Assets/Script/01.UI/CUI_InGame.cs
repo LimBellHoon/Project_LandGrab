@@ -27,9 +27,15 @@ namespace Client
         [SerializeField] private Button         m_btnSkill;
         [SerializeField] private Image          m_imgSkillCool;
         [SerializeField] private Text           m_txtSkill;
+        // 260905_소모품 버튼
+        [SerializeField] private Button         m_btnItem;
+        [SerializeField] private Text           m_txtItem;
 
         private CPlayer         m_cPlayer;
         private CStage_Manager  m_cStage;
+        private CProgress_Manager  m_cProgress;
+        private CCSVData_EquipInfo m_cEquipTable;
+        private Action             m_OnUseItem;
         private Canvas          m_cCanvas;
         private Action          m_OnPause;
 
@@ -53,6 +59,9 @@ namespace Client
 
             m_cPlayer = cDesc.cPlayer;
             m_cStage  = cDesc.cStage;
+            m_cProgress   = cDesc.cProgress;
+            m_cEquipTable = cDesc.cEquipTable;
+            m_OnUseItem   = cDesc.OnUseItem;
             m_OnPause = cDesc.OnPause;
             m_cCanvas = GetComponentInParent<Canvas>();
 
@@ -76,8 +85,17 @@ namespace Client
                 m_btnSkill.onClick.RemoveAllListeners();
                 m_btnSkill.onClick.AddListener(On_ClickSkill);
             }
+
+            if (m_btnItem != null)
+            {
+                m_btnItem.onClick.RemoveAllListeners();
+                m_btnItem.onClick.AddListener(On_ClickItem);
+            }
             m_cPlayer = null;
             m_cStage  = null;
+            m_cProgress   = null;
+            m_cEquipTable = null;
+            m_OnUseItem   = null;
             m_OnPause = null;
             base.Hide();
         }
@@ -88,6 +106,7 @@ namespace Client
             Refresh_Joystick();
             Refresh_Status();
             Refresh_Skill();
+            Refresh_Item();
         }
 
         /// <summary> 일시정지 중에는 조이스틱을 감춘다 (입력도 어차피 멈춰 있다). </summary>
@@ -99,6 +118,9 @@ namespace Client
             // 260905_일시정지 중에는 스킬도 막는다.
             if (m_btnSkill != null)
                 m_btnSkill.interactable = bInteractable;
+
+            if (m_btnItem != null)
+                m_btnItem.interactable = bInteractable;
 
             if (bInteractable == false)
                 Show_Joystick(false);
@@ -167,6 +189,32 @@ namespace Client
                                 ? cSkill.INFO.strName
                                 : $"{cSkill.REMAIN:F1}";
         }
+
+        // 260905_소모품
+        private void On_ClickItem()
+        {
+            m_OnUseItem?.Invoke();
+        }
+
+        // 장착한 소모품이 없거나 다 썼으면 버튼을 숨긴다 — 누를 수 없는 버튼은 혼란만 준다.
+        private void Refresh_Item()
+        {
+            if (m_btnItem == null)
+                return;
+
+            CEquipInfo cInfo = m_cProgress != null ? m_cProgress.Get_Equipped(EQUIP_SLOT.CONSUMABLE) : null;
+            int iCount = cInfo != null ? m_cProgress.Get_ItemCount(cInfo.iEquipID) : 0;
+            bool bShow = cInfo != null && iCount > 0;
+
+            if (m_btnItem.gameObject.activeSelf != bShow)
+                m_btnItem.gameObject.SetActive(bShow);
+
+            if (bShow == false || m_txtItem == null)
+                return;
+
+            m_txtItem.text = $"{cInfo.strName}\n{iCount}";
+        }
+
 
         private void Refresh_Status()
         {

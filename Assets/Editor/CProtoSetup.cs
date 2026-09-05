@@ -1117,6 +1117,23 @@ namespace Client
             imgCool.fillMethod = Image.FillMethod.Vertical;
             imgCool.fillOrigin = (int)Image.OriginVertical.Top;
 
+            // 260905_소모품 버튼은 스킬 버튼 바로 위. 둘 다 오른손 엄지 안쪽이다.
+            GameObject goItem = Create_UIObject("Btn_Item", goRoot.transform);
+            RectTransform trItem = goItem.GetComponent<RectTransform>();
+            trItem.anchorMin = new Vector2(1f, 0f);
+            trItem.anchorMax = new Vector2(1f, 0f);
+            trItem.pivot     = new Vector2(1f, 0f);
+            trItem.anchoredPosition = new Vector2(-48f, 400f);
+            trItem.sizeDelta = new Vector2(160f, 160f);
+            goItem.AddComponent<Image>().color = new Color(0.60f, 0.34f, 0.20f, 0.90f);
+            Button cItem = goItem.AddComponent<Button>();
+
+            GameObject goItemLabel = Create_UIObject("Label", goItem.transform);
+            Stretch_Full(goItemLabel.GetComponent<RectTransform>());
+            Text txtItem = Make_Text(goItemLabel, "\uc544\uc774\ud15c", 26, TextAnchor.MiddleCenter);
+            txtItem.raycastTarget = false;
+
+
             CUI_InGame cUI = goRoot.AddComponent<CUI_InGame>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trJoystickBase").objectReferenceValue   = trBase;
@@ -1126,6 +1143,8 @@ namespace Client
             cSerialized.FindProperty("m_btnSkill").objectReferenceValue         = cSkill;
             cSerialized.FindProperty("m_imgSkillCool").objectReferenceValue     = imgCool;
             cSerialized.FindProperty("m_txtSkill").objectReferenceValue         = txtSkill;
+            cSerialized.FindProperty("m_btnItem").objectReferenceValue           = cItem;
+            cSerialized.FindProperty("m_txtItem").objectReferenceValue           = txtItem;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);

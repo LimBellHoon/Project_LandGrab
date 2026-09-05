@@ -470,6 +470,9 @@ namespace Client
                 cPlayer         = m_cStageManager.PLAYER,
                 cStage          = m_cStageManager,
                 OnPause         = Pause_Stage,
+                cProgress       = m_cProgressManager,
+                cEquipTable     = m_cEquipTable,
+                OnUseItem       = Use_Consumable,
             };
 
             m_cInGameUI = m_cGameInstance.Open_UI<CUI_InGame>(cDesc, m_trUIField);
@@ -540,6 +543,22 @@ namespace Client
                 OnPrimary   = Return_ToStageSelect,
             });
         }
+
+        // 260905_소모품 사용. 개수를 깎는 것은 진행도가, 효과를 거는 것은 스테이지가 한다.
+        // 효과를 걸지 못하면 개수를 되돌린다 — 연출 중에 눌러 소모품만 날리는 일을 막는다.
+        private void Use_Consumable()
+        {
+            CEquipInfo cInfo = m_cProgressManager.Get_Equipped(EQUIP_SLOT.CONSUMABLE);
+            if (cInfo == null || cInfo.eConsume == CONSUME_EFFECT.NONE)
+                return;
+
+            if (m_cProgressManager.Use_Item(cInfo.iEquipID) == false)
+                return;
+
+            if (m_cStageManager.Apply_Consumable(cInfo.eConsume) == false)
+                m_cProgressManager.Add_Item(cInfo.iEquipID);
+        }
+
 
         // 260904_일시정지. 액터를 세우는 것은 스테이지가, 화면은 여기가 맡는다.
         private void Pause_Stage()

@@ -18,6 +18,7 @@ namespace Client
         public STAT_TYPE    eStat;          // 올려 주는 능력치. 소모품은 NONE
         public float        fStatValue;     // SPEED는 배율, EVASION은 확률, HP는 목숨 개수
         public int          iPrice;         // 상점 가격 (코인)
+        public CONSUME_EFFECT eConsume;     // 소모품이 주는 효과. 장비는 NONE
 
         public bool IS_CONSUMABLE => eSlot == EQUIP_SLOT.CONSUMABLE;
     }
@@ -73,6 +74,7 @@ namespace Client
                 eStat       = CCSV_Utility.To_Enum(arrField, 4, STAT_TYPE.NONE),
                 fStatValue  = CCSV_Utility.To_Float(arrField, 5),
                 iPrice      = CCSV_Utility.To_Int(arrField, 6),
+                eConsume    = CCSV_Utility.To_Enum(arrField, 7, CONSUME_EFFECT.NONE),
             };
 
             if (cInfo.iEquipID <= 0 || cInfo.eSlot == EQUIP_SLOT.NONE)

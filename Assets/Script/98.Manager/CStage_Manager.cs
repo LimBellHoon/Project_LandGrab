@@ -365,6 +365,23 @@ namespace Client
         }
 
         // 260904_일시정지. 액터를 세우는 길은 Set_ActorTimeScale 하나뿐이다(2-8).
+        // 260905_소모품은 인벤토리에서 개수를 깎는 쪽(CGameManager)이 먼저 판단하고,
+        // 실제 효과만 여기서 플레이어에게 건다.
+        /// <returns> 효과를 걸었으면 true </returns>
+        public bool Apply_Consumable(CONSUME_EFFECT eEffect)
+        {
+            if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true || m_cPlayer == null)
+                return false;
+
+            switch (eEffect)
+            {
+                case CONSUME_EFFECT.SHIELD: m_cPlayer.Add_Shield(); return true;
+                case CONSUME_EFFECT.HEAL:   m_cPlayer.Heal(1);      return true;
+                default:                    return false;
+            }
+        }
+
+
         // 260905_스킬 버튼은 UI에 있고 플레이어는 스테이지가 갖고 있으므로 여기를 거친다.
         /// <summary> 연출 중이거나 멈춰 있을 때는 발동하지 않는다. </summary>
         public bool Try_UseSkill()

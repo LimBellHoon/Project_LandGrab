@@ -1,14 +1,14 @@
-﻿iEquipID	eSlot	strName	strDesc	eStat	fStatValue	iPrice	NONE
+﻿iEquipID	eSlot	strName	strDesc	eStat	fStatValue	iPrice	eConsume	NONE
 ;== 장비 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
 ;eSlot : Client_Enum.EQUIP_SLOT 이름과 같아야 한다 (SHOES / BAG / NECKLACE / CONSUMABLE)
 ;eStat : Client_Enum.STAT_TYPE 이름과 같아야 한다. 강화와 같은 늨을 올린다
 ;fStatValue : SPEED는 배율(0.08 = +8%), EVASION은 확률, HP는 목숨 개수
 ;소모품은 eStat을 NONE으로 두고 효과를 따로 처리한다
-;---	슬롯	이름	설명	능력치	수치	가격	메모
-101	SHOES	가벼운 신발	이동 속도 +8%	SPEED	0.08	200	기본 신발
-102	SHOES	질주화	이동 속도 +18%	SPEED	0.18	700	
-201	BAG	낡은 가방	회피 +6%	EVASION	0.06	250	
-202	BAG	바람가방	회피 +12%	EVASION	0.12	800	
-301	NECKLACE	수호 목걸이	시작 목숨 +1	HP	1	900	
-401	CONSUMABLE	보호막	피격 1회 무효	NONE	0	120	1회성
-402	CONSUMABLE	포션	목숨 1 회복	NONE	0	180	1회성
+;---	슬롯	이름	설명	능력치	수치	가격	소모효과	메모
+101	SHOES	가벼운 신발	이동 속도 +8%	SPEED	0.08	200	NONE	기본 신발
+102	SHOES	질주화	이동 속도 +18%	SPEED	0.18	700	NONE	
+201	BAG	낡은 가방	회피 +6%	EVASION	0.06	250	NONE	
+202	BAG	바람가방	회피 +12%	EVASION	0.12	800	NONE	
+301	NECKLACE	수호 목걸이	시작 목숨 +1	HP	1	900	NONE	
+401	CONSUMABLE	보호막	피격 1회 무효	NONE	0	120	SHIELD	1회성
+402	CONSUMABLE	포션	목숨 1 회복	NONE	0	180	HEAL	1회성

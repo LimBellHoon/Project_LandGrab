@@ -147,8 +147,8 @@ namespace Client
                 Button cButton = Make_Row($"Btn_Equip_{cInfo.iEquipID}");
                 Set_EquipLabel(cButton.gameObject, cInfo);
 
-                // 소모품은 장착 대상이 아니라 개수만 보여 준다.
-                cButton.interactable = cInfo.IS_CONSUMABLE == false;
+                // 260905_소모품도 슬롯에 넣는다 — 전투에 무엇을 들고 갈지 고르는 것이다.
+                cButton.interactable = true;
 
                 int iEquipID = cInfo.iEquipID;      // 클로저 대비 지역 복사
                 cButton.onClick.AddListener(() => On_ClickEquip(iEquipID));
@@ -165,7 +165,7 @@ namespace Client
 
             string strState;
             if (cInfo.IS_CONSUMABLE == true)
-                strState = $"보유 {m_cProgress.Get_ItemCount(cInfo.iEquipID)}";
+                strState = $"{(m_cProgress.Is_Equipped(cInfo.iEquipID) == true ? "[장착 중] " : "")}보유 {m_cProgress.Get_ItemCount(cInfo.iEquipID)}";
             else
                 strState = m_cProgress.Is_Equipped(cInfo.iEquipID) == true ? "[장착 중]" : "장착하기";
 

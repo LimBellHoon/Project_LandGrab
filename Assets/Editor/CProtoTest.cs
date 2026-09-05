@@ -496,9 +496,11 @@ namespace Client
             Check("슬롯으로 조회", cManager.Get_Equipped(EQUIP_SLOT.SHOES)?.iEquipID ?? 0, 102);
             Check("빈 슬롯은 null", cManager.Get_Equipped(EQUIP_SLOT.NECKLACE) == null);
 
-            // 소모품은 장착되지 않는다
             cManager.Add_Item(401);
-            Check("소모품은 장착 불가", cManager.Try_Equip(401) == false);
+            // 260905_소모품도 슬롯에 넣는다 — 전투에 무엇을 들고 갈지 고르는 것이다.
+            Check("소모품도 장착된다", cManager.Try_Equip(401));
+            Check("소모품 슬롯 조회", cManager.Get_Equipped(EQUIP_SLOT.CONSUMABLE)?.iEquipID ?? 0, 401);
+            Check("소모 효과 파싱", cManager.Get_Equipped(EQUIP_SLOT.CONSUMABLE)?.eConsume == CONSUME_EFFECT.SHIELD);
 
             // 스킬 장착
             cManager.Set_EquippedSkill(1);

@@ -208,12 +208,19 @@ namespace Client
         public CStage_Manager   cStage  { get; set; }
         /// <summary> 일시정지 버튼을 눌렀을 때 </summary>
         public Action           OnPause { get; set; }
+        // 260905_소모품. 개수와 종류는 UI가 직접 읽고, 실제 사용은 CGameManager가 처리한다.
+        public CProgress_Manager    cProgress   { get; set; }
+        public CCSVData_EquipInfo   cEquipTable { get; set; }
+        public Action               OnUseItem   { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
             cPlayer = null;
             cStage  = null;
+            cProgress   = null;
+            cEquipTable = null;
+            OnUseItem   = null;
             OnPause = null;
         }
     }

@@ -30,10 +30,13 @@ namespace Client
         private float           m_fInvincibleTimer;
         private float           m_fBaseSpeed;       // 260904_거미줄 감속의 기준이 되는 원래 속도
         private float           m_fEvasion;         // 260905_피격 회피 확률 0~1
+        private bool            m_bShield;          // 260905_소모품 보호막. 다음 피격 1회를 막는다
 
         public int          LIFE            => m_iLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
+        /// <summary> 260905_보호막을 들고 있는가. UI가 표시에 쓴다. </summary>
+        public bool         HAS_SHIELD      => m_bShield;
         /// <summary> 260904_UI가 조이스틱을 그리려고 읽는다. </summary>
         public CVirtualJoystick JOYSTICK    => m_cInputHandler.JOYSTICK;
         /// <summary> 260905_UI가 쿨타임 게이지를 그리려고 읽는다. </summary>
@@ -67,6 +70,7 @@ namespace Client
             m_vLastSafeCell     = cDesc.vStartCell;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
             m_fEvasion          = Mathf.Clamp01(cDesc.fEvasion);
+            m_bShield           = false;
             m_cSkillHandler.Initialize(cDesc.cSkillInfo);
 
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
@@ -172,6 +176,17 @@ namespace Client
             if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
                 return;
 
+            // 260905_보호막이 있으면 확정으로 한 번 막는다. 확률인 회피보다 먼저 쓴다 —
+            // 회피가 먼저 터지면 아껴 둔 보호막이 그대로 남아 손해처럼 느껴진다.
+            if (m_bShield == true)
+            {
+                m_bShield = false;
+                m_fInvincibleTimer = EVADE_GRACE_TIME;
+                OnEvade?.Invoke();
+                return;
+            }
+
+
             // 260905_회피(능력치 강화). 성공하면 짧은 무적을 함께 준다 —
             // 몬스터와 겹쳐 있는 동안 매 프레임 판정하면 확률이 아무리 높아도 결국 죽는다.
             if (m_fEvasion > 0f && UnityEngine.Random.value < m_fEvasion)
@@ -249,6 +264,21 @@ namespace Client
 
             return bMoved;
         }
+
+        // 260905_소모품 효과
+        /// <summary> 보호막을 얻는다. 이미 있으면 그대로 둔다(중첩하지 않는다). </summary>
+        public void Add_Shield() => m_bShield = true;
+
+        /// <summary> 목숨을 회복한다. </summary>
+        public void Heal(int iAmount)
+        {
+            if (iAmount <= 0 || m_iLife <= 0)
+                return;
+
+            m_iLife += iAmount;
+            OnLifeChanged?.Invoke(m_iLife);
+        }
+
         #endregion 규칙 판정
 
         private void Refresh_InvincibleBlink()

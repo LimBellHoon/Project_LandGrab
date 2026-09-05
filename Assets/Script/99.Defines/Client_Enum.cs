@@ -69,6 +69,15 @@
         NECKLACE,       // 목걸이
         CONSUMABLE,     // 1회성 소모품 (방어막 / 포션)
     }
+    /// <summary> 소모품이 주는 효과. 장비는 NONE. </summary>
+    public enum CONSUME_EFFECT
+    {
+        NONE = 0,
+        SHIELD,     // 다음 피격 1회 무효
+        HEAL,       // 목숨 1 회복
+    }
+
+
 
     /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>
     public enum INVENTORY_TAB

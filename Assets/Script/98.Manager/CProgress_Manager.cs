@@ -168,11 +168,12 @@ namespace Client
             return true;
         }
 
-        /// <summary> 갖고 있지 않거나 소모품이면 장착하지 않는다. </summary>
+        /// <summary> 갖고 있지 않으면 장착하지 않는다. 소모품도 슬롯 하나를 차지한다. </summary>
         public bool Try_Equip(int iEquipID)
         {
+            // 260905_소모품도 슬롯 하나를 차지한다 — 전투에 무엇을 들고 갈지 고르는 것이다.
             CEquipInfo cInfo = Get_EquipInfo(iEquipID);
-            if (cInfo == null || cInfo.IS_CONSUMABLE == true)
+            if (cInfo == null)
                 return false;
 
             if (m_cProgress.Has_Item(iEquipID) == false)
