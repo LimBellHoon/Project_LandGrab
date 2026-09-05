@@ -25,6 +25,9 @@ namespace Client
         private const string PREFAB_UI_STAGE_SELECT = "Prefab_UI_StageSelect";
         private const string PREFAB_UI_INGAME       = "Prefab_UI_InGame";
         private const string PREFAB_UI_POPUP        = "Prefab_UI_Popup";
+        // 260905_로비(하단 탭바)와 강화 화면
+        private const string PREFAB_UI_LOBBY        = "Prefab_UI_Lobby";
+        private const string PREFAB_UI_UPGRADE      = "Prefab_UI_Upgrade";
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
@@ -50,7 +53,8 @@ namespace Client
         private CCSVData_EnemyInfo  m_cEnemyTable;
         private CCSVData_UpgradeInfo m_cUpgradeTable;   // 260905_능력치 강화 표
         private CCSVData_SkillInfo  m_cSkillTable;      // 260905_스킬 표
-        private CUI                 m_cStageSelectUI;
+        private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
+        private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cInGameUI;
         private CUI                 m_cPopupUI;
         private bool                m_bReady;
@@ -155,7 +159,7 @@ namespace Client
                 m_cGameInstance.Set_UICanvas(m_trUIField, m_trUIMain, m_trUIPopup);
 
                 m_bReady = true;
-                Open_StageSelect();
+                Open_Lobby();
             }
             catch (Exception e)
             {
@@ -222,15 +226,83 @@ namespace Client
 
         #region 화면 흐름
         // 260904_선택 → 플레이 → 결과 → 선택. 갈아타는 지점을 여기 한곳에 모아 둔다.
-        private void Open_StageSelect()
+        // 260905_로비 — 하단 탭바로 전투/업그레이드/인벤토리/상점을 오간다.
+        // 전투 중에는 로비를 통째로 닫는다 — 조이스틱이 화면 아래를 쓰기 때문에
+        // 탭바가 남아 있으면 조작과 겹친다.
+        private void Open_Lobby()
         {
-            if (m_cStageSelectUI != null)
+            if (m_cLobbyUI != null)
             {
-                // 이미 떠 있으면 해금 상태만 다시 반영한다.
-                (m_cStageSelectUI as CUI_StageSelect)?.Refresh_List();
+                // 이미 떠 있으면 재화와 현재 탭만 다시 반영한다.
+                (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency();
+                (m_cTabUI as CUI_StageSelect)?.Refresh_List();
                 return;
             }
 
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_LOBBY) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_LOBBY}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            CUI_LobbyDesc cDesc = new CUI_LobbyDesc
+            {
+                eObjectType     = OBJECT_TYPE.UI_MAIN,
+                cProgress       = m_cProgressManager,
+                eStartTab       = LOBBY_TAB.BATTLE,
+                OnTabChanged    = On_TabChanged,
+            };
+
+            // Initialize 안에서 Select_Tab이 불려 On_TabChanged가 먼저 도달한다.
+            // 그때 m_cLobbyUI는 아직 null이라 탭 화면을 못 여므로, 여기서 한 번 더 열어 준다.
+            m_cLobbyUI = m_cGameInstance.Open_UI<CUI_Lobby>(cDesc, m_trUIMain);
+            On_TabChanged((m_cLobbyUI as CUI_Lobby)?.TAB ?? LOBBY_TAB.BATTLE);
+        }
+
+        private void Close_Lobby()
+        {
+            Close_Tab();
+
+            if (m_cLobbyUI == null)
+                return;
+
+            m_cGameInstance.Close_UI(m_cLobbyUI);
+            m_cLobbyUI = null;
+        }
+
+        private void Close_Tab()
+        {
+            if (m_cTabUI == null)
+                return;
+
+            m_cGameInstance.Close_UI(m_cTabUI);
+            m_cTabUI = null;
+        }
+
+        // 탭을 고르면 무엇을 띄울지는 여기서 정한다 — UI끼리 서로를 모르게 하기 위함.
+        private void On_TabChanged(LOBBY_TAB eTab)
+        {
+            Transform trContent = (m_cLobbyUI as CUI_Lobby)?.CONTENT;
+            if (trContent == null)
+                return;     // 로비가 아직 안 열렸다. Open_Lobby가 뒤이어 다시 불러 준다.
+
+            Close_Tab();
+
+            switch (eTab)
+            {
+                case LOBBY_TAB.BATTLE:  Open_TabBattle(trContent);  break;
+                case LOBBY_TAB.UPGRADE: Open_TabUpgrade(trContent); break;
+
+                // 260905_아직 없는 화면은 빈 탭으로 둔다. 버튼은 눌리고 자리만 잡아 둔다.
+                default:
+                    Debug.Log($"[CGameManager] {eTab} 탭은 아직 준비 중입니다.");
+                    break;
+            }
+        }
+
+        private void Open_TabBattle(Transform trParent)
+        {
             if (m_cGameInstance.Has_Prefab(PREFAB_UI_STAGE_SELECT) == false)
             {
                 Debug.LogError($"[CGameManager] '{PREFAB_UI_STAGE_SELECT}' 프리팹이 없습니다. "
@@ -247,17 +319,29 @@ namespace Client
                 OnSelect        = Start_Stage,
             };
 
-            m_cStageSelectUI = m_cGameInstance.Open_UI<CUI_StageSelect>(cDesc, m_trUIMain);
+            m_cTabUI = m_cGameInstance.Open_UI<CUI_StageSelect>(cDesc, trParent);
         }
 
-        private void Close_StageSelect()
+        private void Open_TabUpgrade(Transform trParent)
         {
-            if (m_cStageSelectUI == null)
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_UPGRADE) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_UPGRADE}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
                 return;
+            }
 
-            m_cGameInstance.Close_UI(m_cStageSelectUI);
-            m_cStageSelectUI = null;
+            CUI_UpgradeDesc cDesc = new CUI_UpgradeDesc
+            {
+                eObjectType     = OBJECT_TYPE.UI_MAIN,
+                cUpgradeTable   = m_cUpgradeTable,
+                cProgress       = m_cProgressManager,
+                OnPurchased     = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
+            };
+
+            m_cTabUI = m_cGameInstance.Open_UI<CUI_Upgrade>(cDesc, trParent);
         }
+
 
         private void Start_Stage(int iMapID)
         {
@@ -271,14 +355,14 @@ namespace Client
                 return;
             }
 
-            Close_StageSelect();
+            Close_Lobby();
 
             // 이전 스테이지가 남아 있을 수 있다 — 완전히 정리하고 새로 깐다.
             m_cStageManager.Release();
 
             if (m_cStageManager.Initialize(cMapInfo, m_cEnemyTable, m_srOverlay, m_srBackground) == false)
             {
-                Open_StageSelect();
+                Open_Lobby();
                 return;
             }
 
@@ -296,7 +380,7 @@ namespace Client
 
             if (m_cStageManager.Start_Stage() == false)
             {
-                Open_StageSelect();
+                Open_Lobby();
                 return;
             }
 
@@ -454,7 +538,7 @@ namespace Client
             Close_Popup();
             Close_InGameUI();
             m_cStageManager.Release();
-            Open_StageSelect();
+            Open_Lobby();
         }
         #endregion 화면 흐름
     }

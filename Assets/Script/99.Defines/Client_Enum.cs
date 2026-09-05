@@ -59,6 +59,16 @@
         PASSIVE,
     }
 
+    // 260905_로비 하단 탭
+    /// <summary> 선언 순서가 그대로 탭 버튼 순서다 (CUI_Lobby의 배열 인덱스). </summary>
+    public enum LOBBY_TAB
+    {
+        BATTLE = 0,
+        UPGRADE,
+        INVENTORY,
+        SHOP,
+    }
+
     /// <summary> 스테이지 진행 상태 </summary>
     public enum STAGE_STATE
     {

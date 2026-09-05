@@ -63,6 +63,11 @@ namespace Client
         private const string UI_STAGE_SELECT        = "Prefab_UI_StageSelect";
         // 260904_인게임 HUD (가상 조이스틱)
         private const string PATH_PREFAB_UI_INGAME  = DIR_PREFAB + "/Prefab_UI_InGame.prefab";
+        // 260905_로비(하단 탭바) / 강화 화면
+        private const string PATH_PREFAB_UI_LOBBY   = DIR_PREFAB + "/Prefab_UI_Lobby.prefab";
+        private const string PATH_PREFAB_UI_UPGRADE = DIR_PREFAB + "/Prefab_UI_Upgrade.prefab";
+        private const string UI_LOBBY               = "Prefab_UI_Lobby";
+        private const string UI_UPGRADE             = "Prefab_UI_Upgrade";
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -134,6 +139,10 @@ namespace Client
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus", "m_btnPause" });
+            iFail += Validate_UIPrefab<CUI_Lobby>(PATH_PREFAB_UI_LOBBY, UI_LOBBY,
+                                                 new[] { "m_trContent", "m_txtCoin", "m_txtStar", "m_arrTabButton" });
+            iFail += Validate_UIPrefab<CUI_Upgrade>(PATH_PREFAB_UI_UPGRADE, UI_UPGRADE,
+                                                 new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -160,6 +169,20 @@ namespace Client
         }
 
         /// <summary> UI 프리팹의 컴포넌트 · [SerializeField] 연결 · Addressable을 한꺼번에 본다. </summary>
+        private static bool Is_ArrayFilled(SerializedProperty cProperty)
+        {
+            if (cProperty.arraySize == 0)
+                return false;
+
+            for (int i = 0; i < cProperty.arraySize; ++i)
+            {
+                if (cProperty.GetArrayElementAtIndex(i).objectReferenceValue == null)
+                    return false;
+            }
+
+            return true;
+        }
+
         private static int Validate_UIPrefab<T>(string strPath, string strAddress, string[] arrField)
             where T : Component
         {
@@ -185,6 +208,19 @@ namespace Client
                 for (int i = 0; i < arrField.Length; ++i)
                 {
                     SerializedProperty cProperty = cSerialized.FindProperty(arrField[i]);
+                    // 260905_배열 필드는 objectReferenceValue가 항상 null이라
+                    // 원소가 하나라도 있고 전부 채워졌는지로 본다.
+                    if (cProperty != null && cProperty.isArray == true
+                        && cProperty.propertyType != SerializedPropertyType.String)
+                    {
+                        if (Is_ArrayFilled(cProperty) == false)
+                        {
+                            Debug.LogError($"  FAIL  {typeof(T).Name}.{arrField[i]} 배열이 비어 있거나 빈 칸이 있음");
+                            ++iFail;
+                        }
+                        continue;
+                    }
+
                     if (cProperty == null || cProperty.objectReferenceValue == null)
                     {
                         Debug.LogError($"  FAIL  {typeof(T).Name}.{arrField[i]} 미연결");
@@ -641,6 +677,8 @@ namespace Client
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_StageSelectUI();
             Create_InGameUI();
+            Create_LobbyUI();
+            Create_UpgradeUI();
             Create_PopupUI();
         }
 
@@ -684,6 +722,8 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_LOBBY, UI_LOBBY, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_UPGRADE, UI_UPGRADE, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
@@ -785,6 +825,156 @@ namespace Client
         // 조이스틱은 위치를 코드로 직접 잡으므로 레이아웃 그룹에 넣지 않는다.
         // 터치는 EventSystem을 거치지 않고 Input으로 직접 읽으므로 raycastTarget은 전부 끈다 —
         // HUD가 화면을 덮고 있어도 다른 UI의 클릭을 막지 않게 하기 위해서다.
+        // 260905_로비 — 상단 재화 / 가운데 탭 화면 자리 / 하단 탭바
+        private static void Create_LobbyUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_LOBBY, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            GameObject goBG = Create_UIObject("Panel", goRoot.transform);
+            Stretch_Full(goBG.GetComponent<RectTransform>());
+            goBG.AddComponent<Image>().color = new Color(0.04f, 0.05f, 0.09f, 1f);
+
+            // 상단 재화 바
+            GameObject goTop = Create_UIObject("TopBar", goRoot.transform);
+            RectTransform trTop = goTop.GetComponent<RectTransform>();
+            trTop.anchorMin = new Vector2(0f, 1f);
+            trTop.anchorMax = new Vector2(1f, 1f);
+            trTop.pivot     = new Vector2(0.5f, 1f);
+            trTop.offsetMin = new Vector2(0f, -130f);
+            trTop.offsetMax = new Vector2(0f, 0f);
+            goTop.AddComponent<Image>().color = new Color(0.10f, 0.13f, 0.22f, 1f);
+
+            GameObject goStar = Create_UIObject("Txt_Star", goTop.transform);
+            RectTransform trStar = goStar.GetComponent<RectTransform>();
+            trStar.anchorMin = new Vector2(0f, 0f);
+            trStar.anchorMax = new Vector2(0.5f, 1f);
+            trStar.offsetMin = new Vector2(32f, 0f);
+            trStar.offsetMax = Vector2.zero;
+            Text txtStar = Make_Text(goStar, "\u2605 0", 34, TextAnchor.MiddleLeft);
+            txtStar.raycastTarget = false;
+
+            GameObject goCoin = Create_UIObject("Txt_Coin", goTop.transform);
+            RectTransform trCoin = goCoin.GetComponent<RectTransform>();
+            trCoin.anchorMin = new Vector2(0.5f, 0f);
+            trCoin.anchorMax = new Vector2(1f, 1f);
+            trCoin.offsetMin = Vector2.zero;
+            trCoin.offsetMax = new Vector2(-32f, 0f);
+            Text txtCoin = Make_Text(goCoin, "\ucf54\uc778 0", 34, TextAnchor.MiddleRight);
+            txtCoin.raycastTarget = false;
+
+            // 가운데 — 탭 화면이 열릴 자리. 위아래로 바를 피해 둔다.
+            GameObject goContent = Create_UIObject("Content", goRoot.transform);
+            RectTransform trContent = goContent.GetComponent<RectTransform>();
+            trContent.anchorMin = new Vector2(0f, 0f);
+            trContent.anchorMax = new Vector2(1f, 1f);
+            trContent.offsetMin = new Vector2(0f, 200f);
+            trContent.offsetMax = new Vector2(0f, -130f);
+
+            // 하단 탭바 — 4칸 균등
+            GameObject goTabBar = Create_UIObject("TabBar", goRoot.transform);
+            RectTransform trTabBar = goTabBar.GetComponent<RectTransform>();
+            trTabBar.anchorMin = new Vector2(0f, 0f);
+            trTabBar.anchorMax = new Vector2(1f, 0f);
+            trTabBar.pivot     = new Vector2(0.5f, 0f);
+            trTabBar.offsetMin = new Vector2(0f, 0f);
+            trTabBar.offsetMax = new Vector2(0f, 200f);
+            goTabBar.AddComponent<Image>().color = new Color(0.08f, 0.10f, 0.17f, 1f);
+
+            HorizontalLayoutGroup cTabLayout = goTabBar.AddComponent<HorizontalLayoutGroup>();
+            cTabLayout.spacing = 8f;
+            cTabLayout.padding = new RectOffset(8, 8, 12, 12);
+            cTabLayout.childForceExpandWidth  = true;
+            cTabLayout.childForceExpandHeight = true;
+            cTabLayout.childControlWidth      = true;
+            cTabLayout.childControlHeight     = true;
+
+            string[] arrTabName = { "\uc804\ud22c", "\uac15\ud654", "\uac00\ubc29", "\uc0c1\uc810" };
+            Button[] arrTabButton = new Button[arrTabName.Length];
+
+            for (int i = 0; i < arrTabName.Length; ++i)
+            {
+                GameObject goTab = Create_UIObject($"Btn_Tab_{i}", goTabBar.transform);
+                goTab.AddComponent<Image>().color = new Color(0.13f, 0.16f, 0.26f, 1f);
+                arrTabButton[i] = goTab.AddComponent<Button>();
+
+                GameObject goTabLabel = Create_UIObject("Label", goTab.transform);
+                Stretch_Full(goTabLabel.GetComponent<RectTransform>());
+                Make_Text(goTabLabel, arrTabName[i], 32, TextAnchor.MiddleCenter).raycastTarget = false;
+            }
+
+            CUI_Lobby cUI = goRoot.AddComponent<CUI_Lobby>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_trContent").objectReferenceValue = trContent;
+            cSerialized.FindProperty("m_txtCoin").objectReferenceValue   = txtCoin;
+            cSerialized.FindProperty("m_txtStar").objectReferenceValue   = txtStar;
+
+            SerializedProperty cArray = cSerialized.FindProperty("m_arrTabButton");
+            cArray.arraySize = arrTabButton.Length;
+            for (int i = 0; i < arrTabButton.Length; ++i)
+                cArray.GetArrayElementAtIndex(i).objectReferenceValue = arrTabButton[i];
+
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_LOBBY);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        // 260905_강화 화면. 목록은 UpgradeInfo.csv를 보고 런타임에 만든다.
+        private static void Create_UpgradeUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_UPGRADE, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            GameObject goTitle = Create_UIObject("Title", goRoot.transform);
+            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
+            trTitle.anchorMin = new Vector2(0f, 1f);
+            trTitle.anchorMax = new Vector2(1f, 1f);
+            trTitle.pivot     = new Vector2(0.5f, 1f);
+            trTitle.offsetMin = new Vector2(32f, -100f);
+            trTitle.offsetMax = new Vector2(-32f, -20f);
+            Text txtTitle = Make_Text(goTitle, "\ub2a5\ub825\uce58 \uac15\ud654", 38, TextAnchor.MiddleLeft);
+
+            GameObject goContent = Create_UIObject("Content", goRoot.transform);
+            RectTransform trContent = goContent.GetComponent<RectTransform>();
+            trContent.anchorMin = new Vector2(0f, 0f);
+            trContent.anchorMax = new Vector2(1f, 1f);
+            trContent.offsetMin = new Vector2(32f, 20f);
+            trContent.offsetMax = new Vector2(-32f, -110f);
+
+            VerticalLayoutGroup cLayout = goContent.AddComponent<VerticalLayoutGroup>();
+            cLayout.spacing              = 14f;
+            cLayout.childAlignment       = TextAnchor.UpperCenter;
+            cLayout.childForceExpandWidth  = true;
+            cLayout.childForceExpandHeight = false;
+            cLayout.childControlWidth      = true;
+            cLayout.childControlHeight     = false;
+
+            GameObject goButton = Create_UIObject("Btn_Template", goContent.transform);
+            RectTransform trButton = goButton.GetComponent<RectTransform>();
+            trButton.sizeDelta = new Vector2(0f, 130f);
+            goButton.AddComponent<LayoutElement>().minHeight = 130f;
+            goButton.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 1f);
+            Button cButton = goButton.AddComponent<Button>();
+
+            GameObject goLabel = Create_UIObject("Label", goButton.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Make_Text(goLabel, "UPGRADE", 28, TextAnchor.MiddleCenter);
+
+            goButton.SetActive(false);       // 템플릿은 항상 꺼 둔다
+
+            CUI_Upgrade cUI = goRoot.AddComponent<CUI_Upgrade>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_trContent").objectReferenceValue   = goContent.transform;
+            cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cButton;
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_UPGRADE);
+            Object.DestroyImmediate(goRoot);
+        }
+
+
         private static void Create_InGameUI()
         {
             GameObject goRoot = Create_UIObject(UI_INGAME, null);

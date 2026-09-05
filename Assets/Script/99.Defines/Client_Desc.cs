@@ -102,6 +102,39 @@ namespace Client
         }
     }
 
+    // 260905_로비 (하단 탭바)
+    /// <summary> 탭을 고르면 OnTabChanged로 알리고, 무엇을 띄울지는 CGameManager가 정한다. </summary>
+    public class CUI_LobbyDesc : CUIDesc
+    {
+        public CProgress_Manager    cProgress       { get; set; }
+        public LOBBY_TAB            eStartTab       { get; set; }
+        public Action<LOBBY_TAB>    OnTabChanged    { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cProgress    = null;
+            OnTabChanged = null;
+        }
+    }
+
+    /// <summary> 능력치 강화 화면. 목록은 UpgradeInfo.csv를 훑어 UI가 직접 만든다. </summary>
+    public class CUI_UpgradeDesc : CUIDesc
+    {
+        public CCSVData_UpgradeInfo cUpgradeTable   { get; set; }
+        public CProgress_Manager    cProgress       { get; set; }
+        /// <summary> 강화를 샀을 때 — 로비의 재화 표시를 갱신하려고 쓴다. </summary>
+        public Action               OnPurchased     { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cUpgradeTable = null;
+            cProgress     = null;
+            OnPurchased   = null;
+        }
+    }
+
     // 260904_공용 팝업 — 일시정지와 결과 화면이 같은 프리팹을 쓴다
     /// <summary>
     /// 제목 · 본문 · 버튼 두 개가 전부인 팝업. 무엇을 보여줄지는 전부 이 Desc가 정한다.
