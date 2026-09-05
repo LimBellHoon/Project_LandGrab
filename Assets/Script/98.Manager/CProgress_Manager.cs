@@ -20,6 +20,7 @@ namespace Client
         private CCSVData_EquipInfo  m_cEquipTable;
         private CStageProgress      m_cProgress = new CStageProgress();
         private bool                m_bUnlockAll;
+        private bool                m_bFreeSpend;   // 260905_코인 없이 사고 강화한다 (CGameConfig)
 
         /// <summary> 디버그 전체 개방 여부. </summary>
         public bool IS_UNLOCK_ALL => m_bUnlockAll;
@@ -51,6 +52,9 @@ namespace Client
 
         /// <summary> 디버그용 — 켜면 해금 규칙을 무시하고 전부 열린 것으로 본다. </summary>
         public void Set_UnlockAll(bool bUnlockAll) => m_bUnlockAll = bUnlockAll;
+
+        /// <summary> 디버그용 — 켜면 코인을 쓰지 않고 구매 / 강화가 된다. </summary>
+        public void Set_FreeSpend(bool bFreeSpend) => m_bFreeSpend = bFreeSpend;
 
         public bool Is_Cleared(int iMapID) => m_cProgress.Is_Cleared(iMapID);
         // 260905_별 = 달성한 웨이브 수
@@ -101,6 +105,22 @@ namespace Client
             m_cRepository.Save(m_cProgress);
         }
 
+        // 260905_코인을 쓰는 곳은 강화 / 구매 / 스킬 강화 셋뿐이다. 전부 이 함수를 지나게 해서
+        // '무료' 스위치 하나로 세 곳이 한꺼번에 열리게 했다 — 곳곳에 플래그를 뿌리면
+        // 어느 하나를 빠뜨렸을 때 그 화면만 조용히 막힌다.
+        /// <summary> 비용을 치른다. 무료 모드면 코인을 건드리지 않고 통과시킨다. </summary>
+        private bool Pay(int iCost)
+        {
+            if (m_bFreeSpend == true)
+                return true;
+
+            return m_cProgress.Use_Coin(iCost);
+        }
+
+        /// <summary> 그 비용을 낼 수 있는가. UI가 버튼을 켤지 정할 때 쓴다. </summary>
+        public bool Can_Pay(int iCost) => m_bFreeSpend == true || COIN >= iCost;
+
+
         // 260905_능력치 강화
         public int Get_UpgradeLevel(STAT_TYPE eType) => m_cProgress.Get_UpgradeLevel(eType);
 
@@ -135,7 +155,7 @@ namespace Client
             if (iLevel >= cInfo.iMaxLevel)
                 return false;
 
-            if (m_cProgress.Use_Coin(cInfo.Get_Cost(iLevel)) == false)
+            if (Pay(cInfo.Get_Cost(iLevel)) == false)
                 return false;
 
             m_cProgress.Set_UpgradeLevel(eType, iLevel + 1);
@@ -198,7 +218,7 @@ namespace Client
             if (cInfo.IS_CONSUMABLE == false && m_cProgress.Has_Item(iEquipID) == true)
                 return false;
 
-            if (m_cProgress.Use_Coin(cInfo.iPrice) == false)
+            if (Pay(cInfo.iPrice) == false)
                 return false;
 
             m_cProgress.Add_Item(iEquipID, 1);
@@ -216,7 +236,7 @@ namespace Client
             if (cInfo.IS_CONSUMABLE == false && m_cProgress.Has_Item(iEquipID) == true)
                 return false;
 
-            return COIN >= cInfo.iPrice;
+            return Can_Pay(cInfo.iPrice);
         }
 
 
@@ -257,7 +277,7 @@ namespace Client
             if (iLevel >= cInfo.iMaxLevel)
                 return false;
 
-            if (m_cProgress.Use_Coin(cInfo.Get_Cost(iLevel)) == false)
+            if (Pay(cInfo.Get_Cost(iLevel)) == false)
                 return false;
 
             m_cProgress.Set_SkillLevel(cInfo.eType, iLevel + 1);

@@ -157,6 +157,7 @@ namespace Client
             // 260904_CSV 테이블과 웨이브 이미지가 빠지면 스테이지가 통째로 안 뜬다.
             iFail += Validate_CsvTables();
             iFail += Validate_LayerTextures();
+            iFail += Validate_GameConfig();
 
             if (iFail == 0)
                 Debug.Log("[CProtoSetup] 에셋 검증 통과 — 프리팹 / 스프라이트 / CSV / Addressable 정상");
@@ -321,6 +322,26 @@ namespace Client
 
             return iFail + Validate_AddressableEntry(strPath, strName, CAddressableLabel.TEXTURE);
         }
+
+        // 260905_옵션 에셋. 없어도 게임은 기본값으로 돌지만, 값을 바꿔도 반영이 안 되는
+        // 상황을 눈치채기 어려우므로 여기서 알려 준다.
+        private static int Validate_GameConfig()
+        {
+            const string PATH = "Assets/Resources/" + CGameConfig.ASSET_NAME + ".asset";
+
+            CGameConfig cConfig = AssetDatabase.LoadAssetAtPath<CGameConfig>(PATH);
+            if (cConfig == null)
+            {
+                Debug.LogError($"  FAIL  옵션 에셋 없음 : {PATH}");
+                return 1;
+            }
+
+            Debug.Log($"  PASS  GameConfig — 속도 x{cConfig.PLAYER_SPEED_SCALE:0.##}"
+                    + $" / 전체해금 {cConfig.UNLOCK_ALL_STAGE} / 무료 {cConfig.FREE_SPEND}"
+                    + $" / 시작코인 {cConfig.START_COIN}");
+            return 0;
+        }
+
 
         private static int Validate_ActorPrefab(string strPath, string strAddress, System.Type tComponent)
         {

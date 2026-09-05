@@ -43,9 +43,9 @@ namespace Client
         [SerializeField] private Transform m_trUIMain;
         [SerializeField] private Transform m_trUIPopup;
 
-        [Header("Debug")]
-        [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
-        [SerializeField] private bool m_bDebugUnlockAll;
+        // 260905_튜닝 / 디버그 옵션. 인스펙터가 아니라 Resources/GameConfig.asset에서 읽는다 —
+        // 씬을 열지 않고도 고칠 수 있고, 씬을 다시 만들어도 값이 날아가지 않는다.
+        private CGameConfig         m_cConfig;
 
         private CGameInstance       m_cGameInstance;
         private CStage_Manager      m_cStageManager;
@@ -154,10 +154,17 @@ namespace Client
                 if (Load_Table() == false)
                     return;
 
+                m_cConfig = CGameConfig.Load();
+
                 if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local(), m_cEquipTable) == false)
                     return;
 
-                m_cProgressManager.Set_UnlockAll(m_bDebugUnlockAll);
+                m_cProgressManager.Set_UnlockAll(m_cConfig.UNLOCK_ALL_STAGE);
+                m_cProgressManager.Set_FreeSpend(m_cConfig.FREE_SPEND);
+
+                // 코인이 하나도 없을 때만 넣는다 — 켜 둔 채로 놀아도 계속 불어나지 않게.
+                if (m_cConfig.START_COIN > 0 && m_cProgressManager.COIN <= 0)
+                    m_cProgressManager.Add_Coin(m_cConfig.START_COIN);
 
                 m_cGameInstance.Set_UICanvas(m_trUIField, m_trUIMain, m_trUIPopup);
 
@@ -368,7 +375,6 @@ namespace Client
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Inventory>(cDesc, trParent);
         }
 
-
         private void Open_TabShop(Transform trParent)
         {
             if (m_cGameInstance.Has_Prefab(PREFAB_UI_SHOP) == false)
@@ -389,7 +395,6 @@ namespace Client
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Shop>(cDesc, trParent);
         }
 
-
         private void Open_TabUpgrade(Transform trParent)
         {
             if (m_cGameInstance.Has_Prefab(PREFAB_UI_UPGRADE) == false)
@@ -409,7 +414,6 @@ namespace Client
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Upgrade>(cDesc, trParent);
         }
-
 
         private void Start_Stage(int iMapID)
         {
@@ -436,7 +440,8 @@ namespace Client
 
             // 260905_강화와 장비를 합친 최종 수치를 넣는다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
             m_cStageManager.Set_PlayerUpgrade(
-                1f + m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.SPEED, m_cSkillTable),
+                (1f + m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.SPEED, m_cSkillTable))
+                    * m_cConfig.PLAYER_SPEED_SCALE,
                 m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.EVASION, m_cSkillTable),
                 Mathf.RoundToInt(m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.HP, m_cSkillTable)));
 
@@ -565,7 +570,6 @@ namespace Client
             if (m_cStageManager.Apply_Consumable(cInfo.eConsume) == false)
                 m_cProgressManager.Add_Item(cInfo.iEquipID);
         }
-
 
         // 260904_일시정지. 액터를 세우는 것은 스테이지가, 화면은 여기가 맡는다.
         private void Pause_Stage()

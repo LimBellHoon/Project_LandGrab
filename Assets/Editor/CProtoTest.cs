@@ -47,6 +47,7 @@ namespace Client
             Test_Skill();
             Test_Inventory();
             Test_SkillUpgrade();
+            Test_GameConfig();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -508,16 +509,6 @@ namespace Client
             Check("스킬 장착", cManager.EQUIPPED_SKILL_ID, 1);
         }
 
-        private static CCSVData_EquipInfo Load_EquipTable()
-        {
-            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/EquipInfo.csv");
-            if (cText == null)
-                return null;
-
-            CCSVData_EquipInfo cTable = new CCSVData_EquipInfo();
-            cTable.Read_CSVData(cText);
-            return cTable;
-        }
 
 
         // 260905_스킬 강화 + 패시브 — 장착만으로는 안 오르고, 레벨을 올려야 붙는다
@@ -581,16 +572,6 @@ namespace Client
                   Mathf.RoundToInt(cManager.Get_PassiveStat(cSkillTable, STAT_TYPE.SPEED) * 100f), 0);
         }
 
-        private static CCSVData_SkillInfo Load_SkillTable()
-        {
-            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/SkillInfo.csv");
-            if (cText == null)
-                return null;
-
-            CCSVData_SkillInfo cTable = new CCSVData_SkillInfo();
-            cTable.Read_CSVData(cText);
-            return cTable;
-        }
 
 
         private static void Test_Currency()
@@ -628,6 +609,48 @@ namespace Client
             Check("2레벨 수치", Mathf.RoundToInt(cInfo.Get_Value(2) * 100f), 8);
             Check("만렉 초과 수치는 상한", Mathf.RoundToInt(cInfo.Get_Value(99) * 100f), 12);
         }
+
+        // 260905_옵션 에셋 + 무료 모드
+        // 코인을 쓰는 곳이 셋(강화 / 구매 / 스킬 강화)이라 하나라도 새면 그 화면만 조용히 막힌다.
+        private static void Test_GameConfig()
+        {
+            const int EQUIP_SHOES = 101;   // 가벼운 신발 200코인
+
+            CGameConfig cConfig = CGameConfig.Load();
+            Check("옵션 에셋 로드", cConfig != null);
+            Check("속도 배율은 0보다 크다", cConfig.PLAYER_SPEED_SCALE > 0f);
+
+            CCSVData_MapInfo     cMapTable     = Load_MapTable();
+            CCSVData_UpgradeInfo cUpgradeTable = Load_UpgradeTable();
+            CCSVData_SkillInfo   cSkillTable   = Load_SkillTable();
+            if (cMapTable == null || cUpgradeTable == null || cSkillTable == null)
+            {
+                Check("표 로드", false);
+                return;
+            }
+
+            CProgress_Manager cManager = new CProgress_Manager();
+            cManager.Initialize(cMapTable, new CFakeProgressRepository(), Load_EquipTable());
+
+            // 무료를 끄면 코인이 없을 때 아무것도 안 된다
+            Check("기본은 유료 — 강화 실패",
+                  cManager.Try_Upgrade(cUpgradeTable, STAT_TYPE.SPEED) == false);
+            Check("기본은 유료 — 구매 실패", cManager.Try_Buy(EQUIP_SHOES) == false);
+
+            cManager.Set_FreeSpend(true);
+
+            Check("무료면 코인 0에도 강화", cManager.Try_Upgrade(cUpgradeTable, STAT_TYPE.SPEED));
+            Check("무료면 코인 0에도 구매", cManager.Try_Buy(EQUIP_SHOES));
+            Check("무료면 코인 0에도 스킬 강화",
+                  cManager.Try_UpgradeSkill(cSkillTable.Find_ByType(SKILL_TYPE.WARP)));
+            Check("코인은 줄지 않는다", cManager.COIN, 0);
+            Check("무료면 살 수 있는 상태로 보인다", cManager.Can_Pay(999999));
+
+            // 다시 끄면 원래대로 — 스위치가 한 방향으로만 도는지 확인한다
+            cManager.Set_FreeSpend(false);
+            Check("끄면 다시 막힌다", cManager.Can_Pay(1) == false);
+        }
+
 
         // 260905_별 기록 — 웨이브 하나만 달성해도 클리어, 최고 기록만 남는다
         private static void Test_Star()
@@ -740,16 +763,23 @@ namespace Client
             }
         }
 
-        private static CCSVData_MapInfo Load_MapTable()
+        // 260905_표를 읽는 방법은 파일 이름만 다르고 전부 같다 — 하나로 합쳐 둔다.
+        private static T Load_CsvTable<T>(string strFileName) where T : Engine.CCSVData, new()
         {
-            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/MapInfo.csv");
+            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>($"Assets/Data/{strFileName}.csv");
             if (cText == null)
                 return null;
 
-            CCSVData_MapInfo cTable = new CCSVData_MapInfo();
+            T cTable = new T();
             cTable.Read_CSVData(cText);
             return cTable;
         }
+
+        private static CCSVData_MapInfo     Load_MapTable()     => Load_CsvTable<CCSVData_MapInfo>("MapInfo");
+        private static CCSVData_EquipInfo   Load_EquipTable()   => Load_CsvTable<CCSVData_EquipInfo>("EquipInfo");
+        private static CCSVData_SkillInfo   Load_SkillTable()   => Load_CsvTable<CCSVData_SkillInfo>("SkillInfo");
+        private static CCSVData_UpgradeInfo Load_UpgradeTable() => Load_CsvTable<CCSVData_UpgradeInfo>("UpgradeInfo");
+
         // 260904_가상 조이스틱 — 판정만 떼어 두었으므로 화면 없이 검증할 수 있다
         private static void Test_Joystick()
         {

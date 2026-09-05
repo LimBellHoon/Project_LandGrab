@@ -92,7 +92,7 @@ namespace Client
 
                 bool bMax      = m_cProgress.Is_UpgradeMax(m_cTable, cInfo.eType);
                 int  iCost     = m_cProgress.Get_UpgradeCost(m_cTable, cInfo.eType);
-                bool bAfford   = bMax == false && m_cProgress.COIN >= iCost;
+                bool bAfford   = bMax == false && m_cProgress.Can_Pay(iCost);
 
                 cButton.interactable = bAfford;
                 Set_Label(goButton, cInfo, bMax, iCost);

@@ -92,7 +92,7 @@ Assets/
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
     │                       CInputHandler, CVirtualJoystick
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
-    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress
+    ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
     ├── 98.Manager/         CStage_Manager, CProgress_Manager
     └── 99.Defines/         Client_Enum, Client_Desc, Client_Interface
 
@@ -307,6 +307,29 @@ Engine 레이어가 UI까지 Tick하는지 확실하지 않아 이 클래스만 
 그래서 `Set_State`가 CLEAR/FAIL로 넘어갈 때 `Set_LayerTimeScale(PLAYER/ENEMY, 0)`으로 두 레이어를 세우고,
 `Start_Stage`/`Release`에서 1로 되돌린다 (260904). 액터를 멈춰야 하는 기능은 이 경로를 쓸 것 — 별도 정지 플래그를 만들지 말 것.
 기믹 소환물이 올라가는 `ENEMY_EFFECT` 레이어도 같은 함수(`Set_ActorTimeScale`)가 함께 처리한다.
+
+### 2-9. 튜닝 / 디버그 옵션 — ScriptableObject (260905)
+자주 만지는 값과 개발용 스위치는 `Assets/Resources/GameConfig.asset` 하나에 모여 있다
+(`97.Data/CGameConfig.cs`). 인스펙터가 아니라 에셋인 이유는 **씬을 열지 않고 고칠 수 있고,
+씬을 다시 만들어도 값이 날아가지 않기 때문**이다. `CGameManager`의 인스펙터 플래그는 여기로 옮겼다.
+
+| 항목 | 뜻 |
+|---|---|
+| `m_fPlayerSpeedScale` | `MapInfo.csv`의 `fPlayerSpeed`에 **곱하는 배율**. 1이면 표 그대로 |
+| `m_bUnlockAllStage` | 해금 규칙 무시 |
+| `m_bFreeSpend` | 코인을 쓰지 않고 구매 / 강화 / 스킬 강화 |
+| `m_iStartCoin` | 코인이 0일 때 처음 한 번만 지급 (0이면 안 함) |
+
+**규칙 숫자는 여전히 CSV가 원본이다.** 여기 두는 것은 '그 값을 얼마나 비틀지'와
+'규칙을 건너뛸지'뿐이다 — 같은 숫자를 두 군데 적으면 어느 쪽이 진짜인지 알 수 없게 된다.
+그래서 플레이어 기본 속도는 `MapInfo.csv`의 `fPlayerSpeed`에서, 전체적인 빠르기는 배율에서 잡는다.
+
+에셋이 없어도 게임은 기본값으로 돈다(`CGameConfig.Load`). 값을 바꿨는데 반영이 안 되는 상황은
+알아채기 어려우므로 `Validate Assets`가 현재 값을 한 줄로 찍어 준다.
+
+**코인을 쓰는 곳은 강화 / 구매 / 스킬 강화 셋뿐이고 전부 `CProgress_Manager.Pay`를 지난다.**
+무료 스위치도 UI가 버튼을 켤지 정하는 `Can_Pay`도 여기 하나에 걸려 있다 —
+새로 코인을 쓰는 기능을 붙일 때 `Use_Coin`을 직접 부르지 말 것. 한 곳을 빠뜨리면 그 화면만 조용히 막힌다.
 
 ---
 
