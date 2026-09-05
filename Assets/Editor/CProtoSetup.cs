@@ -37,12 +37,12 @@ namespace Client
         private const string TEX_SHAPE_02 = "Tex_Shape_02";      // MapInfo.csv 2번 맵의 모양 마스크
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
         {
-            typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo),
+            typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo), typeof(CCSVData_SkillInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -818,12 +818,41 @@ namespace Client
             Stretch_Full(goPauseLabel.GetComponent<RectTransform>());
             Make_Text(goPauseLabel, "II", 40, TextAnchor.MiddleCenter).raycastTarget = false;
 
+            // 260905_스킬 버튼은 오른쪽 아래. 엄지가 닿고 조이스틱(왼쪽)과 거리가 멀다.
+            GameObject goSkill = Create_UIObject("Btn_Skill", goRoot.transform);
+            RectTransform trSkill = goSkill.GetComponent<RectTransform>();
+            trSkill.anchorMin = new Vector2(1f, 0f);
+            trSkill.anchorMax = new Vector2(1f, 0f);
+            trSkill.pivot     = new Vector2(1f, 0f);
+            trSkill.anchoredPosition = new Vector2(-48f, 190f);
+            trSkill.sizeDelta = new Vector2(190f, 190f);
+            goSkill.AddComponent<Image>().color = new Color(0.20f, 0.42f, 0.70f, 0.90f);
+            Button cSkill = goSkill.AddComponent<Button>();
+
+            GameObject goSkillLabel = Create_UIObject("Label", goSkill.transform);
+            Stretch_Full(goSkillLabel.GetComponent<RectTransform>());
+            Text txtSkill = Make_Text(goSkillLabel, "점멸", 34, TextAnchor.MiddleCenter);
+            txtSkill.raycastTarget = false;
+
+            // 쿨타임 덮개 — 위에서 아래로 줄어들며 언제 다시 쓸 수 있는지 보여 준다.
+            GameObject goCool = Create_UIObject("Img_Cool", goSkill.transform);
+            Stretch_Full(goCool.GetComponent<RectTransform>());
+            Image imgCool = goCool.AddComponent<Image>();
+            imgCool.color = new Color(0f, 0f, 0f, 0.65f);
+            imgCool.raycastTarget = false;
+            imgCool.type = Image.Type.Filled;
+            imgCool.fillMethod = Image.FillMethod.Vertical;
+            imgCool.fillOrigin = (int)Image.OriginVertical.Top;
+
             CUI_InGame cUI = goRoot.AddComponent<CUI_InGame>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trJoystickBase").objectReferenceValue   = trBase;
             cSerialized.FindProperty("m_trJoystickHandle").objectReferenceValue = trHandle;
             cSerialized.FindProperty("m_txtStatus").objectReferenceValue        = txtStatus;
             cSerialized.FindProperty("m_btnPause").objectReferenceValue         = cPause;
+            cSerialized.FindProperty("m_btnSkill").objectReferenceValue         = cSkill;
+            cSerialized.FindProperty("m_imgSkillCool").objectReferenceValue     = imgCool;
+            cSerialized.FindProperty("m_txtSkill").objectReferenceValue         = txtSkill;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);

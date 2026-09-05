@@ -83,6 +83,7 @@ namespace Client
         private float           m_fSpeedRate = 1f;      // 이동 속도 배율
         private float           m_fEvasion;             // 피격 회피 확률 0~1
         private int             m_iBonusLife;           // 강화로 늘어난 시작 목숨
+        private CSkillInfo      m_cSkillInfo;           // 260905_장착한 액티브 스킬
 
         /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
         /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
@@ -93,6 +94,13 @@ namespace Client
             m_fEvasion   = Mathf.Clamp01(fEvasion);
             m_iBonusLife = Mathf.Max(0, iBonusLife);
         }
+
+        // 260905_장착 시스템이 생기기 전까지는 CGameManager가 표에서 골라 넣어 준다.
+        public void Set_PlayerSkill(CSkillInfo cSkillInfo)
+        {
+            m_cSkillInfo = cSkillInfo;
+        }
+
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
         public string           MAP_NAME        => m_cMapInfo != null ? m_cMapInfo.strMapName : string.Empty;
 
@@ -357,6 +365,19 @@ namespace Client
         }
 
         // 260904_일시정지. 액터를 세우는 길은 Set_ActorTimeScale 하나뿐이다(2-8).
+        // 260905_스킬 버튼은 UI에 있고 플레이어는 스테이지가 갖고 있으므로 여기를 거친다.
+        /// <summary> 연출 중이거나 멈춰 있을 때는 발동하지 않는다. </summary>
+        public bool Try_UseSkill()
+        {
+            if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true)
+                return false;
+
+            if (m_eWavePhase != WAVE_PHASE.NONE || m_cPlayer == null)
+                return false;
+
+            return m_cPlayer.Try_UseSkill();
+        }
+
         public void Set_Pause(bool bPause)
         {
             if (m_eState != STAGE_STATE.PLAYING || m_bPaused == bPause)
@@ -396,6 +417,7 @@ namespace Client
                 // 260905_능력치 강화 반영
                 fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate,
                 fEvasion        = m_fEvasion,
+                cSkillInfo      = m_cSkillInfo,
                 iLife           = m_cMapInfo.iLife + m_iBonusLife,
             };
 

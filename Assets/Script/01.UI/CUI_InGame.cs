@@ -23,6 +23,10 @@ namespace Client
         [SerializeField] private RectTransform  m_trJoystickHandle;
         [SerializeField] private Text           m_txtStatus;
         [SerializeField] private Button         m_btnPause;
+        // 260905_액티브 스킬 버튼
+        [SerializeField] private Button         m_btnSkill;
+        [SerializeField] private Image          m_imgSkillCool;
+        [SerializeField] private Text           m_txtSkill;
 
         private CPlayer         m_cPlayer;
         private CStage_Manager  m_cStage;
@@ -66,6 +70,12 @@ namespace Client
         public override void Hide()
         {
             m_btnPause?.onClick.RemoveAllListeners();
+
+            if (m_btnSkill != null)
+            {
+                m_btnSkill.onClick.RemoveAllListeners();
+                m_btnSkill.onClick.AddListener(On_ClickSkill);
+            }
             m_cPlayer = null;
             m_cStage  = null;
             m_OnPause = null;
@@ -77,6 +87,7 @@ namespace Client
         {
             Refresh_Joystick();
             Refresh_Status();
+            Refresh_Skill();
         }
 
         /// <summary> 일시정지 중에는 조이스틱을 감춘다 (입력도 어차피 멈춰 있다). </summary>
@@ -84,6 +95,10 @@ namespace Client
         {
             if (m_btnPause != null)
                 m_btnPause.interactable = bInteractable;
+
+            // 260905_일시정지 중에는 스킬도 막는다.
+            if (m_btnSkill != null)
+                m_btnSkill.interactable = bInteractable;
 
             if (bInteractable == false)
                 Show_Joystick(false);
@@ -120,6 +135,37 @@ namespace Client
 
             if (m_trJoystickHandle.gameObject.activeSelf != bShow)
                 m_trJoystickHandle.gameObject.SetActive(bShow);
+        }
+
+        // 260905_스킬 버튼
+        private void On_ClickSkill()
+        {
+            m_cStage?.Try_UseSkill();
+        }
+
+        // 쿼타임 덮개를 채워 언제 다시 쓸 수 있는지 보여 준다.
+        // 스킬이 없는 상태면 버튼 자체를 숨긴다 — 누를 수 없는 버튼은 혼란만 준다.
+        private void Refresh_Skill()
+        {
+            if (m_btnSkill == null)
+                return;
+
+            CSkillHandler cSkill = m_cPlayer != null ? m_cPlayer.SKILL : null;
+            bool bHas = cSkill != null && cSkill.HAS_SKILL == true;
+
+            if (m_btnSkill.gameObject.activeSelf != bHas)
+                m_btnSkill.gameObject.SetActive(bHas);
+
+            if (bHas == false)
+                return;
+
+            if (m_imgSkillCool != null)
+                m_imgSkillCool.fillAmount = cSkill.COOL_RATIO;
+
+            if (m_txtSkill != null)
+                m_txtSkill.text = cSkill.IS_READY == true
+                                ? cSkill.INFO.strName
+                                : $"{cSkill.REMAIN:F1}";
         }
 
         private void Refresh_Status()

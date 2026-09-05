@@ -44,6 +44,21 @@
         HP,         // 시작 목숨 추가
     }
 
+    // 260905_스킬
+    /// <summary> 이름이 SkillInfo.csv의 eType 열과 정확히 같아야 한다. </summary>
+    public enum SKILL_TYPE
+    {
+        NONE = 0,
+        WARP,       // 진행 방향으로 순간 이동
+    }
+
+    /// <summary> 액티브는 버튼을 눌러야 발동하고, 패시브는 장착만 해도 걸린다. </summary>
+    public enum SKILL_CATEGORY
+    {
+        ACTIVE = 0,
+        PASSIVE,
+    }
+
     /// <summary> 스테이지 진행 상태 </summary>
     public enum STAGE_STATE
     {

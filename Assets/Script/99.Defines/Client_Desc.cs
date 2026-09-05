@@ -26,6 +26,8 @@ namespace Client
         public int              iLife       { get; set; }
         // 260905_능력치 강화 — 피격을 무시할 확률 0~1
         public float            fEvasion    { get; set; }
+        // 260905_장착한 액티브 스킬. null이면 스킬 없음.
+        public CSkillInfo       cSkillInfo  { get; set; }
 
         public override void OnReturn()
         {

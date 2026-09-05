@@ -49,6 +49,7 @@ namespace Client
         private CCSVData_MapInfo    m_cMapTable;
         private CCSVData_EnemyInfo  m_cEnemyTable;
         private CCSVData_UpgradeInfo m_cUpgradeTable;   // 260905_능력치 강화 표
+        private CCSVData_SkillInfo  m_cSkillTable;      // 260905_스킬 표
         private CUI                 m_cStageSelectUI;
         private CUI                 m_cInGameUI;
         private CUI                 m_cPopupUI;
@@ -197,6 +198,9 @@ namespace Client
             }
 
             // 260905_강화 표는 없어도 게임은 돌아간다(강화가 전부 0레벨일 뿐).
+            // 260905_스킬 표도 없으면 스킬 없이 진행한다.
+            m_cSkillTable = m_cGameInstance.Get_CSVData(CCSVData_SkillInfo.CSV_KEY) as CCSVData_SkillInfo;
+
             m_cUpgradeTable = m_cGameInstance.Get_CSVData(CCSVData_UpgradeInfo.CSV_KEY) as CCSVData_UpgradeInfo;
             if (m_cUpgradeTable == null)
             {
@@ -283,6 +287,10 @@ namespace Client
                 1f + m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.SPEED),
                 m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.EVASION),
                 Mathf.RoundToInt(m_cProgressManager.Get_UpgradeValue(m_cUpgradeTable, UPGRADE_TYPE.HP)));
+
+            // 260905_장착 시스템이 없으므로 지금은 표에서 워프를 골라 넣는다.
+            m_cStageManager.Set_PlayerSkill(m_cSkillTable != null
+                                          ? m_cSkillTable.Find_ByType(SKILL_TYPE.WARP) : null);
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 

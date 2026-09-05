@@ -19,6 +19,8 @@ namespace Client
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
+        // 260905_액티브 스킬 (현재는 워프 하나)
+        private readonly CSkillHandler m_cSkillHandler = new CSkillHandler();
 
         [SerializeField] private SpriteRenderer m_srBody;
 
@@ -34,6 +36,8 @@ namespace Client
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
         /// <summary> 260904_UI가 조이스틱을 그리려고 읽는다. </summary>
         public CVirtualJoystick JOYSTICK    => m_cInputHandler.JOYSTICK;
+        /// <summary> 260905_UI가 쿨타임 게이지를 그리려고 읽는다. </summary>
+        public CSkillHandler    SKILL       => m_cSkillHandler;
 
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
@@ -63,6 +67,7 @@ namespace Client
             m_vLastSafeCell     = cDesc.vStartCell;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
             m_fEvasion          = Mathf.Clamp01(cDesc.fEvasion);
+            m_cSkillHandler.Initialize(cDesc.cSkillInfo);
 
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
                 return false;
@@ -87,6 +92,8 @@ namespace Client
                 Refresh_InvincibleBlink();
             }
 
+            m_cSkillHandler.Tick(fDeltaTime);
+
             m_cInputHandler.Tick();
 
             if (m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out Vector2Int vArrivedCell) == true)
@@ -110,7 +117,7 @@ namespace Client
         #endregion Engine.CGameObject
 
         #region 규칙 판정
-        private void Handle_ArriveCell(Vector2Int vCell)
+        private STEP_RESULT Handle_ArriveCell(Vector2Int vCell)
         {
             // 규칙 판정 자체는 그리드가 소유한다. 플레이어는 결과에 반응만 한다.
             STEP_RESULT eResult = m_cGrid.Step_To(vCell, GetEnemyCells != null ? GetEnemyCells() : null,
@@ -131,6 +138,8 @@ namespace Client
                     m_vLastSafeCell = vCell;
                     break;
             }
+
+            return eResult;
         }
 
         // 260904_거미줄 감속. 스테이지가 매 프레임 '지금 밟고 있는 칸'을 보고 넣어 준다.
@@ -186,6 +195,59 @@ namespace Client
             m_cMoveHandler.Teleport(m_vLastSafeCell);
             m_cInputHandler.Clear();
             m_fInvincibleTimer = INVINCIBLE_TIME;
+        }
+
+        // 260905_액티브 스킬 — 워프
+        /// <summary> 스킬 버튼이 눌렸을 때. 쿨타임이 남았거나 멈춰 있으면 아무 일도 없다. </summary>
+        public bool Try_UseSkill()
+        {
+            if (m_cGrid == null || m_iLife <= 0 || m_cSkillHandler.IS_READY == false)
+                return false;
+
+            if (m_cSkillHandler.INFO.eType != SKILL_TYPE.WARP)
+                return false;
+
+            if (Warp(Mathf.RoundToInt(m_cSkillHandler.INFO.fValue)) == false)
+                return false;
+
+            m_cSkillHandler.Try_Use();
+            return true;
+        }
+
+        // 한 칸씩 나아가며 평소 이동과 똑같은 규칙을 적용한다.
+        // 한 번에 건너뛰지 않는 이유 — 지나간 칸이 선으로 남지 않으면
+        // 도형이 끊겨 점령 판정이 깨진다.
+        private bool Warp(int iCellCount)
+        {
+            MOVE_DIR eDir = m_cMoveHandler.CUR_DIR;
+            if (eDir == MOVE_DIR.NONE || iCellCount <= 0)
+                return false;   // 멈춰 있으면 어디로 갈지 알 수 없다
+
+            Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(eDir);
+            Vector2Int vCell   = m_cMoveHandler.CUR_CELL;
+            bool bMoved = false;
+
+            for (int i = 0; i < iCellCount; ++i)
+            {
+                Vector2Int vNext = vCell + vOffset;
+
+                if (m_cGrid.Is_InBounds(vNext.x, vNext.y) == false || m_cGrid.Is_Blocked(vNext) == true)
+                    break;
+
+                vCell  = vNext;
+                bMoved = true;
+
+                m_cMoveHandler.Teleport(vCell, eDir);
+
+                STEP_RESULT eResult = Handle_ArriveCell(vCell);
+                if (eResult == STEP_RESULT.DEAD || eResult == STEP_RESULT.CAPTURE)
+                    break;
+            }
+
+            if (bMoved == true)
+                transform.position = m_cMoveHandler.WORLD_POS;
+
+            return bMoved;
         }
         #endregion 규칙 판정
 

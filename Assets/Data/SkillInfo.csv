@@ -1,0 +1,6 @@
+﻿iSkillID	eType	eCategory	strName	strDesc	fCoolTime	fValue	NONE
+;== 스킬 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
+;eType : Client_Enum.SKILL_TYPE 이름과 정확히 같아야 한다
+;fValue : 스킬마다 의미가 다르다. WARP은 이동할 칸 수
+;---	type	분류	이름	설명	쿼타임	수치	메모
+1	WARP	ACTIVE	점멸	진행 방향으로 순간 이동	4	6	지나가는 칸도 선으로 남는다

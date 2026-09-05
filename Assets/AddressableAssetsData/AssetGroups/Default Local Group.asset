@@ -51,6 +51,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Prefabs
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 7d93ae240990c104e883479faccf63b6
+    m_Address: UpgradeInfo
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - CSV
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 9403892916b1396418b507ac89c06eab
     m_Address: Tex_Reward_01
     m_ReadOnly: 0
@@ -74,6 +80,12 @@ MonoBehaviour:
     m_ReadOnly: 0
     m_SerializedLabels:
     - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: b83fe68c3eb2ef1429d037b7b03807f2
+    m_Address: SkillInfo
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - CSV
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: bb514271c0468a145b55f9e9e07603ed
     m_Address: Prefab_UI_StageSelect

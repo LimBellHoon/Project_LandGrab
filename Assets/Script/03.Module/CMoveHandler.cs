@@ -50,11 +50,16 @@ namespace Client
         }
 
         /// <summary> 사망 후 부활 등, 이동 상태를 통째로 리셋하고 특정 셀로 옮긴다. </summary>
-        public void Teleport(Vector2Int vCell)
+        public void Teleport(Vector2Int vCell) => Teleport(vCell, MOVE_DIR.NONE);
+
+        // 260905_워프는 진행 방향을 지키며 순간 이동한다.
+        // 방향을 NONE으로 되돌리면 미점령 지대에서 멈추지 못하는 규칙에 걸려 그대로 군다.
+        /// <param name="eKeepDir"> 유지할 진행 방향. NONE이면 멈춘다. </param>
+        public void Teleport(Vector2Int vCell, MOVE_DIR eKeepDir)
         {
             m_vCurCell  = vCell;
             m_vNextCell = vCell;
-            m_eCurDir    = MOVE_DIR.NONE;
+            m_eCurDir    = eKeepDir;
             m_fProgress  = 0f;
             m_bMoving    = false;
             m_bFollowing = false;

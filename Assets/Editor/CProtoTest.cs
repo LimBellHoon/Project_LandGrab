@@ -44,6 +44,7 @@ namespace Client
             Test_StageProgress();
             Test_Star();
             Test_Currency();
+            Test_Skill();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -357,6 +358,62 @@ namespace Client
         }
         // 260904_진행도 / 순차 해금
         // 260905_재화·강화 — 별 1개당 코인, 갱신분만 지급
+        // 260905_액티브 스킬 — 쿨타임과 발동 조건
+        private static void Test_Skill()
+        {
+            CSkillInfo cInfo = new CSkillInfo
+            {
+                iSkillID = 1, eType = SKILL_TYPE.WARP, eCategory = SKILL_CATEGORY.ACTIVE,
+                fCoolTime = 4f, fValue = 6f,
+            };
+
+            CSkillHandler cSkill = new CSkillHandler();
+            cSkill.Initialize(cInfo);
+
+            Check("스킬을 가지고 있음", cSkill.HAS_SKILL);
+            Check("시작하자마자 쓸 수 있음", cSkill.IS_READY);
+            Check("쿨타임 게이지 비어 있음", Mathf.RoundToInt(cSkill.COOL_RATIO * 100f), 0);
+
+            Check("발동 성공", cSkill.Try_Use());
+            Check("발동 직후에는 못 쓴다", cSkill.IS_READY == false);
+            Check("게이지 가득", Mathf.RoundToInt(cSkill.COOL_RATIO * 100f), 100);
+            Check("연속 발동 차단", cSkill.Try_Use() == false);
+
+            cSkill.Tick(2f);
+            Check("절반 차면 절반 남음", Mathf.RoundToInt(cSkill.COOL_RATIO * 100f), 50);
+            Check("아직은 못 쓴다", cSkill.IS_READY == false);
+
+            cSkill.Tick(2.1f);
+            Check("쿨타임이 끝나면 다시 쓴다", cSkill.IS_READY);
+            Check("게이지가 다시 비었음", Mathf.RoundToInt(cSkill.COOL_RATIO * 100f), 0);
+
+            // 스킬을 안 가졌으면 아무 일도 일어나지 않는다
+            CSkillHandler cEmpty = new CSkillHandler();
+            cEmpty.Initialize(null);
+            Check("스킬 없음", cEmpty.HAS_SKILL == false);
+            Check("스킬이 없으면 발동 불가", cEmpty.Try_Use() == false);
+
+            // 멈춰 있으면 어디로 갈지 알 수 없으므로 워프는 실패해야 한다
+            CTerritoryGrid cGrid = Make_Grid();
+            GameObject goPlayer = new GameObject("Test_SkillPlayer");
+            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            cPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
+                fMoveSpeed    = STEP_SPEED,
+                iLife         = 3,
+                cSkillInfo    = cInfo,
+            });
+
+            Check("스킬이 장착됨", cPlayer.SKILL.HAS_SKILL);
+            Check("멈춰 있으면 워프 불가", cPlayer.Try_UseSkill() == false);
+            Check("실패했으니 쿨타임은 그대로", cPlayer.SKILL.IS_READY);
+            Object.DestroyImmediate(goPlayer);
+        }
+
         private static void Test_Currency()
         {
             CStageProgress cProgress = new CStageProgress();
