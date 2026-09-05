@@ -18,6 +18,33 @@ namespace Client
 
         public float            fCoolTime;      // 초
         public float            fValue;         // 스킬마다 의미가 다르다. WARP은 이동할 칸 수
+
+        // 260905_강화
+        public float            fValuePerLevel; // 레벨 1당 늘어나는 fValue
+        public int              iMaxLevel;
+        public int              iCostBase;      // 0 -> 1 레벨 비용
+        public int              iCostAdd;       // 레벨이 오를 때마다 붙는 추가 비용
+
+        // 260905_패시브 — 장비와 같은 능력치를 올린다
+        public STAT_TYPE        eStat;
+        public float            fStatValue;     // 레벨 1당 오르는 수치
+
+        public bool IS_PASSIVE => eCategory == SKILL_CATEGORY.PASSIVE;
+
+        /// <summary> 다음 레벨로 올리는 비용. 만렙이면 0. </summary>
+        public int Get_Cost(int iCurLevel)
+        {
+            if (iCurLevel >= iMaxLevel)
+                return 0;
+
+            return iCostBase + iCostAdd * Mathf.Max(0, iCurLevel);
+        }
+
+        /// <summary> 그 레벨에서의 액티브 수치. 레벨 0은 fValue 그대로. </summary>
+        public float Get_Value(int iLevel) => fValue + fValuePerLevel * Mathf.Clamp(iLevel, 0, iMaxLevel);
+
+        /// <summary> 그 레벨에서의 패시브 능력치. 레벨 0이면 0(장착만으로는 안 오른다). </summary>
+        public float Get_StatValue(int iLevel) => fStatValue * Mathf.Clamp(iLevel, 0, iMaxLevel);
     }
 
     /// <summary>
@@ -67,7 +94,13 @@ namespace Client
                 strName     = CCSV_Utility.To_String(arrField, 3),
                 strDesc     = CCSV_Utility.To_String(arrField, 4),
                 fCoolTime   = CCSV_Utility.To_Float(arrField, 5, 5f),
-                fValue      = CCSV_Utility.To_Float(arrField, 6),
+                fValue          = CCSV_Utility.To_Float(arrField, 6),
+                fValuePerLevel  = CCSV_Utility.To_Float(arrField, 7),
+                iMaxLevel       = CCSV_Utility.To_Int(arrField, 8, 1),
+                iCostBase       = CCSV_Utility.To_Int(arrField, 9, 300),
+                iCostAdd        = CCSV_Utility.To_Int(arrField, 10),
+                eStat           = CCSV_Utility.To_Enum(arrField, 11, STAT_TYPE.NONE),
+                fStatValue      = CCSV_Utility.To_Float(arrField, 12),
             };
 
             if (cInfo.iSkillID <= 0 || cInfo.eType == SKILL_TYPE.NONE)

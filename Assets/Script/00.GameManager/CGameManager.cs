@@ -315,10 +315,15 @@ namespace Client
                 return null;
 
             int iSkillID = m_cProgressManager.EQUIPPED_SKILL_ID;
-            if (iSkillID > 0)
-                return m_cSkillTable.Get_Info(iSkillID);
+            CSkillInfo cInfo = iSkillID > 0 ? m_cSkillTable.Get_Info(iSkillID)
+                                            : m_cSkillTable.Find_ByType(SKILL_TYPE.WARP);
 
-            return m_cSkillTable.Find_ByType(SKILL_TYPE.WARP);
+            // 260905_패시브는 버튼으로 쓰는 게 아니라 능력치로만 들어간다(Get_PassiveStat).
+            // 여기서 넘기면 인게임에 쓸 수 없는 스킬 버튼이 떠 버린다.
+            if (cInfo != null && cInfo.IS_PASSIVE == true)
+                return null;
+
+            return cInfo;
         }
 
         private void Open_TabBattle(Transform trParent)
@@ -431,12 +436,14 @@ namespace Client
 
             // 260905_강화와 장비를 합친 최종 수치를 넣는다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
             m_cStageManager.Set_PlayerUpgrade(
-                1f + m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.SPEED),
-                m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.EVASION),
-                Mathf.RoundToInt(m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.HP)));
+                1f + m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.SPEED, m_cSkillTable),
+                m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.EVASION, m_cSkillTable),
+                Mathf.RoundToInt(m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.HP, m_cSkillTable)));
 
             // 260905_장착한 스킬을 넣는다.
-            m_cStageManager.Set_PlayerSkill(Get_EquippedSkill());
+            CSkillInfo cSkill = Get_EquippedSkill();
+            m_cStageManager.Set_PlayerSkill(cSkill,
+                cSkill != null ? m_cProgressManager.Get_SkillLevel(cSkill.eType) : 0);
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 

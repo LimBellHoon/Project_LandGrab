@@ -12,11 +12,15 @@ namespace Client
     {
         private CSkillInfo  m_cInfo;
         private float       m_fRemain;
+        private int         m_iLevel;       // 260905_강화 레벨
 
         public CSkillInfo   INFO        => m_cInfo;
         public bool         HAS_SKILL   => m_cInfo != null;
         public bool         IS_READY    => m_cInfo != null && m_fRemain <= 0f;
         public float        REMAIN      => m_fRemain;
+        public int          LEVEL       => m_iLevel;
+        /// <summary> 260905_강화 레벨이 반영된 수치. WARP은 이동할 칸 수. </summary>
+        public float        VALUE       => m_cInfo != null ? m_cInfo.Get_Value(m_iLevel) : 0f;
 
         /// <summary> 남은 쿨타임 비율 0~1. 1이면 방금 썼고, 0이면 쓸 수 있다. </summary>
         public float COOL_RATIO
@@ -30,10 +34,11 @@ namespace Client
             }
         }
 
-        /// <param name="cInfo"> null이면 스킬 없음 상태가 된다 </param>
-        public void Initialize(CSkillInfo cInfo)
+        /// <param name="iLevel"> 강화 레벨. 0이면 기본 수치 </param>
+        public void Initialize(CSkillInfo cInfo, int iLevel)
         {
             m_cInfo   = cInfo;
+            m_iLevel  = Mathf.Max(0, iLevel);
             m_fRemain = 0f;     // 스테이지 시작하자마자 한 번은 쓸 수 있게 한다
         }
 

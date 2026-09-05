@@ -71,7 +71,7 @@ namespace Client
             m_fBaseSpeed        = cDesc.fMoveSpeed;
             m_fEvasion          = Mathf.Clamp01(cDesc.fEvasion);
             m_bShield           = false;
-            m_cSkillHandler.Initialize(cDesc.cSkillInfo);
+            m_cSkillHandler.Initialize(cDesc.cSkillInfo, cDesc.iSkillLevel);
 
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
                 return false;
@@ -222,7 +222,7 @@ namespace Client
             if (m_cSkillHandler.INFO.eType != SKILL_TYPE.WARP)
                 return false;
 
-            if (Warp(Mathf.RoundToInt(m_cSkillHandler.INFO.fValue)) == false)
+            if (Warp(Mathf.RoundToInt(m_cSkillHandler.VALUE)) == false)
                 return false;
 
             m_cSkillHandler.Try_Use();

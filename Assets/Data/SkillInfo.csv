@@ -1,6 +1,11 @@
-﻿iSkillID	eType	eCategory	strName	strDesc	fCoolTime	fValue	NONE
+﻿iSkillID	eType	eCategory	strName	strDesc	fCoolTime	fValue	fValuePerLevel	iMaxLevel	iCostBase	iCostAdd	eStat	fStatValue	NONE
 ;== 스킬 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
 ;eType : Client_Enum.SKILL_TYPE 이름과 정확히 같아야 한다
-;fValue : 스킬마다 의미가 다르다. WARP은 이동할 칸 수
-;---	type	분류	이름	설명	쿼타임	수치	메모
-1	WARP	ACTIVE	점멸	진행 방향으로 순간 이동	4	6	지나가는 칸도 선으로 남는다
+;eCategory : ACTIVE(버튼으로 발동) / PASSIVE(장착만 해도 걸린다)
+;fValue / fValuePerLevel : 액티브 전용. WARP은 이동할 칸 수. 레벨 1당 fValuePerLevel만큼 늘어난다
+;iCostBase / iCostAdd : 강화 비용 = iCostBase + iCostAdd * 현재레벨 (레벨 0이 기본)
+;eStat / fStatValue : 패시브 전용. 장비와 같은 능력치를 올린다. 레벨 1당 fStatValue만큼
+;---	type	분류	이름	설명	쿨타임	수치	레벨당수치	최대레벨	기본비용	레벨당증가	능력치	능력치수치	메모
+1	WARP	ACTIVE	점멸	진행 방향으로 순간 이동	4	6	1	3	300	250	NONE	0	지나가는 칸도 선으로 남는다
+2	SWIFT	PASSIVE	경보	이동 속도 상승	0	0	0	3	250	200	SPEED	0.05	장착만 해도 걸린다
+3	LUCKY	PASSIVE	행운	회피 상승	0	0	0	3	250	200	EVASION	0.04	

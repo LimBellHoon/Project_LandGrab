@@ -46,6 +46,7 @@ namespace Client
             Test_Currency();
             Test_Skill();
             Test_Inventory();
+            Test_SkillUpgrade();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -369,7 +370,7 @@ namespace Client
             };
 
             CSkillHandler cSkill = new CSkillHandler();
-            cSkill.Initialize(cInfo);
+            cSkill.Initialize(cInfo, 0);
 
             Check("스킬을 가지고 있음", cSkill.HAS_SKILL);
             Check("시작하자마자 쓸 수 있음", cSkill.IS_READY);
@@ -390,7 +391,7 @@ namespace Client
 
             // 스킬을 안 가졌으면 아무 일도 일어나지 않는다
             CSkillHandler cEmpty = new CSkillHandler();
-            cEmpty.Initialize(null);
+            cEmpty.Initialize(null, 0);
             Check("스킬 없음", cEmpty.HAS_SKILL == false);
             Check("스킬이 없으면 발동 불가", cEmpty.Try_Use() == false);
 
@@ -514,6 +515,79 @@ namespace Client
                 return null;
 
             CCSVData_EquipInfo cTable = new CCSVData_EquipInfo();
+            cTable.Read_CSVData(cText);
+            return cTable;
+        }
+
+
+        // 260905_스킬 강화 + 패시브 — 장착만으로는 안 오르고, 레벨을 올려야 붙는다
+        private static void Test_SkillUpgrade()
+        {
+            CCSVData_SkillInfo cSkillTable = Load_SkillTable();
+            CCSVData_MapInfo   cMapTable   = Load_MapTable();
+            if (cSkillTable == null || cMapTable == null)
+            {
+                Check("SkillInfo.csv 로드", false);
+                return;
+            }
+
+            CSkillInfo cWarp  = cSkillTable.Find_ByType(SKILL_TYPE.WARP);
+            CSkillInfo cSwift = cSkillTable.Find_ByType(SKILL_TYPE.SWIFT);
+
+            Check("액티브 스킬 존재", cWarp != null && cWarp.IS_PASSIVE == false);
+            Check("패시브 스킬 존재", cSwift != null && cSwift.IS_PASSIVE);
+
+            // 레벨에 따른 수치 — 액티브는 fValue에 더해지고, 패시브는 레벨 0이면 0이다
+            Check("액티브 0레벨 수치", Mathf.RoundToInt(cWarp.Get_Value(0)), 6);
+            Check("액티브 2레벨 수치", Mathf.RoundToInt(cWarp.Get_Value(2)), 8);
+            Check("만렙 초과는 상한", Mathf.RoundToInt(cWarp.Get_Value(99)), 9);
+
+            Check("패시브 0레벨은 0", Mathf.RoundToInt(cSwift.Get_StatValue(0) * 100f), 0);
+            Check("패시브 2레벨", Mathf.RoundToInt(cSwift.Get_StatValue(2) * 100f), 10);
+
+            Check("0레벨 강화 비용", cWarp.Get_Cost(0), 300);
+            Check("1레벨 강화 비용", cWarp.Get_Cost(1), 550);
+            Check("만렙은 비용 0", cWarp.Get_Cost(cWarp.iMaxLevel), 0);
+
+            // 매니저 — 코인이 있어야 올라간다
+            CProgress_Manager cManager = new CProgress_Manager();
+            cManager.Initialize(cMapTable, new CFakeProgressRepository());
+
+            Check("처음에는 0레벨", cManager.Get_SkillLevel(SKILL_TYPE.WARP), 0);
+            Check("코인이 없으면 강화 실패", cManager.Try_UpgradeSkill(cWarp) == false);
+
+            cManager.Add_Coin(1000);
+            Check("코인이 있으면 강화", cManager.Try_UpgradeSkill(cWarp));
+            Check("레벨 상승", cManager.Get_SkillLevel(SKILL_TYPE.WARP), 1);
+            Check("비용만큼 차감", cManager.COIN, 700);
+
+            // 패시브는 장착해야 능력치에 들어간다
+            Check("장착 전에는 0",
+                  Mathf.RoundToInt(cManager.Get_PassiveStat(cSkillTable, STAT_TYPE.SPEED) * 100f), 0);
+
+            cManager.Set_EquippedSkill(cSwift.iSkillID);
+            Check("장착했어도 0레벨이면 0",
+                  Mathf.RoundToInt(cManager.Get_PassiveStat(cSkillTable, STAT_TYPE.SPEED) * 100f), 0);
+
+            cManager.Try_UpgradeSkill(cSwift);
+            Check("레벨을 올리면 능력치가 붙는다",
+                  Mathf.RoundToInt(cManager.Get_PassiveStat(cSkillTable, STAT_TYPE.SPEED) * 100f), 5);
+            Check("다른 능력치에는 안 붙는다",
+                  Mathf.RoundToInt(cManager.Get_PassiveStat(cSkillTable, STAT_TYPE.EVASION) * 100f), 0);
+
+            // 액티브를 끼면 패시브 몫은 사라진다 (스킬은 하나만 장착)
+            cManager.Set_EquippedSkill(cWarp.iSkillID);
+            Check("액티브를 끼면 패시브 몫 없음",
+                  Mathf.RoundToInt(cManager.Get_PassiveStat(cSkillTable, STAT_TYPE.SPEED) * 100f), 0);
+        }
+
+        private static CCSVData_SkillInfo Load_SkillTable()
+        {
+            TextAsset cText = AssetDatabase.LoadAssetAtPath<TextAsset>("Assets/Data/SkillInfo.csv");
+            if (cText == null)
+                return null;
+
+            CCSVData_SkillInfo cTable = new CCSVData_SkillInfo();
             cTable.Read_CSVData(cText);
             return cTable;
         }

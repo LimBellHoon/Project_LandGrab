@@ -216,16 +216,33 @@ namespace Client
             if (txtLabel == null)
                 return;
 
+            int  iLevel    = m_cProgress.Get_SkillLevel(cInfo.eType);
+            int  iCost     = cInfo.Get_Cost(iLevel);
+            bool bMax      = iLevel >= cInfo.iMaxLevel;
+
             bool bEquipped = m_cProgress.EQUIPPED_SKILL_ID == cInfo.iSkillID;
 
-            txtLabel.text = $"{cInfo.strName}   {(bEquipped == true ? "[장착 중]" : "장착하기")}"
-                          + $"   쿨 {cInfo.fCoolTime:F0}초\n{cInfo.strDesc}";
+            // 260905_한 줄에 장착 상태와 강화 정보를 함께 보여 준다.
+            // 분류(액티브/패시브)를 적어 줘야 인게임 버튼이 왜 안 뜨는지 헷갈리지 않는다.
+            string strKind  = cInfo.IS_PASSIVE == true ? "패시브" : "액티브";
+            string strLevel = bMax == true ? $"Lv.{iLevel} (MAX)" : $"Lv.{iLevel} → {iLevel + 1}  {iCost} 코인";
+
+            txtLabel.text = $"{cInfo.strName}   {(bEquipped == true ? "[장착 중]" : "장착하기")}   {strKind}\n"
+                          + $"{strLevel}   {cInfo.strDesc}";
         }
 
+        // 260905_장착되지 않은 스킬을 누르면 장착, 이미 장착한 스킬을 누르면 강화한다.
+        // 버튼이 하나뿐이라 상태에 따라 뜻을 바꿨다 — 라벨에 다음 동작이 그대로 적혀 있다.
         private void On_ClickSkill(int iSkillID)
         {
-            // 스킬은 하나만 장착한다. 같은 것을 다시 누르면 해제.
-            m_cProgress.Set_EquippedSkill(m_cProgress.EQUIPPED_SKILL_ID == iSkillID ? 0 : iSkillID);
+            if (m_cProgress.EQUIPPED_SKILL_ID != iSkillID)
+            {
+                m_cProgress.Set_EquippedSkill(iSkillID);
+            }
+            else if (m_cProgress.Try_UpgradeSkill(m_cSkillTable.Get_Info(iSkillID)) == false)
+            {
+                return;     // 코인이 모자라거나 만렙
+            }
 
             Build_List();
             m_OnChanged?.Invoke();

@@ -84,6 +84,7 @@ namespace Client
         private float           m_fEvasion;             // 피격 회피 확률 0~1
         private int             m_iBonusLife;           // 강화로 늘어난 시작 목숨
         private CSkillInfo      m_cSkillInfo;           // 260905_장착한 액티브 스킬
+        private int             m_iSkillLevel;          // 260905_스킬 강화 레벨
 
         /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
         /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
@@ -96,9 +97,10 @@ namespace Client
         }
 
         // 260905_장착 시스템이 생기기 전까지는 CGameManager가 표에서 골라 넣어 준다.
-        public void Set_PlayerSkill(CSkillInfo cSkillInfo)
+        public void Set_PlayerSkill(CSkillInfo cSkillInfo, int iSkillLevel)
         {
             m_cSkillInfo = cSkillInfo;
+            m_iSkillLevel = Mathf.Max(0, iSkillLevel);
         }
 
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
@@ -435,6 +437,7 @@ namespace Client
                 fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate,
                 fEvasion        = m_fEvasion,
                 cSkillInfo      = m_cSkillInfo,
+                iSkillLevel     = m_iSkillLevel,
                 iLife           = m_cMapInfo.iLife + m_iBonusLife,
             };
 

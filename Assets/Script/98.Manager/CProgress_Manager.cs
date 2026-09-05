@@ -245,6 +245,41 @@ namespace Client
             return null;
         }
 
+        public int Get_SkillLevel(SKILL_TYPE eType) => m_cProgress.Get_SkillLevel(eType);
+
+        /// <summary> 스킬 강화. 코인이 모자라거나 만렙이면 아무 일도 없다. </summary>
+        public bool Try_UpgradeSkill(CSkillInfo cInfo)
+        {
+            if (cInfo == null)
+                return false;
+
+            int iLevel = Get_SkillLevel(cInfo.eType);
+            if (iLevel >= cInfo.iMaxLevel)
+                return false;
+
+            if (m_cProgress.Use_Coin(cInfo.Get_Cost(iLevel)) == false)
+                return false;
+
+            m_cProgress.Set_SkillLevel(cInfo.eType, iLevel + 1);
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        // 260905_패시브 스킬은 장착만 해도 능력치를 올린다. 액티브는 여기 끼어들지 않는다.
+        /// <summary> 장착한 패시브 스킬이 주는 능력치. </summary>
+        public float Get_PassiveStat(CCSVData_SkillInfo cSkillTable, STAT_TYPE eStat)
+        {
+            if (cSkillTable == null || eStat == STAT_TYPE.NONE || m_cProgress.iEquippedSkillID <= 0)
+                return 0f;
+
+            CSkillInfo cInfo = cSkillTable.Get_Info(m_cProgress.iEquippedSkillID);
+            if (cInfo == null || cInfo.IS_PASSIVE == false || cInfo.eStat != eStat)
+                return 0f;
+
+            return cInfo.Get_StatValue(Get_SkillLevel(cInfo.eType));
+        }
+
+
         // 260905_스킬은 통틀어 하나만 장착한다.
         public void Set_EquippedSkill(int iSkillID)
         {
@@ -276,10 +311,12 @@ namespace Client
             return fSum;
         }
 
-        /// <summary> 강화 + 장비를 합친 최종 수치. 스테이지에 넣을 값은 이것 하나뿐이다. </summary>
-        public float Get_TotalStat(CCSVData_UpgradeInfo cUpgradeTable, STAT_TYPE eStat)
+        /// <summary> 강화 + 장비 + 패시브 스킬을 합친 최종 수치. 스테이지에 넣을 값은 이것 하나뿐이다. </summary>
+        public float Get_TotalStat(CCSVData_UpgradeInfo cUpgradeTable, STAT_TYPE eStat,
+                                   CCSVData_SkillInfo cSkillTable = null)
         {
-            return Get_UpgradeValue(cUpgradeTable, eStat) + Get_EquipStat(eStat);
+            return Get_UpgradeValue(cUpgradeTable, eStat) + Get_EquipStat(eStat)
+                 + Get_PassiveStat(cSkillTable, eStat);
         }
 
         private CEquipInfo Get_EquipInfo(int iEquipID)

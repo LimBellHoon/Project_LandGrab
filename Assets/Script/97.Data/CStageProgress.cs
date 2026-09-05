@@ -53,6 +53,7 @@ namespace Client
         public List<CItemRecord>    lstItem      = new List<CItemRecord>();
         public List<int>            lstEquipped  = new List<int>();   // 장착 중인 장비 ID
         public int                  iEquippedSkillID;
+        public List<CUpgradeRecord> lstSkillLevel = new List<CUpgradeRecord>();  // 260905_스킬 레벨 (eType 자리에 SKILL_TYPE)
 
         // 260905_구버전(별이 없던 시절) 기록. Migrate_Legacy로 옮기고 비운다.
         // 필드를 지우면 JsonUtility가 옛 저장본을 읽을 때 그냥 버려서 진행도가 날아간다.
@@ -224,6 +225,37 @@ namespace Client
         }
 
         public void Unequip(int iEquipID) => lstEquipped.Remove(iEquipID);
+
+        // 260905_스킬 레벨. CUpgradeRecord를 재사용하되 eType 자리에 SKILL_TYPE을 담는다 —
+        // 저장 스키마를 하나 더 만들지 않기 위해서다.
+        public int Get_SkillLevel(SKILL_TYPE eType)
+        {
+            for (int i = 0; i < lstSkillLevel.Count; ++i)
+            {
+                if ((SKILL_TYPE)lstSkillLevel[i].eType == eType)
+                    return lstSkillLevel[i].iLevel;
+            }
+
+            return 0;
+        }
+
+        public void Set_SkillLevel(SKILL_TYPE eType, int iLevel)
+        {
+            if (eType == SKILL_TYPE.NONE || iLevel < 0)
+                return;
+
+            for (int i = 0; i < lstSkillLevel.Count; ++i)
+            {
+                if ((SKILL_TYPE)lstSkillLevel[i].eType != eType)
+                    continue;
+
+                lstSkillLevel[i].iLevel = iLevel;
+                return;
+            }
+
+            lstSkillLevel.Add(new CUpgradeRecord { eType = (STAT_TYPE)eType, iLevel = iLevel });
+        }
+
 
         private CItemRecord Find_Item(int iEquipID)
         {

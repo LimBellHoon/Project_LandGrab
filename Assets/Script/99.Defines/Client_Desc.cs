@@ -28,6 +28,7 @@ namespace Client
         public float            fEvasion    { get; set; }
         // 260905_장착한 액티브 스킬. null이면 스킬 없음.
         public CSkillInfo       cSkillInfo  { get; set; }
+        public int              iSkillLevel { get; set; }
 
         public override void OnReturn()
         {
