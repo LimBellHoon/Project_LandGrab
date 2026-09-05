@@ -183,6 +183,42 @@ namespace Client
             return true;
         }
 
+        // 260905_상점
+        /// <summary>
+        /// 장비는 한 번만 살 수 있고, 소모품은 여러 번 살 수 있다.
+        /// 코인이 모자라면 아무 일도 일어나지 않는다.
+        /// </summary>
+        public bool Try_Buy(int iEquipID)
+        {
+            CEquipInfo cInfo = Get_EquipInfo(iEquipID);
+            if (cInfo == null || cInfo.iPrice <= 0)
+                return false;
+
+            if (cInfo.IS_CONSUMABLE == false && m_cProgress.Has_Item(iEquipID) == true)
+                return false;
+
+            if (m_cProgress.Use_Coin(cInfo.iPrice) == false)
+                return false;
+
+            m_cProgress.Add_Item(iEquipID, 1);
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        /// <summary> 살 수 있는 상태인가 (이미 가졌거나 돈이 모자라면 false). </summary>
+        public bool Can_Buy(int iEquipID)
+        {
+            CEquipInfo cInfo = Get_EquipInfo(iEquipID);
+            if (cInfo == null || cInfo.iPrice <= 0)
+                return false;
+
+            if (cInfo.IS_CONSUMABLE == false && m_cProgress.Has_Item(iEquipID) == true)
+                return false;
+
+            return COIN >= cInfo.iPrice;
+        }
+
+
         public void Unequip(int iEquipID)
         {
             if (m_cProgress.Is_Equipped(iEquipID) == false)

@@ -28,6 +28,8 @@ namespace Client
         // 260905_로비(하단 탭바)와 강화 화면
         private const string PREFAB_UI_LOBBY        = "Prefab_UI_Lobby";
         private const string PREFAB_UI_UPGRADE      = "Prefab_UI_Upgrade";
+        private const string PREFAB_UI_SHOP         = "Prefab_UI_Shop";
+        private const string PREFAB_UI_INVENTORY    = "Prefab_UI_Inventory";
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
@@ -295,6 +297,8 @@ namespace Client
             {
                 case LOBBY_TAB.BATTLE:  Open_TabBattle(trContent);  break;
                 case LOBBY_TAB.UPGRADE: Open_TabUpgrade(trContent); break;
+                case LOBBY_TAB.INVENTORY: Open_TabInventory(trContent); break;
+                case LOBBY_TAB.SHOP:    Open_TabShop(trContent);    break;
 
                 // 260905_아직 없는 화면은 빈 탭으로 둔다. 버튼은 눌리고 자리만 잡아 둔다.
                 default:
@@ -337,6 +341,49 @@ namespace Client
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_StageSelect>(cDesc, trParent);
         }
+
+        private void Open_TabInventory(Transform trParent)
+        {
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_INVENTORY) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_INVENTORY}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            CUI_InventoryDesc cDesc = new CUI_InventoryDesc
+            {
+                eObjectType     = OBJECT_TYPE.UI_MAIN,
+                cEquipTable     = m_cEquipTable,
+                cSkillTable     = m_cSkillTable,
+                cProgress       = m_cProgressManager,
+                OnChanged       = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
+            };
+
+            m_cTabUI = m_cGameInstance.Open_UI<CUI_Inventory>(cDesc, trParent);
+        }
+
+
+        private void Open_TabShop(Transform trParent)
+        {
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_SHOP) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_SHOP}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            CUI_ShopDesc cDesc = new CUI_ShopDesc
+            {
+                eObjectType     = OBJECT_TYPE.UI_MAIN,
+                cEquipTable     = m_cEquipTable,
+                cProgress       = m_cProgressManager,
+                OnPurchased     = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
+            };
+
+            m_cTabUI = m_cGameInstance.Open_UI<CUI_Shop>(cDesc, trParent);
+        }
+
 
         private void Open_TabUpgrade(Transform trParent)
         {

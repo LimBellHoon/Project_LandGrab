@@ -118,6 +118,44 @@ namespace Client
         }
     }
 
+    /// <summary> 인벤토리. 안쪽 탭(장비/스킬)은 UI가 스스로 관리한다. </summary>
+    public class CUI_InventoryDesc : CUIDesc
+    {
+        public CCSVData_EquipInfo   cEquipTable { get; set; }
+        public CCSVData_SkillInfo   cSkillTable { get; set; }
+        public CProgress_Manager    cProgress   { get; set; }
+        /// <summary> 장착 상태가 바뀌었을 때 </summary>
+        public Action               OnChanged   { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cEquipTable = null;
+            cSkillTable = null;
+            cProgress   = null;
+            OnChanged   = null;
+        }
+    }
+
+
+    /// <summary> 상점. 목록은 EquipInfo.csv를 훑어 UI가 직접 만든다. </summary>
+    public class CUI_ShopDesc : CUIDesc
+    {
+        public CCSVData_EquipInfo   cEquipTable { get; set; }
+        public CProgress_Manager    cProgress   { get; set; }
+        /// <summary> 구매했을 때 — 로비의 재화 표시를 갱신하려고 쓴다. </summary>
+        public Action               OnPurchased { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cEquipTable = null;
+            cProgress   = null;
+            OnPurchased = null;
+        }
+    }
+
+
     /// <summary> 능력치 강화 화면. 목록은 UpgradeInfo.csv를 훑어 UI가 직접 만든다. </summary>
     public class CUI_UpgradeDesc : CUIDesc
     {

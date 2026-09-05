@@ -68,6 +68,10 @@ namespace Client
         private const string PATH_PREFAB_UI_UPGRADE = DIR_PREFAB + "/Prefab_UI_Upgrade.prefab";
         private const string UI_LOBBY               = "Prefab_UI_Lobby";
         private const string UI_UPGRADE             = "Prefab_UI_Upgrade";
+        private const string PATH_PREFAB_UI_SHOP    = DIR_PREFAB + "/Prefab_UI_Shop.prefab";
+        private const string UI_SHOP                = "Prefab_UI_Shop";
+        private const string PATH_PREFAB_UI_INVEN   = DIR_PREFAB + "/Prefab_UI_Inventory.prefab";
+        private const string UI_INVENTORY           = "Prefab_UI_Inventory";
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -143,6 +147,10 @@ namespace Client
                                                  new[] { "m_trContent", "m_txtCoin", "m_txtStar", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_Upgrade>(PATH_PREFAB_UI_UPGRADE, UI_UPGRADE,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
+            iFail += Validate_UIPrefab<CUI_Shop>(PATH_PREFAB_UI_SHOP, UI_SHOP,
+                                                 new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
+            iFail += Validate_UIPrefab<CUI_Inventory>(PATH_PREFAB_UI_INVEN, UI_INVENTORY,
+                                                 new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -679,6 +687,8 @@ namespace Client
             Create_InGameUI();
             Create_LobbyUI();
             Create_UpgradeUI();
+            Create_ShopUI();
+            Create_InventoryUI();
             Create_PopupUI();
         }
 
@@ -724,6 +734,8 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_LOBBY, UI_LOBBY, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_UPGRADE, UI_UPGRADE, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_SHOP, UI_SHOP, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_INVEN, UI_INVENTORY, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
@@ -921,9 +933,12 @@ namespace Client
         }
 
         // 260905_강화 화면. 목록은 UpgradeInfo.csv를 보고 런타임에 만든다.
-        private static void Create_UpgradeUI()
+        // 260905_강화 · 상점 · 인벤토리는 '제목 + 세로 목록 + 버튼 템플릿'으로 모양이 같다.
+        // 프리팹 빌더를 하나로 모아 두면 화면이 늘어도 이 함수만 부르면 된다.
+        private static void Create_ListUI<T>(string strName, string strPath, string strTitle,
+                                             float fRowHeight) where T : Component
         {
-            GameObject goRoot = Create_UIObject(UI_UPGRADE, null);
+            GameObject goRoot = Create_UIObject(strName, null);
             Stretch_Full(goRoot.GetComponent<RectTransform>());
 
             GameObject goTitle = Create_UIObject("Title", goRoot.transform);
@@ -933,7 +948,7 @@ namespace Client
             trTitle.pivot     = new Vector2(0.5f, 1f);
             trTitle.offsetMin = new Vector2(32f, -100f);
             trTitle.offsetMax = new Vector2(-32f, -20f);
-            Text txtTitle = Make_Text(goTitle, "\ub2a5\ub825\uce58 \uac15\ud654", 38, TextAnchor.MiddleLeft);
+            Text txtTitle = Make_Text(goTitle, strTitle, 38, TextAnchor.MiddleLeft);
 
             GameObject goContent = Create_UIObject("Content", goRoot.transform);
             RectTransform trContent = goContent.GetComponent<RectTransform>();
@@ -952,27 +967,95 @@ namespace Client
 
             GameObject goButton = Create_UIObject("Btn_Template", goContent.transform);
             RectTransform trButton = goButton.GetComponent<RectTransform>();
-            trButton.sizeDelta = new Vector2(0f, 130f);
-            goButton.AddComponent<LayoutElement>().minHeight = 130f;
+            trButton.sizeDelta = new Vector2(0f, fRowHeight);
+            goButton.AddComponent<LayoutElement>().minHeight = fRowHeight;
             goButton.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 1f);
             Button cButton = goButton.AddComponent<Button>();
 
             GameObject goLabel = Create_UIObject("Label", goButton.transform);
             Stretch_Full(goLabel.GetComponent<RectTransform>());
-            Make_Text(goLabel, "UPGRADE", 28, TextAnchor.MiddleCenter);
+            Make_Text(goLabel, "ITEM", 28, TextAnchor.MiddleCenter);
 
             goButton.SetActive(false);       // 템플릿은 항상 꺼 둔다
 
-            CUI_Upgrade cUI = goRoot.AddComponent<CUI_Upgrade>();
+            T cUI = goRoot.AddComponent<T>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trContent").objectReferenceValue   = goContent.transform;
             cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cButton;
             cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
-            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_UPGRADE);
+            PrefabUtility.SaveAsPrefabAsset(goRoot, strPath);
             Object.DestroyImmediate(goRoot);
         }
+
+        // 260905_강화 화면. 목록은 UpgradeInfo.csv를 보고 런타임에 만든다.
+        private static void Create_UpgradeUI()
+        {
+            Create_ListUI<CUI_Upgrade>(UI_UPGRADE, PATH_PREFAB_UI_UPGRADE, "\ub2a5\ub825\uce58 \uac15\ud654", 130f);
+        }
+
+        // 260905_인벤토리. 공용 목록 위에 안쪽 탭(장비/스킬) 두 개를 얹는다.
+        private static void Create_InventoryUI()
+        {
+            Create_ListUI<CUI_Inventory>(UI_INVENTORY, PATH_PREFAB_UI_INVEN, "\uac00\ubc29", 130f);
+
+            // 저장된 프리팹을 다시 열어 탭 줄을 붙인다 —
+            // 공용 빌더를 건드리지 않고 이 화면에만 더하기 위해서다.
+            GameObject goRoot = PrefabUtility.LoadPrefabContents(PATH_PREFAB_UI_INVEN);
+
+            Transform trContent = goRoot.transform.Find("Content");
+            RectTransform trContentRect = trContent as RectTransform;
+            trContentRect.offsetMax = new Vector2(-32f, -200f);   // 탭 줄 자리를 비운다
+
+            GameObject goTabBar = Create_UIObject("InnerTabBar", goRoot.transform);
+            RectTransform trTabBar = goTabBar.GetComponent<RectTransform>();
+            trTabBar.anchorMin = new Vector2(0f, 1f);
+            trTabBar.anchorMax = new Vector2(1f, 1f);
+            trTabBar.pivot     = new Vector2(0.5f, 1f);
+            trTabBar.offsetMin = new Vector2(32f, -190f);
+            trTabBar.offsetMax = new Vector2(-32f, -110f);
+
+            HorizontalLayoutGroup cLayout = goTabBar.AddComponent<HorizontalLayoutGroup>();
+            cLayout.spacing = 10f;
+            cLayout.childForceExpandWidth  = true;
+            cLayout.childForceExpandHeight = true;
+            cLayout.childControlWidth      = true;
+            cLayout.childControlHeight     = true;
+
+            string[] arrTabName = { "\uc7a5\ube44", "\uc2a4\ud0ac" };
+            Button[] arrTabButton = new Button[arrTabName.Length];
+
+            for (int i = 0; i < arrTabName.Length; ++i)
+            {
+                GameObject goTab = Create_UIObject($"Btn_InnerTab_{i}", goTabBar.transform);
+                goTab.AddComponent<Image>().color = new Color(0.13f, 0.16f, 0.26f, 1f);
+                arrTabButton[i] = goTab.AddComponent<Button>();
+
+                GameObject goTabLabel = Create_UIObject("Label", goTab.transform);
+                Stretch_Full(goTabLabel.GetComponent<RectTransform>());
+                Make_Text(goTabLabel, arrTabName[i], 30, TextAnchor.MiddleCenter).raycastTarget = false;
+            }
+
+            SerializedObject cSerialized = new SerializedObject(goRoot.GetComponent<CUI_Inventory>());
+            SerializedProperty cArray = cSerialized.FindProperty("m_arrTabButton");
+            cArray.arraySize = arrTabButton.Length;
+            for (int i = 0; i < arrTabButton.Length; ++i)
+                cArray.GetArrayElementAtIndex(i).objectReferenceValue = arrTabButton[i];
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INVEN);
+            PrefabUtility.UnloadPrefabContents(goRoot);
+        }
+
+
+        // 260905_상점. 목록은 EquipInfo.csv를 보고 런타임에 만든다.
+        private static void Create_ShopUI()
+        {
+            Create_ListUI<CUI_Shop>(UI_SHOP, PATH_PREFAB_UI_SHOP, "\uc0c1\uc810", 130f);
+        }
+
+
 
 
         private static void Create_InGameUI()

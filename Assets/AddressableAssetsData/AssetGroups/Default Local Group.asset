@@ -27,6 +27,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Prefabs
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 1e60ec883254013418bff414f1b92732
+    m_Address: Prefab_UI_Shop
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 2d49a0cb396a4d07a2822671c7f9a502
     m_Address: EnemyInfo
     m_ReadOnly: 0
@@ -47,6 +53,12 @@ MonoBehaviour:
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 51d4c9718dce1c542b6bb01916f1b2be
     m_Address: Prefab_UI_Popup
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 6483c269284b10e44b31203e8c396d03
+    m_Address: Prefab_UI_Inventory
     m_ReadOnly: 0
     m_SerializedLabels:
     - Prefabs
