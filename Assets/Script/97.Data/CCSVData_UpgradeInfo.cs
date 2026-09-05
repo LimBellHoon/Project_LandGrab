@@ -58,6 +58,10 @@ namespace Client
         // 헤더 순서와 1:1로 맞춘다.
         protected override void Parse_CSVData(string[] arrField)
         {
+            // 260905_헤더 줄은 조용히 넘긴다 (CCSV_Utility.Is_HeaderRow 주석 참고).
+            if (CCSV_Utility.Is_HeaderRow(arrField, "eType") == true)
+                return;
+
             CUpgradeInfo cInfo = new CUpgradeInfo
             {
                 eType           = CCSV_Utility.To_Enum(arrField, 0, STAT_TYPE.NONE),

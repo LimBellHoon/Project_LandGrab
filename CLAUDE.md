@@ -134,6 +134,9 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 #### Engine이 강제하는 CSV 규약 (어기면 표가 조용히 비어 버린다)
 - **구분자는 탭(`\t`).** 쉼표가 아니다. `Engine.CCSVData`가 `Split('\t')`로만 쪼갠다.
 - **0번 줄이 헤더.** 헤더 위에는 주석도 넣을 수 없다.
+  **Engine은 헤더 줄도 `Parse_CSVData`에 그대로 넘긴다.** 파서 첫 줄에서
+  `CCSV_Utility.Is_HeaderRow(arrField, "<첫 열 이름>")`으로 걸러야 한다 —
+  안 걸면 실행할 때마다 표 개수만큼 에러가 찍혀 진짜 데이터 오류가 묻힌다(260905).
 - 헤더가 `NONE`인 열은 통째로 버려진다 → 맨 끝 '메모' 칸이 그 용도.
 - 첫 칸이 `;`로 시작하거나 비면 그 줄은 무시된다.
 - 클래스 이름이 **`Client.CCSVData_<파일명>`** 이어야 한다. `MapInfo.csv` ↔ `CCSVData_MapInfo`.
@@ -350,6 +353,28 @@ Failed to load label: CSV
 
 `CGameManager.Check_AssetsReady`가 이 상황을 먼저 잡아 한 줄로 알려 준다 —
 Addressable 예외 더미를 읽기 전에 이 메시지부터 볼 것.
+
+### 3-2. 임시 사본에서 프리팹을 만들었으면 `.meta`까지 확인할 것 (260905)
+Unity가 열려 있어 배치모드가 막히면 프로젝트를 통째로 복사해 거기서 `Setup Assets`를 돌리게 된다.
+이때 **`.cs.meta`를 함께 복사하지 않으면 사본이 GUID를 새로 발급**하고,
+거기서 만든 프리팹은 원본 프로젝트에 없는 GUID를 가리킨 채 돌아온다.
+
+증상은 컴파일 에러도, 프리팹 없음도 아니다 — 프리팹은 로드되는데 **루트에 컴포넌트가 없어서**
+Engine 안쪽에서 터진다.
+
+```
+NullReferenceException
+  at Engine.CLayer.Reuse_GameObject   ← cGameObject.Initialize(Desc)
+  at Client.CGameManager.Open_Lobby
+```
+
+`Has_Prefab`은 통과하므로 우리 쪽 가드에 걸리지 않는다.
+`Tools/LandGrab/Validate Assets`는 이걸 잡는다(`FAIL  CUI_Lobby 컴포넌트 없음`) —
+**사본에서 만든 산출물을 되돌려 놓았으면 원본 프로젝트에서 한 번 더 검증할 것.**
+
+확인은 프리팹 안의 `m_EditorClassIdentifier`(`Assembly-CSharp::Client.CUI_Lobby`) 바로 위
+`m_Script` GUID가 `Assets/Script/01.UI/CUI_Lobby.cs.meta`의 것과 같은지 보면 된다.
+
 
 ---
 

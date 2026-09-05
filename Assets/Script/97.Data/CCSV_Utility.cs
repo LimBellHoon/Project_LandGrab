@@ -34,6 +34,20 @@ namespace Client
             return strValue;
         }
 
+        // 260905_Engine.CCSVData는 0번 줄(헤더)도 Parse_CSVData에 그대로 넘긴다.
+        // 파서마다 이걸 먼저 걸러 내지 않으면 실행할 때마다 표 개수만큼 에러가 찍히고,
+        // 정작 기획이 낸 진짜 데이터 오류가 그 사이에 묻힌다.
+        /// <summary> 첫 칸이 열 이름과 같으면 헤더 줄이다. </summary>
+        public static bool Is_HeaderRow(string[] arrField, string strFirstColumn)
+        {
+            if (arrField == null || arrField.Length == 0 || string.IsNullOrEmpty(strFirstColumn) == true)
+                return false;
+
+            // TextAsset이 BOM을 남기는 경우가 있어 첫 글자를 떼고 비교한다.
+            string strValue = arrField[0].Trim().TrimStart('\uFEFF');
+            return string.Equals(strValue, strFirstColumn, StringComparison.OrdinalIgnoreCase);
+        }
+
         public static int To_Int(string[] arrField, int iIndex, int iDefault = 0)
         {
             string strValue = To_String(arrField, iIndex);

@@ -57,6 +57,10 @@ namespace Client
         // 헤더 순서와 1:1로 맞춘다. CSV의 열 순서를 바꾸면 여기도 같이 바꿔야 한다.
         protected override void Parse_CSVData(string[] arrField)
         {
+            // 260905_헤더 줄은 조용히 넘긴다 (CCSV_Utility.Is_HeaderRow 주석 참고).
+            if (CCSV_Utility.Is_HeaderRow(arrField, "iEnemyID") == true)
+                return;
+
             CEnemyInfo cInfo = new CEnemyInfo
             {
                 iEnemyID        = CCSV_Utility.To_Int(arrField, 0),
