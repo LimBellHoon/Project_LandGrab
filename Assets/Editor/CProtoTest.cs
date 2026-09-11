@@ -50,6 +50,7 @@ namespace Client
             Test_GameConfig();
             Test_CameraFit();
             Test_SafeArea();
+            Test_SkillTable();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -661,6 +662,64 @@ namespace Client
 
             // 값이 이상해도 0으로 나누지 않는다
             Check("비율 0도 견딘다", CCameraFitter.Calc_Size(vMap1, 0f, 0f, 0f) > 0f);
+        }
+
+
+        // 260912_액티브 스킬 5종이 표에서 제대로 읽히고, 종류마다 모듈이 붙는지
+        private static void Test_SkillTable()
+        {
+            CCSVData_SkillInfo cTable = Load_SkillTable();
+            if (cTable == null)
+            {
+                Check("SkillInfo.csv 로드", false);
+                return;
+            }
+
+            SKILL_TYPE[] arrActive = { SKILL_TYPE.WARP, SKILL_TYPE.SHIELD, SKILL_TYPE.DASH,
+                                       SKILL_TYPE.SLOW, SKILL_TYPE.SEAL };
+
+            for (int i = 0; i < arrActive.Length; ++i)
+            {
+                CSkillInfo cInfo = cTable.Find_ByType(arrActive[i]);
+                Check($"{arrActive[i]} 표에 있다", cInfo != null);
+                if (cInfo == null)
+                    continue;
+
+                Check($"{arrActive[i]}는 액티브", cInfo.IS_PASSIVE == false);
+                Check($"{arrActive[i]} 쿨타임이 있다", cInfo.fCoolTime > 0f);
+                // 액티브는 전부 효과 모듈이 붙어야 버튼이 동작한다
+                Check($"{arrActive[i]} 효과 모듈", CSkillEffect.Create(arrActive[i]) != null);
+            }
+
+            // 패시브는 버튼으로 쓸 것이 없으므로 모듈을 만들지 않는다 —
+            // 만들면 인게임에 눌러도 아무 일 없는 버튼이 뜬다.
+            Check("패시브는 모듈 없음", CSkillEffect.Create(SKILL_TYPE.SWIFT) == null);
+            Check("NONE도 모듈 없음",  CSkillEffect.Create(SKILL_TYPE.NONE) == null);
+
+            // 지속 시간이 필요한 것과 즉발을 갈라 둔다
+            Check("질주는 지속 시간이 있다", cTable.Find_ByType(SKILL_TYPE.DASH).fDuration > 0f);
+            Check("감속은 지속 시간이 있다", cTable.Find_ByType(SKILL_TYPE.SLOW).fDuration > 0f);
+            Check("점멸은 즉발", Mathf.Approximately(cTable.Find_ByType(SKILL_TYPE.WARP).fDuration, 0f));
+
+            // 감속은 fValue가 클수록 세다 — 1에서 빼서 배율로 쓰기 때문이다
+            CSkillInfo cSlow = cTable.Find_ByType(SKILL_TYPE.SLOW);
+            Check("감속 배율은 0과 1 사이", 1f - cSlow.Get_Value(0) > 0f && 1f - cSlow.Get_Value(0) < 1f);
+            Check("레벨을 올리면 더 느려진다", cSlow.Get_Value(1) > cSlow.Get_Value(0));
+
+            // 마감은 강화 대상이 아니다
+            Check("마감은 만렙 1", cTable.Find_ByType(SKILL_TYPE.SEAL).iMaxLevel, 1);
+
+            // 스킬 ID는 겹치면 안 된다 (인벤토리가 ID로 장착한다)
+            List<int> lstID = new List<int>();
+            bool bDup = false;
+            for (int i = 0; i < arrActive.Length; ++i)
+            {
+                int iID = cTable.Find_ByType(arrActive[i]).iSkillID;
+                if (lstID.Contains(iID) == true)
+                    bDup = true;
+                lstID.Add(iID);
+            }
+            Check("스킬 ID가 겹치지 않는다", bDup == false);
         }
 
 

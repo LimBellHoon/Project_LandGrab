@@ -28,6 +28,9 @@ namespace Client
 
         private CTerritoryGrid  m_cGrid;
         private float           m_fSpeed;           // 월드 유닛/초
+        // 260912_감속 스킬 배율. Set_ChaseState가 매번 속도를 다시 넣으므로
+        // 여기에 따로 들고 있지 않으면 추격 상태가 바뀌는 순간 감속이 풀려 버린다.
+        private float           m_fSpeedScale = 1f;
         private float           m_fChaseSpeed;      // 월드 유닛/초
         private float           m_fTurnRate;
 
@@ -65,6 +68,7 @@ namespace Client
 
             // Desc의 속도는 '초당 셀' 단위 — 월드 단위로 환산해 둔다.
             m_fSpeed      = cDesc.fSpeed * m_cGrid.CELL_SIZE;
+            m_fSpeedScale = 1f;     // 풀에서 재사용되므로 지난 판의 감속을 지운다
             m_fChaseSpeed = cDesc.fChaseSpeed * m_cGrid.CELL_SIZE;
             m_fTurnRate   = cDesc.fTurnRate;
 
@@ -115,6 +119,19 @@ namespace Client
         public void Set_GimmickHost(IGimmickHost cHost) => m_cGimmick?.Set_Host(cHost);
 
         /// <summary> 스테이지 매니저가 매 프레임 갱신한다. </summary>
+        // 260912_감속 스킬. 1이면 원래 속도.
+        public void Set_SpeedScale(float fScale)
+        {
+            m_fSpeedScale = Mathf.Clamp(fScale, 0.1f, 1f);
+            Apply_Speed(m_bChase);
+        }
+
+        private void Apply_Speed(bool bChase)
+        {
+            m_cMoveHandler.SPEED = (bChase == true ? m_fChaseSpeed : m_fSpeed) * m_fSpeedScale;
+        }
+
+
         public void Set_ChaseState(bool bChase, Vector2 vTargetPos)
         {
             m_vTargetPos = vTargetPos;
@@ -123,7 +140,7 @@ namespace Client
                 return;
 
             m_bChase = bChase;
-            m_cMoveHandler.SPEED = bChase == true ? m_fChaseSpeed : m_fSpeed;
+            Apply_Speed(bChase);
             Refresh_Color();
         }
 

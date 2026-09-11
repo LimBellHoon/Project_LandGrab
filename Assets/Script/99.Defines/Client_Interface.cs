@@ -23,6 +23,21 @@ namespace Client
         bool IS_PLAYER_EXPOSED { get; }
     }
 
+    // 260912_스킬이 플레이어 밖을 건드려야 할 때 쓰는 창구
+    /// <summary>
+    /// 스킬 효과는 플레이어가 들고 있지만, 몬스터처럼 플레이어 밖에 있는 것을 건드려야 할 때가 있다.
+    /// 기믹이 IGimmickHost로 스테이지에 요청만 하는 것과 같은 구조다 —
+    /// 효과 모듈이 스테이지를 직접 알면 화면 없이 검증할 수 없어진다.
+    /// </summary>
+    public interface ISkillHost
+    {
+        /// <summary> 살아 있는 몬스터를 한동안 느리게 한다. </summary>
+        /// <param name="fScale"> 원래 속도에 곱할 값. 1이면 감속 없음 </param>
+        /// <param name="fDuration"> 초 </param>
+        void Slow_Enemies(float fScale, float fDuration);
+    }
+
+
     // 260904_진행도 저장소
     /// <summary>
     /// 클리어 기록을 어디에 두는지를 게임 로직에서 떼어 놓는다.

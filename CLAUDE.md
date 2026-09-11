@@ -92,6 +92,7 @@ Assets/
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
     │                       CInputHandler, CVirtualJoystick, CCameraFitter
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
+    │                       CSkillHandler, CSkillEffect(+_Warp/_Shield/_Dash/_Slow/_Seal)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
     ├── 98.Manager/         CStage_Manager, CProgress_Manager
     └── 99.Defines/         Client_Enum, Client_Desc, Client_Interface
@@ -372,6 +373,50 @@ Engine 레이어가 UI까지 Tick하는지 확실하지 않아 이 클래스만 
 
 계산(`Calc_Size` · `Calc_PositionY` · `Calc_AnchorMin/Max`)은 전부 static이라
 화면 없이 `CProtoTest`에서 검증한다.
+
+### 2-11. 플레이어 스킬 — 효과 모듈 (260912)
+스킬은 **기믹과 같은 조합 구조**다(2-6). `CPlayer`가 `CSkillEffect` 모듈을 하나 들고 있고,
+`SkillInfo.csv`의 `eType` 한 칸이 무엇을 붙일지 정한다.
+
+```
+CPlayer ── CSkillHandler   (쿨타임만 잰다)
+        └─ CSkillEffect    (실제 효과)   ← eType으로 결정, 패시브/NONE이면 null
+```
+
+예전에는 `Try_UseSkill`이 WARP 하나를 직접 처리했다. 스킬이 늘 때마다 `CPlayer`에 분기가
+쌓이는 모양이라 효과를 떼어 냈다. **`CPlayer`는 '무엇을 할 수 있는가'만 공개하고,
+'무엇을 할지'는 표가 정한다.**
+
+| 스킬 | `fValue` | `fDuration` | 쓰는 것 |
+|---|---|---|---|
+| `WARP` 점멸 | 이동 칸 수 | — | `Warp` |
+| `SHIELD` 보호막 | 무적 초 | — | `Add_Invincible` |
+| `DASH` 질주 | 추가 속도 비율(0.8=1.8배) | 지속 | `Add_SkillSpeed` |
+| `SLOW` 감속 | 감속 비율(0.55=몬스터 0.45배) | 지속 | `ISkillHost.Slow_Enemies` |
+| `SEAL` 마감 | — | — | `Seal` |
+
+- **효과가 실패하면 쿨타임을 돌리지 않는다.** 멈춘 채로 점멸을 눌러 쿨만 날리면 억울하다.
+- **패시브는 모듈을 만들지 않는다.** 만들면 인게임에 눌러도 아무 일 없는 버튼이 뜬다.
+- `SKILL_TYPE`은 **뒤에만 붙일 것.** `CStageProgress`가 스킬 레벨을 이 숫자로 저장해 두어
+  순서를 바꾸면 옛 저장본의 레벨이 다른 스킬로 옮겨 간다.
+
+#### 플레이어 밖을 건드리는 스킬
+감속은 몬스터를 건드려야 하는데 몬스터는 스테이지가 들고 있다.
+기믹이 `IGimmickHost`를 쓰듯 **`ISkillHost`로 요청만 한다** — 효과 모듈이 스테이지를 직접 알면
+화면 없이 검증할 수 없어진다. 지속 시간도 스테이지가 재고,
+**감속 중에 소환된 몬스터에게도 같은 배율을 건다**(안 그러면 스킬이 반쪽이 된다).
+
+#### 속도는 두 갈래로 곱해진다
+거미줄(환경)과 질주(스킬)를 따로 들고 곱한다(`CPlayer.Apply_Speed`).
+스테이지가 매 프레임 환경 배율을 넣어 주므로 **한 갈래로 두면 질주가 다음 프레임에 덮어써진다.**
+몬스터도 같은 이유로 `m_fSpeedScale`을 따로 든다 — `Set_ChaseState`가 속도를 다시 넣기 때문이다.
+
+#### 마감(SEAL)
+그은 선을 가장 가까운 점령지까지 ㄱ자로 이어 도형을 닫는다.
+**점령 판정을 새로 만들지 않는다.** 평소 이동과 똑같이 한 칸씩 밟아 `Step_To`를 지나게 해서
+규칙이 한 군데에만 있도록 유지한다(2-3). 워프도 같은 이유로 한 칸씩 간다.
+
+
 
 
 

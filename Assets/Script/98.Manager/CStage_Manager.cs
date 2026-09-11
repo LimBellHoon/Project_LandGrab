@@ -16,7 +16,7 @@ namespace Client
     /// 웨이브: N웨이브를 fClearRatio만큼 점령하면 그리드를 다시 깔고 이미지 스택을 한 장 벗긴다.
     /// 마지막 웨이브까지 넘기면 CLEAR.
     /// </summary>
-    public class CStage_Manager : IGimmickHost
+    public class CStage_Manager : IGimmickHost, ISkillHost
     {
         private const string PREFAB_PLAYER      = "Prefab_Player";
         private const string PREFAB_PROJECTILE  = "Prefab_Projectile";
@@ -43,6 +43,11 @@ namespace Client
 
         private readonly List<CEnemy>       m_lstEnemy      = new List<CEnemy>();
         private readonly List<Vector2Int>   m_lstEnemyCell  = new List<Vector2Int>();  // 점령 판정용 재사용 버퍼
+
+        // 260912_감속 스킬. 몬스터는 스테이지가 들고 있으므로 지속 시간도 여기서 잰다.
+        // 도중에 새로 소환되는 몬스터에게도 같은 배율을 걸어야 해서 값을 남겨 둔다.
+        private float                       m_fEnemySlowScale = 1f;
+        private float                       m_fEnemySlowTimer;
 
         // 260904_기믹이 소환한 것들. 수명과 충돌을 여기서 한꺼번에 본다.
         private readonly List<CProjectile>  m_lstProjectile = new List<CProjectile>();
@@ -153,6 +158,8 @@ namespace Client
             OnStateChanged = null;
             m_bPaused      = false;
             m_eWavePhase   = WAVE_PHASE.NONE;
+            m_fEnemySlowScale = 1f;     // 260912_다음 판에 감속이 남아 있지 않게
+            m_fEnemySlowTimer = 0f;
 
             Collect_Player();
             Collect_Enemies();
@@ -260,6 +267,7 @@ namespace Client
                 return;
             }
 
+            Tick_EnemySlow(fDeltaTime);
             Tick_Enemy();
             Tick_Projectile();
             Tick_Web();
@@ -386,6 +394,35 @@ namespace Client
 
         // 260905_스킬 버튼은 UI에 있고 플레이어는 스테이지가 갖고 있으므로 여기를 거친다.
         /// <summary> 연출 중이거나 멈춰 있을 때는 발동하지 않는다. </summary>
+        // 260912_ISkillHost — 감속 스킬이 부른다.
+        /// <param name="fScale"> 원래 속도에 곱할 값 </param>
+        public void Slow_Enemies(float fScale, float fDuration)
+        {
+            if (fDuration <= 0f)
+                return;
+
+            m_fEnemySlowScale = Mathf.Clamp(fScale, 0.1f, 1f);
+            m_fEnemySlowTimer = Mathf.Max(m_fEnemySlowTimer, fDuration);
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+                m_lstEnemy[i].Set_SpeedScale(m_fEnemySlowScale);
+        }
+
+        private void Tick_EnemySlow(float fDeltaTime)
+        {
+            if (m_fEnemySlowTimer <= 0f)
+                return;
+
+            m_fEnemySlowTimer -= fDeltaTime;
+            if (m_fEnemySlowTimer > 0f)
+                return;
+
+            m_fEnemySlowScale = 1f;
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+                m_lstEnemy[i].Set_SpeedScale(1f);
+        }
+
+
         public bool Try_UseSkill()
         {
             if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true)
@@ -449,6 +486,7 @@ namespace Client
             }
 
             m_cPlayer = goPlayer.GetComponent<CPlayer>();
+            m_cPlayer?.Set_SkillHost(this);     // 260912_감속 스킬이 몬스터를 건드릴 창구
             if (m_cPlayer == null)
             {
                 Debug.LogError("[CStage_Manager] 프리팹에 CPlayer 컴포넌트가 없습니다.");
@@ -559,6 +597,10 @@ namespace Client
             }
 
             cEnemy.Set_GimmickHost(this);
+
+            // 260912_감속이 걸려 있는 동안 소환된 몬스터만 멀쩡하면 스킬이 반쪽이 된다.
+            if (m_fEnemySlowTimer > 0f)
+                cEnemy.Set_SpeedScale(m_fEnemySlowScale);
             m_lstEnemy.Add(cEnemy);
         }
 

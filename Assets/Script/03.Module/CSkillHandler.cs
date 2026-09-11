@@ -21,6 +21,8 @@ namespace Client
         public int          LEVEL       => m_iLevel;
         /// <summary> 260905_강화 레벨이 반영된 수치. WARP은 이동할 칸 수. </summary>
         public float        VALUE       => m_cInfo != null ? m_cInfo.Get_Value(m_iLevel) : 0f;
+        /// <summary> 260912_효과가 이어지는 초. 즉발 스킬은 0. </summary>
+        public float        DURATION    => m_cInfo != null ? m_cInfo.fDuration : 0f;
 
         /// <summary> 남은 쿨타임 비율 0~1. 1이면 방금 썼고, 0이면 쓸 수 있다. </summary>
         public float COOL_RATIO

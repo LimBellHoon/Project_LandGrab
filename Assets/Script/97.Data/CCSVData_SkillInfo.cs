@@ -18,6 +18,7 @@ namespace Client
 
         public float            fCoolTime;      // 초
         public float            fValue;         // 스킬마다 의미가 다르다. WARP은 이동할 칸 수
+        public float            fDuration;      // 260912_효과 지속 시간(초). 즉발 스킬은 0
 
         // 260905_강화
         public float            fValuePerLevel; // 레벨 1당 늘어나는 fValue
@@ -105,6 +106,7 @@ namespace Client
                 iCostAdd        = CCSV_Utility.To_Int(arrField, 10),
                 eStat           = CCSV_Utility.To_Enum(arrField, 11, STAT_TYPE.NONE),
                 fStatValue      = CCSV_Utility.To_Float(arrField, 12),
+                fDuration       = CCSV_Utility.To_Float(arrField, 13),
             };
 
             if (cInfo.iSkillID <= 0 || cInfo.eType == SKILL_TYPE.NONE)
