@@ -19,6 +19,7 @@ namespace Client
         private float   m_fRadius;          // 손잡이가 움직일 수 있는 최대 반경(픽셀)
         private float   m_fDeadZone;        // 이 안에서는 방향으로 치지 않는다(픽셀)
         private float   m_fActiveHeight;    // 화면 아래 이 비율 안에서 눌러야 조이스틱이 잡힌다
+        private float   m_fActiveWidth;     // 화면 왼쪽 이 비율 안에서 눌러야 잡힌다
 
         private bool        m_bActive;
         private Vector2     m_vOrigin;
@@ -34,11 +35,13 @@ namespace Client
         /// <param name="fRadius"> 손잡이 최대 반경(픽셀) </param>
         /// <param name="fDeadZone"> 방향으로 인정하기 시작하는 최소 거리(픽셀) </param>
         /// <param name="fActiveHeight"> 조이스틱을 잡을 수 있는 화면 아래쪽 비율 (0~1) </param>
-        public void Initialize(float fRadius, float fDeadZone, float fActiveHeight)
+        /// <param name="fActiveWidth"> 조이스틱을 잡을 수 있는 화면 왼쪽 비율 (0~1) </param>
+        public void Initialize(float fRadius, float fDeadZone, float fActiveHeight, float fActiveWidth)
         {
             m_fRadius       = Mathf.Max(1f, fRadius);
             m_fDeadZone     = Mathf.Clamp(fDeadZone, 0f, m_fRadius);
             m_fActiveHeight = Mathf.Clamp01(fActiveHeight);
+            m_fActiveWidth  = Mathf.Clamp01(fActiveWidth);
             Clear();
         }
 
@@ -52,12 +55,13 @@ namespace Client
         public void Tick()
         {
             Read_Input(out bool bPressed, out Vector2 vScreenPos);
-            Update_State(bPressed, vScreenPos, Screen.height);
+            Update_State(bPressed, vScreenPos, Screen.height, Screen.width);
         }
 
         // 판정만 떼어 둔다 — 화면도 입력 장치도 없는 곳에서 검증할 수 있어야 하기 때문이다.
         /// <param name="iScreenHeight"> 활성 영역 판정에 쓸 화면 높이 </param>
-        public void Update_State(bool bPressed, Vector2 vScreenPos, int iScreenHeight)
+        /// <param name="iScreenWidth"> 활성 영역 판정에 쓸 화면 너비 </param>
+        public void Update_State(bool bPressed, Vector2 vScreenPos, int iScreenHeight, int iScreenWidth)
         {
             if (bPressed == false)
             {
@@ -67,9 +71,16 @@ namespace Client
 
             if (m_bActive == false)
             {
-                // 화면 위쪽은 조이스틱으로 잡지 않는다 — 나중에 붙을 일시정지 버튼 같은 것을 위해서다.
+                // 260912_왼쪽 아래만 조이스틱으로 잡는다.
+                // 조이스틱은 EventSystem을 쓰지 않고 Input을 직접 읽으므로, 오른쪽 버튼을 눌러도
+                // 그 터치가 조이스틱까지 잡아 버린다. 영역을 나눠서 겹치지 않게 한다 —
+                // 왼손은 이동, 오른손은 스킬/아이템. 실제 모바일 게임이 쓰는 배치와 같다.
                 if (vScreenPos.y > iScreenHeight * m_fActiveHeight)
                     return;
+
+                if (vScreenPos.x > iScreenWidth * m_fActiveWidth)
+                    return;
+
 
                 m_bActive = true;
                 m_vOrigin = vScreenPos;

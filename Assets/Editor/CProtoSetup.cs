@@ -79,7 +79,7 @@ namespace Client
         private const string PATH_TEX_JOY_HANDLE    = DIR_ART + "/Tex_JoystickHandle.png";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
 
-        [MenuItem("Tools/LandGrab/Setup Prototype (씬까지 새로 만듦)")]
+        [MenuItem("Tools/LandGrab/Setup Prototype")]   // 씬까지 새로 만든다
         public static void Setup_All()
         {
             Setup_Assets();
@@ -91,7 +91,7 @@ namespace Client
         }
 
         // 260902_씬을 갈아엎지 않는 안전한 메뉴 — 작업 중인 씬이 열려 있어도 쓸 수 있다.
-        [MenuItem("Tools/LandGrab/Setup Assets (씬 건드리지 않음)")]
+        [MenuItem("Tools/LandGrab/Setup Assets")]      // 씬은 건드리지 않는다
         public static void Setup_Assets()
         {
             Ensure_Folder(DIR_ART);
@@ -142,7 +142,8 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
-                        new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus", "m_btnPause" });
+                        new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
+                                "m_imgProgress", "m_txtTime", "m_btnPause" });
             iFail += Validate_UIPrefab<CUI_Lobby>(PATH_PREFAB_UI_LOBBY, UI_LOBBY,
                                                  new[] { "m_trContent", "m_txtCoin", "m_txtStar", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_Upgrade>(PATH_PREFAB_UI_UPGRADE, UI_UPGRADE,
@@ -868,8 +869,14 @@ namespace Client
             Stretch_Full(goBG.GetComponent<RectTransform>());
             goBG.AddComponent<Image>().color = new Color(0.04f, 0.05f, 0.09f, 1f);
 
+            // 260912_내용은 안전 영역 안에서만 논다. 하단 탭바가 홈 인디케이터에 걸리면
+            // 탭이 눌리지 않는다 — 배경(goBG)은 일부러 밖에 두어 화면 끝까지 칠한다.
+            GameObject goSafe = Create_UIObject("SafeArea", goRoot.transform);
+            Stretch_Full(goSafe.GetComponent<RectTransform>());
+            goSafe.AddComponent<CSafeArea>();
+
             // 상단 재화 바
-            GameObject goTop = Create_UIObject("TopBar", goRoot.transform);
+            GameObject goTop = Create_UIObject("TopBar", goSafe.transform);
             RectTransform trTop = goTop.GetComponent<RectTransform>();
             trTop.anchorMin = new Vector2(0f, 1f);
             trTop.anchorMax = new Vector2(1f, 1f);
@@ -897,7 +904,7 @@ namespace Client
             txtCoin.raycastTarget = false;
 
             // 가운데 — 탭 화면이 열릴 자리. 위아래로 바를 피해 둔다.
-            GameObject goContent = Create_UIObject("Content", goRoot.transform);
+            GameObject goContent = Create_UIObject("Content", goSafe.transform);
             RectTransform trContent = goContent.GetComponent<RectTransform>();
             trContent.anchorMin = new Vector2(0f, 0f);
             trContent.anchorMax = new Vector2(1f, 1f);
@@ -905,7 +912,7 @@ namespace Client
             trContent.offsetMax = new Vector2(0f, -130f);
 
             // 하단 탭바 — 4칸 균등
-            GameObject goTabBar = Create_UIObject("TabBar", goRoot.transform);
+            GameObject goTabBar = Create_UIObject("TabBar", goSafe.transform);
             RectTransform trTabBar = goTabBar.GetComponent<RectTransform>();
             trTabBar.anchorMin = new Vector2(0f, 0f);
             trTabBar.anchorMax = new Vector2(1f, 0f);
@@ -1079,53 +1086,103 @@ namespace Client
 
 
 
+        // 260912_세로(9:16) 기준 배치. 기준 해상도 1080x1920.
+        // 위 10% / 아래 22%는 CGameConfig에서 카메라가 비워 두는 띠다 —
+        // 맵이 그 안으로 들어오지 않으면 HUD가 플레이 영역을 가린다.
         private static void Create_InGameUI()
         {
             GameObject goRoot = Create_UIObject(UI_INGAME, null);
             Stretch_Full(goRoot.GetComponent<RectTransform>());
+            goRoot.AddComponent<CSafeArea>();
 
-            GameObject goStatus = Create_UIObject("Txt_Status", goRoot.transform);
-            RectTransform trStatus = goStatus.GetComponent<RectTransform>();
-            trStatus.anchorMin = new Vector2(0f, 1f);
-            trStatus.anchorMax = new Vector2(1f, 1f);
-            trStatus.pivot     = new Vector2(0.5f, 1f);
-            trStatus.offsetMin = new Vector2(24f, -90f);
-            trStatus.offsetMax = new Vector2(-24f, -20f);
-            Text txtStatus = Make_Text(goStatus, string.Empty, 28, TextAnchor.MiddleLeft);
-            txtStatus.raycastTarget = false;
+            // 상단 정보 바
+            GameObject goBar = Create_UIObject("Panel_Top", goRoot.transform);
+            RectTransform trBar = goBar.GetComponent<RectTransform>();
+            trBar.anchorMin = new Vector2(0f, 1f);
+            trBar.anchorMax = new Vector2(1f, 1f);
+            trBar.pivot     = new Vector2(0.5f, 1f);
+            trBar.anchoredPosition = new Vector2(0f, -18f);
+            trBar.sizeDelta = new Vector2(-32f, 190f);
+            Image imgBar = goBar.AddComponent<Image>();
+            imgBar.color = new Color(0.06f, 0.07f, 0.12f, 0.78f);
+            imgBar.raycastTarget = false;
 
-            RectTransform trBase   = Make_JoystickPart("Joystick_Base", goRoot.transform, PATH_TEX_JOY_BASE);
-            RectTransform trHandle = Make_JoystickPart("Joystick_Handle", goRoot.transform, PATH_TEX_JOY_HANDLE);
-
-            // 260904_일시정지 버튼은 오른쪽 위. 조이스틱이 아래 60%만 잡으므로 겹치지 않는다.
-            GameObject goPause = Create_UIObject("Btn_Pause", goRoot.transform);
+            // 일시정지는 정보 바 오른쪽 끝. 엄지가 닿기 먼 자리라 잘못 눌리지 않는다.
+            GameObject goPause = Create_UIObject("Btn_Pause", goBar.transform);
             RectTransform trPause = goPause.GetComponent<RectTransform>();
             trPause.anchorMin = new Vector2(1f, 1f);
             trPause.anchorMax = new Vector2(1f, 1f);
             trPause.pivot     = new Vector2(1f, 1f);
-            trPause.anchoredPosition = new Vector2(-24f, -110f);
-            trPause.sizeDelta = new Vector2(120f, 120f);
-            goPause.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 0.85f);
+            trPause.anchoredPosition = new Vector2(-14f, -14f);
+            trPause.sizeDelta = new Vector2(92f, 92f);
+            goPause.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 0.92f);
             Button cPause = goPause.AddComponent<Button>();
 
             GameObject goPauseLabel = Create_UIObject("Label", goPause.transform);
             Stretch_Full(goPauseLabel.GetComponent<RectTransform>());
-            Make_Text(goPauseLabel, "II", 40, TextAnchor.MiddleCenter).raycastTarget = false;
+            Make_Text(goPauseLabel, "II", 38, TextAnchor.MiddleCenter).raycastTarget = false;
 
-            // 260905_스킬 버튼은 오른쪽 아래. 엄지가 닿고 조이스틱(왼쪽)과 거리가 멀다.
+            // 남은 시간은 크게 따로 뽑는다 — 쫓기는 느낌이 이 게임의 긴장감이다.
+            GameObject goTime = Create_UIObject("Txt_Time", goBar.transform);
+            RectTransform trTime = goTime.GetComponent<RectTransform>();
+            trTime.anchorMin = new Vector2(1f, 1f);
+            trTime.anchorMax = new Vector2(1f, 1f);
+            trTime.pivot     = new Vector2(1f, 1f);
+            trTime.anchoredPosition = new Vector2(-118f, -16f);
+            trTime.sizeDelta = new Vector2(200f, 88f);
+            Text txtTime = Make_Text(goTime, "00:00", 52, TextAnchor.MiddleRight);
+            txtTime.raycastTarget = false;
+
+            GameObject goStatus = Create_UIObject("Txt_Status", goBar.transform);
+            RectTransform trStatus = goStatus.GetComponent<RectTransform>();
+            trStatus.anchorMin = new Vector2(0f, 1f);
+            trStatus.anchorMax = new Vector2(1f, 1f);
+            trStatus.pivot     = new Vector2(0.5f, 1f);
+            trStatus.offsetMin = new Vector2(22f, -100f);
+            trStatus.offsetMax = new Vector2(-330f, -16f);
+            Text txtStatus = Make_Text(goStatus, string.Empty, 30, TextAnchor.MiddleLeft);
+            txtStatus.raycastTarget = false;
+
+            // 점령률 게이지 — 목표 대비 얼마나 왔는지 한 줄로 보여 준다.
+            GameObject goGaugeBg = Create_UIObject("Img_GaugeBg", goBar.transform);
+            RectTransform trGaugeBg = goGaugeBg.GetComponent<RectTransform>();
+            trGaugeBg.anchorMin = new Vector2(0f, 0f);
+            trGaugeBg.anchorMax = new Vector2(1f, 0f);
+            trGaugeBg.pivot     = new Vector2(0.5f, 0f);
+            trGaugeBg.anchoredPosition = new Vector2(0f, 20f);
+            trGaugeBg.sizeDelta = new Vector2(-44f, 30f);
+            Image imgGaugeBg = goGaugeBg.AddComponent<Image>();
+            imgGaugeBg.color = new Color(0f, 0f, 0f, 0.55f);
+            imgGaugeBg.raycastTarget = false;
+
+            GameObject goGauge = Create_UIObject("Img_Gauge", goGaugeBg.transform);
+            Stretch_Full(goGauge.GetComponent<RectTransform>());
+            Image imgProgress = goGauge.AddComponent<Image>();
+            imgProgress.color = new Color(0.30f, 0.78f, 0.46f, 0.95f);
+            imgProgress.raycastTarget = false;
+            imgProgress.type = Image.Type.Filled;
+            imgProgress.fillMethod = Image.FillMethod.Horizontal;
+            imgProgress.fillOrigin = (int)Image.OriginHorizontal.Left;
+            imgProgress.fillAmount = 0f;
+
+            // 하단 조작 영역 — 조이스틱은 왼쪽 55%에서만 잡히므로
+            // (CInputHandler.ACTIVE_WIDTH) 버튼을 오른쪽에 두면 터치가 겹치지 않는다.
+            RectTransform trBase   = Make_JoystickPart("Joystick_Base", goRoot.transform, PATH_TEX_JOY_BASE);
+            RectTransform trHandle = Make_JoystickPart("Joystick_Handle", goRoot.transform, PATH_TEX_JOY_HANDLE);
+
             GameObject goSkill = Create_UIObject("Btn_Skill", goRoot.transform);
             RectTransform trSkill = goSkill.GetComponent<RectTransform>();
             trSkill.anchorMin = new Vector2(1f, 0f);
             trSkill.anchorMax = new Vector2(1f, 0f);
             trSkill.pivot     = new Vector2(1f, 0f);
-            trSkill.anchoredPosition = new Vector2(-48f, 190f);
-            trSkill.sizeDelta = new Vector2(190f, 190f);
-            goSkill.AddComponent<Image>().color = new Color(0.20f, 0.42f, 0.70f, 0.90f);
+            trSkill.anchoredPosition = new Vector2(-48f, 130f);
+            trSkill.sizeDelta = new Vector2(210f, 210f);
+            goSkill.AddComponent<Image>().color = new Color(0.20f, 0.42f, 0.70f, 0.92f);
             Button cSkill = goSkill.AddComponent<Button>();
 
             GameObject goSkillLabel = Create_UIObject("Label", goSkill.transform);
             Stretch_Full(goSkillLabel.GetComponent<RectTransform>());
-            Text txtSkill = Make_Text(goSkillLabel, "점멸", 34, TextAnchor.MiddleCenter);
+            Text txtSkill = Make_Text(goSkillLabel, "점멸", 36, TextAnchor.MiddleCenter);
             txtSkill.raycastTarget = false;
 
             // 쿨타임 덮개 — 위에서 아래로 줄어들며 언제 다시 쓸 수 있는지 보여 준다.
@@ -1138,34 +1195,35 @@ namespace Client
             imgCool.fillMethod = Image.FillMethod.Vertical;
             imgCool.fillOrigin = (int)Image.OriginVertical.Top;
 
-            // 260905_소모품 버튼은 스킬 버튼 바로 위. 둘 다 오른손 엄지 안쪽이다.
+            // 소모품은 스킬 왼쪽. 둘 다 오른손 엄지 안쪽이고 아래 띠를 넘지 않는다.
             GameObject goItem = Create_UIObject("Btn_Item", goRoot.transform);
             RectTransform trItem = goItem.GetComponent<RectTransform>();
             trItem.anchorMin = new Vector2(1f, 0f);
             trItem.anchorMax = new Vector2(1f, 0f);
             trItem.pivot     = new Vector2(1f, 0f);
-            trItem.anchoredPosition = new Vector2(-48f, 400f);
-            trItem.sizeDelta = new Vector2(160f, 160f);
-            goItem.AddComponent<Image>().color = new Color(0.60f, 0.34f, 0.20f, 0.90f);
+            trItem.anchoredPosition = new Vector2(-282f, 150f);
+            trItem.sizeDelta = new Vector2(170f, 170f);
+            goItem.AddComponent<Image>().color = new Color(0.60f, 0.34f, 0.20f, 0.92f);
             Button cItem = goItem.AddComponent<Button>();
 
             GameObject goItemLabel = Create_UIObject("Label", goItem.transform);
             Stretch_Full(goItemLabel.GetComponent<RectTransform>());
-            Text txtItem = Make_Text(goItemLabel, "\uc544\uc774\ud15c", 26, TextAnchor.MiddleCenter);
+            Text txtItem = Make_Text(goItemLabel, "아이템", 26, TextAnchor.MiddleCenter);
             txtItem.raycastTarget = false;
-
 
             CUI_InGame cUI = goRoot.AddComponent<CUI_InGame>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trJoystickBase").objectReferenceValue   = trBase;
             cSerialized.FindProperty("m_trJoystickHandle").objectReferenceValue = trHandle;
             cSerialized.FindProperty("m_txtStatus").objectReferenceValue        = txtStatus;
+            cSerialized.FindProperty("m_imgProgress").objectReferenceValue      = imgProgress;
+            cSerialized.FindProperty("m_txtTime").objectReferenceValue          = txtTime;
             cSerialized.FindProperty("m_btnPause").objectReferenceValue         = cPause;
             cSerialized.FindProperty("m_btnSkill").objectReferenceValue         = cSkill;
             cSerialized.FindProperty("m_imgSkillCool").objectReferenceValue     = imgCool;
             cSerialized.FindProperty("m_txtSkill").objectReferenceValue         = txtSkill;
-            cSerialized.FindProperty("m_btnItem").objectReferenceValue           = cItem;
-            cSerialized.FindProperty("m_txtItem").objectReferenceValue           = txtItem;
+            cSerialized.FindProperty("m_btnItem").objectReferenceValue          = cItem;
+            cSerialized.FindProperty("m_txtItem").objectReferenceValue          = txtItem;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);

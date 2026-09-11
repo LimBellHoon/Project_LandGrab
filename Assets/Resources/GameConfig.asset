@@ -13,6 +13,9 @@ MonoBehaviour:
   m_Name: GameConfig
   m_EditorClassIdentifier: 
   m_fPlayerSpeedScale: 1
+  m_fUIReserveTop: 0.1
+  m_fUIReserveBottom: 0.22
+  m_fCameraMargin: 0.3
   m_bUnlockAllStage: 0
   m_bFreeSpend: 1
   m_iStartCoin: 0

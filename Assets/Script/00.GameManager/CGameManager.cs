@@ -47,6 +47,9 @@ namespace Client
         // 씬을 열지 않고도 고칠 수 있고, 씬을 다시 만들어도 값이 날아가지 않는다.
         private CGameConfig         m_cConfig;
 
+        // 260912_맵이 화면에 다 들어오게 카메라를 맞춘다. 기기마다 비율이 달라 런타임에서만 알 수 있다.
+        private CCameraFitter       m_cCameraFitter = new CCameraFitter();
+
         private CGameInstance       m_cGameInstance;
         private CStage_Manager      m_cStageManager;
         private CProgress_Manager   m_cProgressManager;
@@ -111,6 +114,7 @@ namespace Client
 
             m_cGameInstance.Tick();
             m_cStageManager.Tick(Get_LayerDeltaTime(OBJECT_TYPE.DEFAULT));
+            m_cCameraFitter.Tick();
         }
 
         public void LateUpdate()
@@ -155,6 +159,8 @@ namespace Client
                     return;
 
                 m_cConfig = CGameConfig.Load();
+                m_cCameraFitter.Initialize(Camera.main, m_cConfig.UI_RESERVE_TOP,
+                                           m_cConfig.UI_RESERVE_BOTTOM, m_cConfig.CAMERA_MARGIN);
 
                 if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local(), m_cEquipTable) == false)
                     return;
@@ -449,6 +455,10 @@ namespace Client
             CSkillInfo cSkill = Get_EquippedSkill();
             m_cStageManager.Set_PlayerSkill(cSkill,
                 cSkill != null ? m_cProgressManager.Get_SkillLevel(cSkill.eType) : 0);
+
+            // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
+            // 에디터에서 잡아 둔 카메라 크기는 맵 1 기준이라 좁은 맵이 작게 나온다.
+            m_cCameraFitter.Fit(m_cStageManager.GRID.WORLD_SIZE);
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 

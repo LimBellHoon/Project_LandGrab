@@ -16,6 +16,7 @@ namespace Client
         private const float RADIUS_RATIO    = 0.12f;    // 화면 높이 대비 조이스틱 반경
         private const float DEADZONE_RATIO  = 0.25f;    // 반경 대비 데드존
         private const float ACTIVE_HEIGHT   = 0.6f;     // 화면 아래 이 비율 안에서만 조이스틱을 잡는다
+        private const float ACTIVE_WIDTH    = 0.55f;    // 오른쪽은 스킬/아이템 버튼 자리로 비워 둔다
 
         private readonly CVirtualJoystick m_cJoystick = new CVirtualJoystick();
 
@@ -28,7 +29,7 @@ namespace Client
         public void Initialize()
         {
             float fRadius = Screen.height * RADIUS_RATIO;
-            m_cJoystick.Initialize(fRadius, fRadius * DEADZONE_RATIO, ACTIVE_HEIGHT);
+            m_cJoystick.Initialize(fRadius, fRadius * DEADZONE_RATIO, ACTIVE_HEIGHT, ACTIVE_WIDTH);
         }
 
         public void Tick()

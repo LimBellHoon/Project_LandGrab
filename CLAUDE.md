@@ -87,10 +87,10 @@ Assets/
 ├── Editor/                 CProtoSetup(씬·프리팹·Addressable 자동 생성), CProtoTest(코어 테스트)
 └── Script/
     ├── 00.GameManager/     CGameManager
-    ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame, CUI_Popup (Engine.CUI 상속)
+    ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame, CUI_Popup (Engine.CUI 상속), CSafeArea
     ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
-    │                       CInputHandler, CVirtualJoystick
+    │                       CInputHandler, CVirtualJoystick, CCameraFitter
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
     ├── 98.Manager/         CStage_Manager, CProgress_Manager
@@ -238,7 +238,7 @@ CInputHandler ── CVirtualJoystick   (터치/마우스 → 4방향)
 
 **해금은 순차** — `MapInfo.csv`에 적힌 **순서**로 바로 앞 맵을 깨야 다음이 열린다.
 ID 산술이 아니라 표의 순서를 본다. 기획이 중간에 맵을 끼워 넣어도 ID를 다시 매기지 않아도 된다.
-`CGameManager`의 인스펙터 `m_bDebugUnlockAll`을 켜면 규칙을 무시하고 전부 열린다.
+`GameConfig.asset`의 `m_bUnlockAllStage`를 켜면 규칙을 무시하고 전부 열린다(2-9).
 
 **저장은 `IStageProgress`로 추상화**되어 있다 (`99.Defines/Client_Interface.cs`).
 지금 구현은 `CStageProgress_Local` 하나뿐 — 진행도를 JSON으로 만들어 PlayerPrefs에 넣는다.
@@ -330,6 +330,50 @@ Engine 레이어가 UI까지 Tick하는지 확실하지 않아 이 클래스만 
 **코인을 쓰는 곳은 강화 / 구매 / 스킬 강화 셋뿐이고 전부 `CProgress_Manager.Pay`를 지난다.**
 무료 스위치도 UI가 버튼을 켤지 정하는 `Can_Pay`도 여기 하나에 걸려 있다 —
 새로 코인을 쓰는 기능을 붙일 때 `Use_Coin`을 직접 부르지 말 것. 한 곳을 빠뜨리면 그 화면만 조용히 막힌다.
+
+### 2-10. 세로 화면 (9:16) — 260912
+모바일 출시 기준을 **세로 고정**으로 잡았다. `defaultScreenOrientation: 0`(Portrait),
+기본 해상도 1080x1920, 가로 자동회전은 껐다. UI 캔버스 기준 해상도도 1080x1920이다.
+
+#### 카메라는 두 축 중 모자란 쪽으로 맞춘다
+`CCameraFitter`(`03.Module`)가 런타임에 맞춘다. 기기마다 비율이 달라 에디터에서 정해 둘 수 없다.
+
+높이로만 맞추면 **9:16에서 맵 좌우가 잘린다.** 맵 1은 월드 7.2 x 12.0인데
+높이 기준 카메라(size 6.0)에서는 가로가 7.09밖에 안 보인다. 그래서 가로 기준과 세로 기준을
+각각 구해 **큰 쪽**을 쓴다.
+
+맵마다 크기가 다르므로 **스테이지를 깔 때마다 다시 맞춘다**(`CGameManager`).
+에디터의 `Setup_Camera`가 잡아 두는 값은 맵 1 기준이라 좁은 맵이 작게 나온다.
+
+#### 화면을 세 띠로 나눈다
+`CGameConfig`의 `m_fUIReserveTop`(0.10) / `m_fUIReserveBottom`(0.22)만큼은 맵이 쓰지 않는다.
+카메라는 남은 가운데 띠에 맵을 넣고 그 띠의 한가운데로 내려간다 —
+화면 정중앙에 두면 조이스틱이 맵 아래쪽을 가린다.
+
+```
+상단 10%   정보 바 (웨이브 · 점령률 게이지 · 남은 시간 · 일시정지)
+가운데     맵
+하단 22%   왼쪽 조이스틱 / 오른쪽 스킬 · 아이템
+```
+
+#### 조이스틱과 버튼은 영역으로 나눈다
+조이스틱은 EventSystem이 아니라 구 `Input`을 직접 읽으므로(2-6-1),
+**오른쪽 버튼을 눌러도 그 터치가 조이스틱까지 잡아 버린다.**
+그래서 `CInputHandler.ACTIVE_WIDTH`(0.55)로 **왼쪽에서만** 잡히게 했다.
+오른쪽에 버튼을 더 놓을 때 이 값을 넘지 않게 할 것.
+
+#### 노치 / 홈 인디케이터
+`CSafeArea`(`01.UI`)를 UI 루트에 달면 자식이 전부 `Screen.safeArea` 안으로 들어온다.
+로비는 **배경을 일부러 밖에 두고** 내용만 안전 영역에 넣는다(`SafeArea` 오브젝트) —
+배경까지 줄이면 노치 옆에 칠하지 않은 띠가 생긴다.
+
+에디터 Game 뷰에서는 `safeArea`가 화면 전체라 아무 일도 일어나지 않는다.
+**여기서 하는 일이 없다고 해서 잘못된 것이 아니다.**
+
+계산(`Calc_Size` · `Calc_PositionY` · `Calc_AnchorMin/Max`)은 전부 static이라
+화면 없이 `CProtoTest`에서 검증한다.
+
+
 
 ---
 

@@ -48,6 +48,8 @@ namespace Client
             Test_Inventory();
             Test_SkillUpgrade();
             Test_GameConfig();
+            Test_CameraFit();
+            Test_SafeArea();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -610,6 +612,92 @@ namespace Client
             Check("만렉 초과 수치는 상한", Mathf.RoundToInt(cInfo.Get_Value(99) * 100f), 12);
         }
 
+        // 260912_세로 화면 맞춤 — 9:16에서 맵 좌우가 잘리지 않아야 한다
+        private static void Test_CameraFit()
+        {
+            const float PORTRAIT = 9f / 16f;
+            const float LANDSCAPE = 16f / 9f;
+
+            Vector2 vMap1 = new Vector2(7.2f, 12f);      // 60 x 100 셀 x 0.12
+            Vector2 vMap2 = new Vector2(6f, 10.5f);      // 40 x 70 셀 x 0.15
+
+            // 띠를 쓰지 않을 때 — 세로 화면에서는 가로가 기준이 된다
+            float fSize = CCameraFitter.Calc_Size(vMap1, PORTRAIT, 1f, 0f);
+            Check("세로 화면은 가로가 기준", Mathf.RoundToInt(fSize * 100f), 640);
+            Check("맵 가로가 전부 보인다", fSize * 2f * PORTRAIT >= vMap1.x - 0.001f);
+            Check("맵 세로도 전부 보인다", fSize * 2f >= vMap1.y - 0.001f);
+
+            // 높이로만 맞추던 옛 방식이라면 잘렸다는 것을 못 박아 둔다
+            float fHeightOnly = vMap1.y * 0.5f;
+            Check("높이로만 맞추면 가로가 모자랐다", fHeightOnly * 2f * PORTRAIT < vMap1.x);
+
+            // 가로 화면에서는 세로가 기준이 된다
+            fSize = CCameraFitter.Calc_Size(vMap1, LANDSCAPE, 1f, 0f);
+            Check("가로 화면은 세로가 기준", Mathf.RoundToInt(fSize * 100f), 600);
+
+            // UI 띠를 빼면 맵이 쓸 수 있는 세로가 줄어 카메라가 더 멀어진다
+            const float TOP = 0.10f;
+            const float BOTTOM = 0.22f;
+            float fUsable = 1f - TOP - BOTTOM;
+
+            fSize = CCameraFitter.Calc_Size(vMap1, PORTRAIT, fUsable, 0f);
+            Check("띠를 빼면 더 멀어진다", Mathf.RoundToInt(fSize * 100f), 882);
+            Check("띠 안에 맵 세로가 들어간다", fSize * 2f * fUsable >= vMap1.y - 0.001f);
+            Check("띠를 빼도 가로는 넉넉하다", fSize * 2f * PORTRAIT >= vMap1.x);
+
+            // 아래를 더 비웠으면 카메라가 내려가고 맵은 화면 위로 올라간다
+            float fPosY = CCameraFitter.Calc_PositionY(fSize, TOP, BOTTOM);
+            Check("아래를 더 비우면 카메라가 내려간다", fPosY < 0f);
+            Check("카메라 Y", Mathf.RoundToInt(fPosY * 100f), -106);
+            Check("띠가 같으면 가운데", Mathf.Approximately(CCameraFitter.Calc_PositionY(fSize, 0.2f, 0.2f), 0f));
+
+            // 맵마다 다시 맞춰야 한다 — 좁은 맵을 맵 1 크기로 보면 작게 나온다
+            float fSize2 = CCameraFitter.Calc_Size(vMap2, PORTRAIT, fUsable, 0f);
+            Check("좁은 맵은 더 가깝다", fSize2 < fSize);
+
+            // 여백은 두 기준 중 이긴 쪽에 그대로 더해진다
+            Check("여백만큼 멀어진다",
+                  Mathf.RoundToInt(CCameraFitter.Calc_Size(vMap1, PORTRAIT, 1f, 0.3f) * 100f), 670);
+
+            // 값이 이상해도 0으로 나누지 않는다
+            Check("비율 0도 견딘다", CCameraFitter.Calc_Size(vMap1, 0f, 0f, 0f) > 0f);
+        }
+
+
+        // 260912_노치 / 홈 인디케이터 회피 + 시간 표기
+        private static void Test_SafeArea()
+        {
+            const int W = 1080;
+            const int H = 1920;
+
+            // 안전 영역이 화면 전체면 아무 것도 줄이지 않는다 (에디터 Game 뷰가 이 경우다)
+            Rect rcFull = new Rect(0f, 0f, W, H);
+            Check("전체면 그대로", CSafeArea.Calc_AnchorMin(rcFull, W, H) == Vector2.zero);
+            Check("전체면 그대로 (max)", CSafeArea.Calc_AnchorMax(rcFull, W, H) == Vector2.one);
+
+            // 위에 노치(130), 아래에 홈 인디케이터(60)가 있는 기기.
+            // Screen.safeArea는 왼쪽 아래가 원점이라 yMin이 '아래' 여백이다 — 뒤집어 읽기 쉽다.
+            Rect rcNotch = new Rect(0f, 60f, W, H - 60f - 130f);
+            Vector2 vMin = CSafeArea.Calc_AnchorMin(rcNotch, W, H);
+            Vector2 vMax = CSafeArea.Calc_AnchorMax(rcNotch, W, H);
+
+            Check("아래가 올라온다", Mathf.RoundToInt(vMin.y * 10000f), 312);
+            Check("위가 내려온다",   Mathf.RoundToInt(vMax.y * 10000f), 9323);
+            Check("가로는 그대로",   Mathf.Approximately(vMin.x, 0f) && Mathf.Approximately(vMax.x, 1f));
+            Check("위 노치가 아래보다 두껍다", (1f - vMax.y) > vMin.y);
+
+            // 값이 화면 밖으로 나가도 0~1을 벗어나지 않는다
+            Rect rcBad = new Rect(-50f, -50f, W + 500f, H + 500f);
+            Check("범위를 벗어나지 않는다 (min)", CSafeArea.Calc_AnchorMin(rcBad, W, H) == Vector2.zero);
+            Check("범위를 벗어나지 않는다 (max)", CSafeArea.Calc_AnchorMax(rcBad, W, H) == Vector2.one);
+
+            // 남은 시간 표기
+            Check("분:초로 나온다", CUI_InGame.Format_Time(95f), "01:35");
+            Check("올림으로 센다",  CUI_InGame.Format_Time(0.2f), "00:01");
+            Check("음수는 0",       CUI_InGame.Format_Time(-5f), "00:00");
+        }
+
+
         // 260905_옵션 에셋 + 무료 모드
         // 코인을 쓰는 곳이 셋(강화 / 구매 / 스킬 강화)이라 하나라도 새면 그 화면만 조용히 막힌다.
         private static void Test_GameConfig()
@@ -784,6 +872,7 @@ namespace Client
         private static void Test_Joystick()
         {
             const int   SCREEN_H = 1000;
+            const int   SCREEN_W = 1000;
             const float RADIUS   = 100f;
             const float DEADZONE = 25f;
 
@@ -796,38 +885,42 @@ namespace Client
                   CVirtualJoystick.To_Dir(new Vector2(10f, 10f), DEADZONE) == MOVE_DIR.NONE);
 
             CVirtualJoystick cJoystick = new CVirtualJoystick();
-            cJoystick.Initialize(RADIUS, DEADZONE, 0.6f);
+            cJoystick.Initialize(RADIUS, DEADZONE, 0.6f, 0.55f);
             Check("처음에는 비활성", cJoystick.IS_ACTIVE == false);
 
             // 화면 위쪽(활성 영역 밖)에서는 잡히지 않는다
-            cJoystick.Update_State(true, new Vector2(500f, 900f), SCREEN_H);
+            cJoystick.Update_State(true, new Vector2(500f, 900f), SCREEN_H, SCREEN_W);
             Check("활성 영역 밖에서는 안 잡힘", cJoystick.IS_ACTIVE == false);
+
+            // 260912_오른쪽 아래는 스킬/아이템 버튼 자리라 조이스틱이 잡으면 안 된다
+            cJoystick.Update_State(true, new Vector2(SCREEN_W * 0.85f, 200f), SCREEN_H, SCREEN_W);
+            Check("오른쪽 버튼 자리에서는 안 잡힘", cJoystick.IS_ACTIVE == false);
 
             // 아래쪽에서 누르면 그 자리가 중심이 된다 (플로팅)
             Vector2 vPress = new Vector2(300f, 200f);
-            cJoystick.Update_State(true, vPress, SCREEN_H);
+            cJoystick.Update_State(true, vPress, SCREEN_H, SCREEN_W);
             Check("아래쪽에서 잡힘", cJoystick.IS_ACTIVE);
             Check("누른 자리가 중심", cJoystick.ORIGIN == vPress);
             Check("잡은 직후엔 방향 없음", cJoystick.DIR == MOVE_DIR.NONE);
 
             // 오른쪽으로 끌면 오른쪽
-            cJoystick.Update_State(true, vPress + new Vector2(60f, 0f), SCREEN_H);
+            cJoystick.Update_State(true, vPress + new Vector2(60f, 0f), SCREEN_H, SCREEN_W);
             Check("끌면 방향이 생김", cJoystick.DIR == MOVE_DIR.RIGHT);
             Check("중심은 그대로", cJoystick.ORIGIN == vPress);
 
             // 반경을 넘겨도 손잡이는 반경 안에 머문다
-            cJoystick.Update_State(true, vPress + new Vector2(500f, 0f), SCREEN_H);
+            cJoystick.Update_State(true, vPress + new Vector2(500f, 0f), SCREEN_H, SCREEN_W);
             Check("손잡이가 반경을 넘지 않음",
                   Vector2.Distance(cJoystick.ORIGIN, cJoystick.HANDLE) <= RADIUS + 0.01f);
             Check("반경 밖에서도 방향 유지", cJoystick.DIR == MOVE_DIR.RIGHT);
 
             // 한 번 잡은 뒤에는 활성 영역 밖으로 끌어도 놓지 않는다
-            cJoystick.Update_State(true, new Vector2(300f, 950f), SCREEN_H);
+            cJoystick.Update_State(true, new Vector2(300f, 950f), SCREEN_H, SCREEN_W);
             Check("잡은 뒤에는 위로 끌어도 유지", cJoystick.IS_ACTIVE);
             Check("위로 끌면 위쪽", cJoystick.DIR == MOVE_DIR.UP);
 
             // 떼면 초기화
-            cJoystick.Update_State(false, Vector2.zero, SCREEN_H);
+            cJoystick.Update_State(false, Vector2.zero, SCREEN_H, SCREEN_W);
             Check("떼면 비활성", cJoystick.IS_ACTIVE == false);
             Check("떼면 방향 없음", cJoystick.DIR == MOVE_DIR.NONE);
         }
@@ -1008,6 +1101,20 @@ namespace Client
             ++s_iFail;
             s_sbLog.AppendLine($"  FAIL  {strName} : expect {iExpect}, actual {iActual}");
         }
+        // 260912_문자열 비교 — 시간 표기처럼 형식이 맞는지 봐야 하는 경우
+        private static void Check(string strName, string strActual, string strExpect)
+        {
+            if (strActual == strExpect)
+            {
+                ++s_iPass;
+                s_sbLog.AppendLine($"  PASS  {strName} = {strActual}");
+                return;
+            }
+
+            ++s_iFail;
+            s_sbLog.AppendLine($"  FAIL  {strName} : expect {strExpect}, actual {strActual}");
+        }
+
         #endregion 헬퍼
     }
 }

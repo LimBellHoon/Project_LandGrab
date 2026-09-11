@@ -22,6 +22,9 @@ namespace Client
         [SerializeField] private RectTransform  m_trJoystickBase;
         [SerializeField] private RectTransform  m_trJoystickHandle;
         [SerializeField] private Text           m_txtStatus;
+        // 260912_점령률 게이지. 숫자만으로는 얼마나 남았는지 한눈에 안 들어온다.
+        [SerializeField] private Image          m_imgProgress;
+        [SerializeField] private Text           m_txtTime;
         [SerializeField] private Button         m_btnPause;
         // 260905_액티브 스킬 버튼
         [SerializeField] private Button         m_btnSkill;
@@ -111,6 +114,7 @@ namespace Client
         {
             Refresh_Joystick();
             Refresh_Status();
+            Refresh_Progress();
             Refresh_Skill();
             Refresh_Item();
         }
@@ -222,14 +226,39 @@ namespace Client
         }
 
 
+        // 260912_게이지는 '목표 대비 얼마나 왔나'로 채운다.
+        // 점령률 그대로 채우면 목표가 70%일 때 다 찬 것처럼 보이지 않아 답답하다.
+        private void Refresh_Progress()
+        {
+            if (m_cStage == null)
+                return;
+
+            if (m_imgProgress != null)
+            {
+                float fClear = Mathf.Max(0.01f, m_cStage.CLEAR_RATIO);
+                m_imgProgress.fillAmount = Mathf.Clamp01(m_cStage.OWNED_RATIO / fClear);
+            }
+
+            if (m_txtTime != null)
+                m_txtTime.text = Format_Time(m_cStage.REMAIN_TIME);
+        }
+
+        /// <summary> 남은 시간. 분:초가 초 단위 숫자보다 남은 양이 빨리 읽힌다. </summary>
+        public static string Format_Time(float fSeconds)
+        {
+            int iTotal = Mathf.Max(0, Mathf.CeilToInt(fSeconds));
+            return $"{iTotal / 60:00}:{iTotal % 60:00}";
+        }
+
+
         private void Refresh_Status()
         {
             if (m_txtStatus == null || m_cStage == null)
                 return;
 
-            m_txtStatus.text = $"{m_cStage.MAP_NAME}  {m_cStage.WAVE}/{m_cStage.WAVE_COUNT}웨이브"
+            m_txtStatus.text = $"{m_cStage.WAVE}/{m_cStage.WAVE_COUNT} 웨이브"
                              + $"   {m_cStage.OWNED_RATIO:P0} / {m_cStage.CLEAR_RATIO:P0}"
-                             + $"   ♥{m_cStage.LIFE}   {m_cStage.REMAIN_TIME:F0}s";
+                             + $"   ♥{m_cStage.LIFE}";
         }
     }
 }

@@ -21,6 +21,20 @@ namespace Client
         [Range(0.2f, 3f)]
         [SerializeField] private float m_fPlayerSpeedScale = 1f;
 
+        [Header("화면")]
+        [Tooltip("맵 위로 비워 둘 화면 비율. 상단 정보 바가 앉는 자리다.")]
+        [Range(0f, 0.4f)]
+        [SerializeField] private float m_fUIReserveTop = 0.10f;
+
+        [Tooltip("맵 아래로 비워 둘 화면 비율. 조이스틱과 버튼이 앉는 자리다.")]
+        [Range(0f, 0.5f)]
+        [SerializeField] private float m_fUIReserveBottom = 0.22f;
+
+        [Tooltip("맵 둘레에 남기는 여백. 월드 단위다.")]
+        [Range(0f, 2f)]
+        [SerializeField] private float m_fCameraMargin = 0.3f;
+
+
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
         [SerializeField] private bool m_bUnlockAllStage;
@@ -33,6 +47,9 @@ namespace Client
         [SerializeField] private int m_iStartCoin;
 
         public float PLAYER_SPEED_SCALE => Mathf.Max(0.01f, m_fPlayerSpeedScale);
+        public float UI_RESERVE_TOP     => Mathf.Clamp(m_fUIReserveTop, 0f, 0.4f);
+        public float UI_RESERVE_BOTTOM  => Mathf.Clamp(m_fUIReserveBottom, 0f, 0.5f);
+        public float CAMERA_MARGIN      => Mathf.Max(0f, m_fCameraMargin);
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);
