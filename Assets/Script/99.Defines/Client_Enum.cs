@@ -32,8 +32,6 @@
         DEAD,       // 자기 선분을 밟음
     }
 
-    // 260905_재화로 올리는 능력치
-    /// <summary>
     // 260905_능력치 — 강화와 장비가 같은 것을 올리므로 enum 하나로 묶는다.
     /// <summary> 이름이 UpgradeInfo.csv / EquipInfo.csv의 열과 정확히 같아야 한다. </summary>
     public enum STAT_TYPE

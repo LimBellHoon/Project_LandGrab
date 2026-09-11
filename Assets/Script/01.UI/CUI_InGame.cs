@@ -72,14 +72,9 @@ namespace Client
                 m_btnPause.onClick.AddListener(() => m_OnPause?.Invoke());
             }
 
-            Show_Joystick(false);
-            return true;
-        }
-
-        public override void Hide()
-        {
-            m_btnPause?.onClick.RemoveAllListeners();
-
+            // 260905_스킬 / 소모품 버튼도 여기서 연결한다.
+            // 풀에서 재사용될 때 Initialize가 다시 불리므로 RemoveAllListeners를 먼저 해야
+            // 같은 리스너가 쌓여 한 번 눌러도 여러 번 발동하는 일이 없다.
             if (m_btnSkill != null)
             {
                 m_btnSkill.onClick.RemoveAllListeners();
@@ -91,6 +86,17 @@ namespace Client
                 m_btnItem.onClick.RemoveAllListeners();
                 m_btnItem.onClick.AddListener(On_ClickItem);
             }
+
+            Show_Joystick(false);
+            return true;
+        }
+
+        public override void Hide()
+        {
+            m_btnPause?.onClick.RemoveAllListeners();
+            m_btnSkill?.onClick.RemoveAllListeners();
+            m_btnItem?.onClick.RemoveAllListeners();
+
             m_cPlayer = null;
             m_cStage  = null;
             m_cProgress   = null;
