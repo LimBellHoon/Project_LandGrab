@@ -622,7 +622,7 @@ namespace Client
             const float LANDSCAPE = 16f / 9f;
 
             Vector2 vMap1 = new Vector2(7.2f, 12f);      // 60 x 100 셀 x 0.12
-            Vector2 vMap2 = new Vector2(6f, 10.5f);      // 40 x 70 셀 x 0.15
+            Vector2 vMap2 = new Vector2(6f, 10.5f);      // 더 작은 맵 (40 x 70 셀 x 0.15)
 
             // 띠를 쓰지 않을 때 — 세로 화면에서는 가로가 기준이 된다
             float fSize = CCameraFitter.Calc_Size(vMap1, PORTRAIT, 1f, 0f);
@@ -654,9 +654,9 @@ namespace Client
             Check("카메라 Y", Mathf.RoundToInt(fPosY * 100f), -106);
             Check("띠가 같으면 가운데", Mathf.Approximately(CCameraFitter.Calc_PositionY(fSize, 0.2f, 0.2f), 0f));
 
-            // 맵마다 다시 맞춰야 한다 — 좁은 맵을 맵 1 크기로 보면 작게 나온다
+            // 맵마다 다시 맞춰야 한다 — 더 작은 맵을 맵 1 크기로 보면 작게 나온다
             float fSize2 = CCameraFitter.Calc_Size(vMap2, PORTRAIT, fUsable, 0f);
-            Check("좁은 맵은 더 가깝다", fSize2 < fSize);
+            Check("작은 맵은 더 가깝다", fSize2 < fSize);
 
             // 여백은 두 기준 중 이긴 쪽에 그대로 더해진다
             Check("여백만큼 멀어진다",
@@ -969,12 +969,33 @@ namespace Client
             Check("웨이브 수가 0이면 빈 문자열", CStar_Utility.Get_Text(1, 0) == string.Empty);
         }
 
+        /// <summary> 해금 규칙만 보기 위한 두 줄짜리 MapInfo. 실제 표와 섞이지 않는다. </summary>
+        private static CCSVData_MapInfo Make_TwoMapTable()
+        {
+            const string TAB = "\t";
+            string strCsv =
+                  string.Join(TAB, "iMapID", "strMapName", "iGridWidth", "iGridHeight", "fCellSize",
+                                   "iBorderThick", "iLife", "fPlayerSpeed", "iWaveCount", "strShapeMask",
+                                   "strLayerTex", "strWaveEnemy", "strWaveClearRatio", "strWaveTimeLimit",
+                                   "iCoinPerStar", "NONE") + "\n"
+                + string.Join(TAB, "901", "테스트A", "20", "20", "0.1", "1", "3", "8", "1", "-",
+                                   "Tex_Mask_01|Tex_Reward_01", "101*1", "0.6", "60", "10", "") + "\n"
+                + string.Join(TAB, "902", "테스트B", "20", "20", "0.1", "1", "3", "8", "1", "-",
+                                   "Tex_Mask_01|Tex_Reward_01", "101*1", "0.6", "60", "10", "");
+
+            CCSVData_MapInfo cTable = new CCSVData_MapInfo();
+            cTable.Read_CSVData(new TextAsset(strCsv));
+            return cTable;
+        }
+
         private static void Test_StageProgress()
         {
-            CCSVData_MapInfo cTable = Load_MapTable();
+            // 260912_해금은 '표의 순서'를 보는 규칙이라 표에 몇 개가 실렸는지와 무관해야 한다.
+            // 맵이 하나뿐이어도 규칙은 계속 검증되도록 여기서 두 줄짜리 표를 만들어 쓴다.
+            CCSVData_MapInfo cTable = Make_TwoMapTable();
             if (cTable == null || cTable.COUNT < 2)
             {
-                Check("MapInfo.csv에 맵이 2개 이상", false);
+                Check("임시 맵 표 생성", false);
                 return;
             }
 

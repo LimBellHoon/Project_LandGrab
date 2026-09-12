@@ -34,7 +34,8 @@ namespace Client
         {
             "Tex_Mask_01", "Tex_Reward_01", "Tex_Reward_02", "Tex_Reward_03",
         };
-        private const string TEX_SHAPE_02 = "Tex_Shape_02";      // MapInfo.csv 2번 맵의 모양 마스크
+        // 260912_배치 이미지의 셀당 픽셀 수. 실제 아트가 들어오면 이 비율만 지키면 된다.
+        private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
         private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo" };
@@ -159,6 +160,7 @@ namespace Client
             iFail += Validate_CsvTables();
             iFail += Validate_LayerTextures();
             iFail += Validate_GameConfig();
+            iFail += Validate_LayerAspect();
 
             if (iFail == 0)
                 Debug.Log("[CProtoSetup] 에셋 검증 통과 — 프리팹 / 스프라이트 / CSV / Addressable 정상");
@@ -297,7 +299,6 @@ namespace Client
             for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
                 iFail += Validate_Texture(ARR_LAYER_TEX[i]);
 
-            iFail += Validate_Texture(TEX_SHAPE_02);
             return iFail;
         }
 
@@ -322,6 +323,35 @@ namespace Client
             }
 
             return iFail + Validate_AddressableEntry(strPath, strName, CAddressableLabel.TEXTURE);
+        }
+
+        // 260912_웨이브 이미지는 그리드 비율과 같아야 한다.
+        // 가림막과 보상은 둘 다 그리드 크기로 늘려 깔리므로, 원본 비율이 다르면 그림이 눌린다.
+        // 둘 다 똑같이 눌리기 때문에 '한쪽만 이상하다'로는 안 보이고 그냥 그림이 어색해진다 —
+        // 눈으로 찾기 어려운 종류라 여기서 숫자로 잡아 준다.
+        private static int Validate_LayerAspect()
+        {
+            CMapInfo cMapInfo = Load_MapInfo(1);
+            float fGridAspect = (float)cMapInfo.iGridWidth / cMapInfo.iGridHeight;
+
+            int iFail = 0;
+            for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
+            {
+                Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{DIR_ART}/{ARR_LAYER_TEX[i]}.png");
+                if (tex == null)
+                    continue;   // 존재 여부는 Validate_LayerTextures가 본다
+
+                float fTexAspect = (float)tex.width / tex.height;
+                if (Mathf.Abs(fTexAspect - fGridAspect) <= 0.01f)
+                    continue;
+
+                Debug.LogError($"  FAIL  {ARR_LAYER_TEX[i]} 비율이 그리드와 다릅니다 "
+                             + $"({tex.width}x{tex.height} = {fTexAspect:F3} / 그리드 {fGridAspect:F3}). "
+                             + "그림이 눌려 보입니다.");
+                ++iFail;
+            }
+
+            return iFail;
         }
 
         // 260905_옵션 에셋. 없어도 게임은 기본값으로 돌지만, 값을 바꿔도 반영이 안 되는
@@ -440,13 +470,18 @@ namespace Client
             Write_Png(PATH_TEX_ENEMY, Make_CircleTexture(BODY_SIZE, Color.white));
             Import_AsSprite(PATH_TEX_ENEMY, BODY_SIZE);
 
-            // 배경: 실제 보상 카드 이미지가 들어갈 자리. 점령 시 드러나는 게 보이도록 알록달록하게.
-            const int BG_W = 540;
-            const int BG_H = 960;
-            Write_Png(PATH_TEX_BG, Make_RewardPlaceholder(BG_W, BG_H));
+            // 260912_배치 이미지는 그리드 비율에 정확히 맞춘다.
+            // 가림막과 보상은 둘 다 그리드 크기로 늘려 깔리므로(CGridRenderer.Fit_ToGrid),
+            // 원본 비율이 그리드와 다르면 그림이 눌려 보인다.
+            // 칸 하나가 정수 픽셀이 되게 맞추면 사본을 찍을 때 줄이 생기지도 않는다.
+            CMapInfo cMapInfo = Load_MapInfo(1);
+            int iBgW = cMapInfo.iGridWidth  * TEX_PIXEL_PER_CELL;
+            int iBgH = cMapInfo.iGridHeight * TEX_PIXEL_PER_CELL;
+
+            Write_Png(PATH_TEX_BG, Make_RewardPlaceholder(iBgW, iBgH));
             Import_AsSprite(PATH_TEX_BG, 100, true);
 
-            Create_LayerTextures(BG_W, BG_H);
+            Create_LayerTextures(iBgW, iBgH);
 
             // 260904_기믹 소환물. 탄은 작고 밝게, 거미줄은 성기게 비치도록 반투명하게.
             Write_Png(PATH_TEX_PROJECTILE, Make_CircleTexture(32, new Color(1f, 0.55f, 0.2f)));
@@ -536,10 +571,6 @@ namespace Client
                 // 가림막은 런타임에 픽셀을 읽어 마스크로 다시 찍으므로 Read/Write가 반드시 켜져 있어야 한다.
                 Import_AsSprite(strPath, 100, true);
             }
-
-            string strShapePath = $"{DIR_ART}/{TEX_SHAPE_02}.png";
-            Write_Png(strShapePath, Make_ShapeMask(iWidth, iHeight));
-            Import_AsSprite(strShapePath, 100, true);
         }
 
         /// <summary> 1웨이브를 덮는 마스크 — 격자 무늬가 옅게 깔린 어두운 막. </summary>
@@ -590,29 +621,6 @@ namespace Client
 
                     cColor.a = 1f;
                     tex.SetPixel(x, y, cColor);
-                }
-            }
-
-            tex.Apply();
-            return tex;
-        }
-
-        /// <summary> 맵 모양 마스크 예시 — 가운데를 세로로 잘라낸 모래시계 형태. </summary>
-        private static Texture2D Make_ShapeMask(int iWidth, int iHeight)
-        {
-            Texture2D tex = new Texture2D(iWidth, iHeight, TextureFormat.RGBA32, false);
-
-            for (int y = 0; y < iHeight; ++y)
-            {
-                float fT = (float)y / (iHeight - 1);
-                // 가운데(0.5)에서 가장 좁아지는 폭
-                float fHalf = Mathf.Lerp(0.5f, 0.22f, 1f - Mathf.Abs(fT - 0.5f) * 2f);
-
-                for (int x = 0; x < iWidth; ++x)
-                {
-                    float fU = (float)x / (iWidth - 1);
-                    bool bInside = Mathf.Abs(fU - 0.5f) <= fHalf;
-                    tex.SetPixel(x, y, bInside ? Color.white : Color.black);
                 }
             }
 
@@ -764,7 +772,6 @@ namespace Client
             for (int i = 0; i < ARR_LAYER_TEX.Length; ++i)
                 Regist_Addressable(cSettings, $"{DIR_ART}/{ARR_LAYER_TEX[i]}.png", ARR_LAYER_TEX[i], CAddressableLabel.TEXTURE);
 
-            Regist_Addressable(cSettings, $"{DIR_ART}/{TEX_SHAPE_02}.png", TEX_SHAPE_02, CAddressableLabel.TEXTURE);
 
             // 260904_CSV 테이블. Engine이 TextAsset 이름으로 파싱 클래스를 찾으므로 주소도 파일명과 맞춘다.
             for (int i = 0; i < ARR_CSV.Length; ++i)

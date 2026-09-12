@@ -457,7 +457,7 @@ namespace Client
                 cSkill != null ? m_cProgressManager.Get_SkillLevel(cSkill.eType) : 0);
 
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
-            // 에디터에서 잡아 둔 카메라 크기는 맵 1 기준이라 좁은 맵이 작게 나온다.
+            // 에디터에서 잡아 둔 카메라 크기는 맵 1 기준이라 크기가 다른 맵이 어긋난다.
             m_cCameraFitter.Fit(m_cStageManager.GRID.WORLD_SIZE);
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
