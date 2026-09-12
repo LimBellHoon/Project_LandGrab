@@ -31,12 +31,8 @@ namespace Client
         private const float  PROJECTILE_HIT_RANGE = 0.7f;
 
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
-        private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
-        private const float  HOLD_TIME   = 0.9f;     // 드러난 보상을 보여주는 시간
-        private const float  COVER_TIME  = 0.5f;     // 다음 가림막이 덮이는 시간
 
         /// <summary> 웨이브를 넘길 때의 연출 단계. NONE이면 평소대로 게임이 돌아간다. </summary>
-        private enum WAVE_PHASE { NONE, REVEAL, HOLD, COVER }
 
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
@@ -62,11 +58,6 @@ namespace Client
         private float               m_fRemainTime;
         private bool                m_bPlayerExposed;   // 기믹 발동 조건 — 매 프레임 Tick_Enemy가 갱신한다
         private bool                m_bPaused;
-
-        // 260904_웨이브 전환 연출
-        private WAVE_PHASE          m_eWavePhase;
-        private float               m_fPhaseTimer;
-        private int                 m_iNextWave;        // 0이면 이번이 마지막 웨이브였다는 뜻
 
         // 260904_클리어/실패를 밖(CGameManager)이 알아야 진행도를 저장하고 선택 화면으로 돌아갈 수 있다.
         public event Action<STAGE_STATE> OnStateChanged;
@@ -157,7 +148,6 @@ namespace Client
 
             OnStateChanged = null;
             m_bPaused      = false;
-            m_eWavePhase   = WAVE_PHASE.NONE;
             m_fEnemySlowScale = 1f;     // 260912_다음 판에 감속이 남아 있지 않게
             m_fEnemySlowTimer = 0f;
 
@@ -244,7 +234,6 @@ namespace Client
 
             m_bPaused    = false;
             m_iStar      = 0;               // 260905_판을 새로 시작하면 별도 처음부터
-            m_eWavePhase = WAVE_PHASE.NONE;
             m_cGridRenderer.Set_CoverAlpha(1f);
 
             m_eState = STAGE_STATE.PLAYING;
@@ -259,14 +248,6 @@ namespace Client
             if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true)
                 return;
 
-            // 260904_연출 중에는 규칙을 멈추고 연출만 돌린다.
-            // 제한 시간도 같이 멈춘다 — 연출 때문에 시간을 잃으면 억울하다.
-            if (m_eWavePhase != WAVE_PHASE.NONE)
-            {
-                Tick_WaveTransition(fDeltaTime);
-                return;
-            }
-
             Tick_EnemySlow(fDeltaTime);
             Tick_Enemy();
             Tick_Projectile();
@@ -280,7 +261,9 @@ namespace Client
             }
         }
 
-        // 260904_웨이브 진입 — 판을 새로 깔고 이미지 스택을 한 장 벗긴다.
+        // 260912_웨이브 진입 — 판은 그대로 두고 가림막만 한 장 벗긴다.
+        // 점령한 칸을 유지하므로 이미 뚫어 둔 구멍으로 다음 장이 비친다.
+        // 그래서 목표 비율이 웨이브마다 올라간다(0.6 / 0.65 / 0.7) — 누적이기 때문이다.
         /// <param name="iWave"> 1부터 시작 </param>
         private void Enter_Wave(int iWave)
         {
@@ -295,83 +278,30 @@ namespace Client
             m_iWave       = iWave;
             m_fRemainTime = cWave.fTimeLimit;
 
-            m_cGrid.Reset(m_cMapInfo.iBorderThick);
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
                                             Get_Texture(m_cMapInfo.Get_RevealTex(iWave)));
 
-            Respawn_Player();
+            // 플레이어는 있던 자리에 그대로 둔다. 몬스터와 소환물만 새 웨이브 구성으로 갈아 끼운다.
             Spawn_Enemies(cWave);
 
             Debug.Log($"[CStage_Manager] {m_cMapInfo.strMapName} — {iWave}/{m_cMapInfo.iWaveCount} 웨이브 시작 "
                     + $"(목표 {cWave.fClearRatio:P0}, {cWave.fTimeLimit:F0}초, 몬스터 {cWave.TOTAL_ENEMY}마리)");
         }
 
-        // 260904_웨이브를 넘길 때 바로 갈아 끼우지 않는다.
-        // 가림막을 걷어 보상을 보여주고, 잠깐 감상할 틈을 준 뒤에 다음 판을 덮는다.
-        // 이 게임에서 '드러났다'는 순간이 재미의 전부라 그냥 툭 바꾸면 남는 게 없다.
+        // 260912_웨이브는 끊기지 않고 이어진다. 연출도 정지도 없다.
         private void Next_Wave()
         {
             // 260905_웨이브를 하나 넘길 때마다 별 하나. 이 시점에 확정되므로
             // 뒤 웨이브에서 죽더라도 여기까지의 별은 남는다.
             m_iStar = m_iWave;
 
-            Begin_WaveTransition(m_iWave >= m_cMapInfo.iWaveCount ? 0 : m_iWave + 1);
-        }
-
-        private void Begin_WaveTransition(int iNextWave)
-        {
-            m_iNextWave   = iNextWave;
-            m_eWavePhase  = WAVE_PHASE.REVEAL;
-            m_fPhaseTimer = 0f;
-
-            Set_ActorTimeScale(0f);     // 연출 동안에는 아무도 움직이지 않는다
-        }
-
-        private void Tick_WaveTransition(float fDeltaTime)
-        {
-            m_fPhaseTimer += fDeltaTime;
-
-            switch (m_eWavePhase)
+            if (m_iWave >= m_cMapInfo.iWaveCount)
             {
-                case WAVE_PHASE.REVEAL:
-                    m_cGridRenderer.Set_CoverAlpha(1f - Mathf.Clamp01(m_fPhaseTimer / REVEAL_TIME));
-                    if (m_fPhaseTimer >= REVEAL_TIME)
-                        Go_Phase(WAVE_PHASE.HOLD);
-                    break;
-
-                case WAVE_PHASE.HOLD:
-                    if (m_fPhaseTimer < HOLD_TIME)
-                        break;
-
-                    // 마지막 웨이브였다면 최종 보상이 드러난 화면 그대로 끝낸다.
-                    if (m_iNextWave <= 0)
-                    {
-                        m_eWavePhase = WAVE_PHASE.NONE;
-                        Set_State(STAGE_STATE.CLEAR);
-                        break;
-                    }
-
-                    Enter_Wave(m_iNextWave);
-                    m_cGridRenderer.Set_CoverAlpha(0f);
-                    Go_Phase(WAVE_PHASE.COVER);
-                    break;
-
-                case WAVE_PHASE.COVER:
-                    m_cGridRenderer.Set_CoverAlpha(Mathf.Clamp01(m_fPhaseTimer / COVER_TIME));
-                    if (m_fPhaseTimer < COVER_TIME)
-                        break;
-
-                    m_cGridRenderer.Set_CoverAlpha(1f);
-                    m_eWavePhase = WAVE_PHASE.NONE;
-                    Set_ActorTimeScale(1f);
-                    break;
+                Set_State(STAGE_STATE.CLEAR);
+                return;
             }
-        }
 
-        private void Go_Phase(WAVE_PHASE ePhase)
-        {
-            m_eWavePhase  = ePhase;
-            m_fPhaseTimer = 0f;
+            Enter_Wave(m_iWave + 1);
         }
 
         // 260904_일시정지. 액터를 세우는 길은 Set_ActorTimeScale 하나뿐이다(2-8).
@@ -428,7 +358,7 @@ namespace Client
             if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true)
                 return false;
 
-            if (m_eWavePhase != WAVE_PHASE.NONE || m_cPlayer == null)
+            if (m_cPlayer == null)
                 return false;
 
             return m_cPlayer.Try_UseSkill();
@@ -441,9 +371,7 @@ namespace Client
 
             m_bPaused = bPause;
 
-            // 연출 중이면 원래도 멈춰 있어야 하므로 풀어 줄 때도 0을 유지한다.
-            bool bResume = bPause == false && m_eWavePhase == WAVE_PHASE.NONE;
-            Set_ActorTimeScale(bResume == true ? 1f : 0f);
+            Set_ActorTimeScale(bPause == true ? 0f : 1f);
         }
         #endregion 스테이지 / 웨이브 진행
 
@@ -498,12 +426,6 @@ namespace Client
             m_cPlayer.GetEnemyCells  = Get_EnemyCells;  // 몬스터가 있는 영역은 점령되지 않는다
 
             return true;
-        }
-
-        private void Respawn_Player()
-        {
-            if (m_cPlayer != null)
-                m_cPlayer.Respawn(Find_StartCell());
         }
 
         /// <summary>

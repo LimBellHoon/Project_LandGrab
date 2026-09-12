@@ -265,6 +265,32 @@ namespace Client
             return null;
         }
 
+        // 260912_전투에서 쓸 소모품. 장착한 것이 없으면 갖고 있는 것 중 하나를 대신 고른다.
+        //
+        // 슬롯은 '여러 개 중 무엇을 들고 갈지' 고르라고 둔 것인데, 하나밖에 없을 때도
+        // 장착을 요구하면 사 놓고도 전투에서 버튼이 안 뜬다. 산 물건이 가방에서 잠자는 셈이다.
+        // 그래서 슬롯은 그대로 두되, 비어 있으면 갖고 있는 것으로 채워 준다.
+        /// <summary> 전투에서 쓸 소모품. 없으면 null. </summary>
+        public CEquipInfo Get_BattleConsumable()
+        {
+            CEquipInfo cEquipped = Get_Equipped(EQUIP_SLOT.CONSUMABLE);
+            if (cEquipped != null && Get_ItemCount(cEquipped.iEquipID) > 0)
+                return cEquipped;
+
+            if (m_cEquipTable == null)
+                return null;
+
+            IReadOnlyList<CEquipInfo> lstAll = m_cEquipTable.ALL;
+            for (int i = 0; i < lstAll.Count; ++i)
+            {
+                CEquipInfo cInfo = lstAll[i];
+                if (cInfo.IS_CONSUMABLE == true && Get_ItemCount(cInfo.iEquipID) > 0)
+                    return cInfo;
+            }
+
+            return null;
+        }
+
         public int Get_SkillLevel(SKILL_TYPE eType) => m_cProgress.Get_SkillLevel(eType);
 
         /// <summary> 스킬 강화. 코인이 모자라거나 만렙이면 아무 일도 없다. </summary>

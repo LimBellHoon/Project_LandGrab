@@ -51,6 +51,7 @@ namespace Client
             Test_CameraFit();
             Test_SafeArea();
             Test_SkillTable();
+            Test_BattleConsumable();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -664,6 +665,49 @@ namespace Client
             Check("비율 0도 견딘다", CCameraFitter.Calc_Size(vMap1, 0f, 0f, 0f) > 0f);
         }
 
+
+        // 260912_전투 소모품은 장착이 아니라 보유 기준이다.
+        // 사 놓고 장착을 잊으면 전투에서 버튼이 안 떠 버렸다.
+        private static void Test_BattleConsumable()
+        {
+            CCSVData_MapInfo   cMapTable   = Load_MapTable();
+            CCSVData_EquipInfo cEquipTable = Load_EquipTable();
+            if (cMapTable == null || cEquipTable == null)
+            {
+                Check("표 로드", false);
+                return;
+            }
+
+            const int SHIELD = 401;     // 보호막
+            const int POTION = 402;     // 포션
+            const int SHOES  = 101;     // 소모품이 아닌 장비
+
+            CProgress_Manager cManager = new CProgress_Manager();
+            cManager.Initialize(cMapTable, new CFakeProgressRepository(), cEquipTable);
+
+            Check("아무것도 없으면 null", cManager.Get_BattleConsumable() == null);
+
+            // 장비만 있으면 소모품이 아니므로 여전히 없다
+            cManager.Add_Item(SHOES);
+            cManager.Try_Equip(SHOES);
+            Check("장비는 소모품이 아니다", cManager.Get_BattleConsumable() == null);
+
+            // 사기만 하고 장착하지 않아도 쓸 수 있어야 한다
+            cManager.Add_Item(SHIELD);
+            Check("장착하지 않아도 잡힌다", cManager.Get_BattleConsumable()?.iEquipID ?? 0, SHIELD);
+
+            // 장착한 것이 있으면 그쪽이 우선이다 (여러 개일 때 고르라고 둔 슬롯이다)
+            cManager.Add_Item(POTION);
+            cManager.Try_Equip(POTION);
+            Check("장착한 쪽이 우선", cManager.Get_BattleConsumable()?.iEquipID ?? 0, POTION);
+
+            // 장착한 것을 다 쓰면 남아 있는 다른 것으로 넘어간다
+            cManager.Use_Item(POTION);
+            Check("다 쓰면 남은 것으로", cManager.Get_BattleConsumable()?.iEquipID ?? 0, SHIELD);
+
+            cManager.Use_Item(SHIELD);
+            Check("전부 떨어지면 null", cManager.Get_BattleConsumable() == null);
+        }
 
         // 260912_액티브 스킬 5종이 표에서 제대로 읽히고, 종류마다 모듈이 붙는지
         private static void Test_SkillTable()

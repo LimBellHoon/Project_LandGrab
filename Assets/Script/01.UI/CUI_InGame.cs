@@ -206,13 +206,14 @@ namespace Client
             m_OnUseItem?.Invoke();
         }
 
-        // 장착한 소모품이 없거나 다 썼으면 버튼을 숨긴다 — 누를 수 없는 버튼은 혼란만 준다.
+        // 갖고 있는 소모품이 없으면 버튼을 숨긴다 — 누를 수 없는 버튼은 혼란만 준다.
+        // 장착 여부가 아니라 보유 기준이다(CProgress_Manager.Get_BattleConsumable).
         private void Refresh_Item()
         {
             if (m_btnItem == null)
                 return;
 
-            CEquipInfo cInfo = m_cProgress != null ? m_cProgress.Get_Equipped(EQUIP_SLOT.CONSUMABLE) : null;
+            CEquipInfo cInfo = m_cProgress != null ? m_cProgress.Get_BattleConsumable() : null;
             int iCount = cInfo != null ? m_cProgress.Get_ItemCount(cInfo.iEquipID) : 0;
             bool bShow = cInfo != null && iCount > 0;
 

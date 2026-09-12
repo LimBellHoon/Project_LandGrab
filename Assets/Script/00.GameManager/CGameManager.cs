@@ -570,7 +570,7 @@ namespace Client
         // 효과를 걸지 못하면 개수를 되돌린다 — 연출 중에 눌러 소모품만 날리는 일을 막는다.
         private void Use_Consumable()
         {
-            CEquipInfo cInfo = m_cProgressManager.Get_Equipped(EQUIP_SLOT.CONSUMABLE);
+            CEquipInfo cInfo = m_cProgressManager.Get_BattleConsumable();
             if (cInfo == null || cInfo.eConsume == CONSUME_EFFECT.NONE)
                 return;
 
