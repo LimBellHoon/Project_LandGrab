@@ -706,6 +706,18 @@ namespace Client
             cImporter.alphaIsTransparency   = true;
             cImporter.mipmapEnabled         = false;
             cImporter.isReadable            = bReadable;
+
+            // 260912_스프라이트 영역을 텍스처 전체로 못 박는다.
+            // 기본값(Tight)은 투명한 가장자리를 잘라내 스프라이트가 텍스처보다 작아진다.
+            // 가림막과 보상은 둘 다 bounds를 기준으로 그리드에 맞춰 깔리므로(Fit_ToGrid),
+            // 한쪽만 잘려 있으면 같은 그리드에 맞춰도 그림이 서로 다른 크기로 보인다.
+            TextureImporterSettings cSettings = new TextureImporterSettings();
+            cImporter.ReadTextureSettings(cSettings);
+            cSettings.spriteMeshType = SpriteMeshType.FullRect;
+            cSettings.spriteExtrude  = 0;
+            cImporter.SetTextureSettings(cSettings);
+            cImporter.spriteBorder = Vector4.zero;
+
             cImporter.SaveAndReimport();
         }
         #endregion 스프라이트 생성

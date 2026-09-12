@@ -182,6 +182,37 @@ namespace Client
             Fill_Cover(texCover);
             Set_RevealTexture(texReveal);
             Refresh_All();
+
+            Log_LayerBounds();
+        }
+
+        // 260912_두 장이 화면에서 정말 같은 자리·같은 크기인지 실행 중에 확인한다.
+        // 보상은 점령한 칸으로만 드러나므로 눈으로는 테두리 한 줄밖에 안 보인다 —
+        // 어긋나 있어도 '뭔가 이상하다'까지만 느껴지고 어디가 틀렸는지 알 수 없다.
+        // 웨이브가 바뀔 때만 도는 검사라 비용은 없다시피 하다.
+        private void Log_LayerBounds()
+        {
+            if (m_srCover == null || m_srReveal == null || m_srReveal.sprite == null)
+                return;
+
+            Bounds bCover  = m_srCover.bounds;
+            Bounds bReveal = m_srReveal.bounds;
+            Vector2 vGrid  = m_cGrid.WORLD_SIZE;
+
+            const float EPSILON = 0.001f;
+            bool bMatch = Mathf.Abs(bCover.size.x   - bReveal.size.x)   < EPSILON
+                       && Mathf.Abs(bCover.size.y   - bReveal.size.y)   < EPSILON
+                       && Mathf.Abs(bCover.center.x - bReveal.center.x) < EPSILON
+                       && Mathf.Abs(bCover.center.y - bReveal.center.y) < EPSILON;
+
+            string strBody = $"가림막 {bCover.size.x:F3}x{bCover.size.y:F3} @({bCover.center.x:F3}, {bCover.center.y:F3})"
+                           + $" / 보상 {bReveal.size.x:F3}x{bReveal.size.y:F3} @({bReveal.center.x:F3}, {bReveal.center.y:F3})"
+                           + $" / 그리드 {vGrid.x:F3}x{vGrid.y:F3}";
+
+            if (bMatch == true)
+                Debug.Log($"[CGridRenderer] 두 장 크기 일치 — {strBody}");
+            else
+                Debug.LogError($"[CGridRenderer] 두 장 크기가 어긋납니다 — {strBody}");
         }
 
         private void Set_RevealTexture(Texture2D texReveal)
@@ -191,8 +222,17 @@ namespace Client
 
             Clear_Sprite(m_srReveal, ref m_spReveal);
 
+            // 260912_보상 텍스처를 못 받으면 렌더러를 반드시 비운다.
+            // 씬에 배치해 둔 스프라이트(Tex_Reward_Placeholder)가 그대로 남아 있으면
+            // 그 크기가 그리드가 아니라 원본 그대로(5.4 x 9.0)라, 가림막보다 작은 네모가
+            // 뒤에 깔린 것처럼 보인다. 이미지가 빠졌다는 사실도 가려진다.
             if (texReveal == null)
+            {
+                m_srReveal.sprite = null;
+                Debug.LogWarning("[CGridRenderer] 보상 이미지를 받지 못했습니다. "
+                               + "MapInfo.csv의 strLayerTex 이름과 Addressable 등록을 확인하세요.");
                 return;
+            }
 
             m_spReveal = Sprite.Create(texReveal, new Rect(0f, 0f, texReveal.width, texReveal.height),
                                        new Vector2(0.5f, 0.5f), 100f, 0u, SpriteMeshType.FullRect);

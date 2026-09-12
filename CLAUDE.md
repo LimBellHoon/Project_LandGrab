@@ -186,6 +186,13 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 비율이 다르면 그림이 눌린다. 둘이 똑같이 눌리기 때문에 '한쪽만 이상하다'로는 안 보이고
 그냥 어색해질 뿐이라 눈으로 찾기 어렵다 — `Validate Assets`의 `Validate_LayerAspect`가 숫자로 잡는다.
 
+**임포트 설정에서 스프라이트 영역을 텍스처 전체로 못 박는다**(260912).
+Unity 기본값은 `spriteMeshType: Tight` + `spriteExtrude: 1`이라 **스프라이트가 텍스처보다 작아지고
+가장자리가 한 칸 떠 있다**(Sprite Editor에서 보인다). 가림막과 보상은 둘 다 `bounds`를 기준으로
+그리드에 맞춰 깔리므로, 한쪽만 잘려 있으면 같은 그리드에 맞춰도 크기가 다르게 보인다.
+`CProtoSetup.Import_AsSprite`가 `FullRect` / `extrude 0` / `border 0`으로 고정한다.
+**아트를 손으로 넣을 때도 이 세 가지를 확인할 것.**
+
 **배치 이미지의 동심원은 눈으로 쓰는 검사 도구다**(260912). 화면에서 정원으로 보이도록
 가로를 비율만큼 늘려 그려 둔다 — **타원으로 보이면 어딘가에서 늘어난 것**이다.
 
