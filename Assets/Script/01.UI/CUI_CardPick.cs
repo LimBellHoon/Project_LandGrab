@@ -22,6 +22,8 @@ namespace Client
         [SerializeField] private Text           m_txtTitle;
         [SerializeField] private Button         m_btnTemplate;      // 비활성 템플릿. 복제해서 쓴다
         [SerializeField] private RectTransform  m_trContent;
+        // 260912_CARD_TYPE 순서대로 넣어 둔다. NONE은 0번이라 한 칸 당겨 쓴다.
+        [SerializeField] private Sprite[]       m_arrIcon;
 
         private readonly List<GameObject> m_lstSpawned = new List<GameObject>();
 
@@ -78,6 +80,10 @@ namespace Client
                 if (arrText.Length > 1)
                     arrText[1].text = cInfo.strDesc;
 
+                Color cTint = Get_Tint(cInfo.eType);
+                Paint_Part(goCard, "Img_Icon", Get_Icon(cInfo.eType), cTint);
+                Paint_Part(goCard, "Img_Glow", null, cTint);
+
                 Button cButton = goCard.GetComponent<Button>();
                 if (cButton == null)
                     continue;
@@ -87,6 +93,44 @@ namespace Client
                 cButton.onClick.RemoveAllListeners();
                 cButton.onClick.AddListener(() => On_Click(cPicked));
             }
+        }
+
+        // 260912_종류마다 색을 달리해 셋을 한눈에 가르게 한다.
+        // 글자만으로는 순간적으로 고르기 어렵다 — 색과 아이콘이 먼저 읽힌다.
+        private static Color Get_Tint(CARD_TYPE eType)
+        {
+            switch (eType)
+            {
+                case CARD_TYPE.SHIELD:  return new Color(0.45f, 0.80f, 1.00f);
+                case CARD_TYPE.HEAL:    return new Color(0.45f, 1.00f, 0.60f);
+                case CARD_TYPE.SPEED:   return new Color(1.00f, 0.85f, 0.35f);
+                case CARD_TYPE.EVASION: return new Color(0.80f, 0.60f, 1.00f);
+                case CARD_TYPE.SLOW:    return new Color(1.00f, 0.55f, 0.55f);
+                default:                return Color.white;
+            }
+        }
+
+        private Sprite Get_Icon(CARD_TYPE eType)
+        {
+            // NONE이 0번이라 한 칸 당긴다. 표에 종류를 더하면 배열에도 같은 순서로 넣어야 한다.
+            int iIndex = (int)eType - 1;
+            if (m_arrIcon == null || iIndex < 0 || iIndex >= m_arrIcon.Length)
+                return null;
+
+            return m_arrIcon[iIndex];
+        }
+
+        private static void Paint_Part(GameObject goCard, string strName, Sprite spSprite, Color cTint)
+        {
+            Transform trPart = goCard.transform.Find(strName);
+            Image cImage = trPart != null ? trPart.GetComponent<Image>() : null;
+            if (cImage == null)
+                return;
+
+            if (spSprite != null)
+                cImage.sprite = spSprite;
+
+            cImage.color = cTint;
         }
 
         private void On_Click(CCardInfo cInfo)

@@ -38,9 +38,12 @@ namespace Client
         private Vector2         m_vTargetPos;
 
         // 260904_EnemyInfo.csv에서 들어온다. 기믹 수치는 m_cGimmick이 들고 있으므로 여기 두지 않는다.
+        private int             m_iEnemyID;
         private ENEMY_GIMMICK   m_eGimmick;
         private float           m_fHitRange;        // 셀
 
+        /// <summary> 260912_EnemyInfo.csv의 ID. 웨이브가 넘어갈 때 종류별 수를 셀 때 쓴다. </summary>
+        public int              ENEMY_ID        => m_iEnemyID;
         public Vector2Int       CUR_CELL        => m_cMoveHandler.CELL;
         public Vector2          POS             => m_cMoveHandler.POS;
         /// <summary> 플레이어와의 충돌 반경(셀). 월드 거리로 쓰려면 CELL_SIZE를 곱한다. </summary>
@@ -67,6 +70,7 @@ namespace Client
             }
 
             // Desc의 속도는 '초당 셀' 단위 — 월드 단위로 환산해 둔다.
+            m_iEnemyID    = cDesc.iEnemyID;
             m_fSpeed      = cDesc.fSpeed * m_cGrid.CELL_SIZE;
             m_fSpeedScale = 1f;     // 풀에서 재사용되므로 지난 판의 감속을 지운다
             m_fChaseSpeed = cDesc.fChaseSpeed * m_cGrid.CELL_SIZE;

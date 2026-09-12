@@ -292,7 +292,9 @@ namespace Client
             }
         }
 
-        // 260904_웨이브 진입 — 판을 새로 깔고 이미지 스택을 한 장 벗긴다.
+        // 260912_웨이브 진입 — 그 자리에서 이어서 한다.
+        // 판을 다시 깔지 않고, 플레이어도 몬스터도 있던 자리에 그대로 둔다.
+        // 바뀌는 것은 가림막 한 장과 '이번 웨이브에 새로 들어오는 몬스터'뿐이다.
         /// <param name="iWave"> 1부터 시작 </param>
         private void Enter_Wave(int iWave)
         {
@@ -307,11 +309,9 @@ namespace Client
             m_iWave       = iWave;
             m_fRemainTime = cWave.fTimeLimit;
 
-            m_cGrid.Reset(m_cMapInfo.iBorderThick);
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
                                             Get_Texture(m_cMapInfo.Get_RevealTex(iWave)));
 
-            Respawn_Player();
             Spawn_Enemies(cWave);
 
             Debug.Log($"[CStage_Manager] {m_cMapInfo.strMapName} — {iWave}/{m_cMapInfo.iWaveCount} 웨이브 시작 "
@@ -599,10 +599,14 @@ namespace Client
 
         #region 몬스터
         // 260904_웨이브가 정한 조합대로 소환한다 (MapInfo.csv의 strWaveEnemy).
+        // 260912_웨이브가 넘어가도 있던 몬스터는 그대로 둔다.
+        // 표에 적힌 수보다 모자란 종류만 그 차이만큼 새로 넣는다 —
+        // 전부 회수했다가 다시 뿌리면 플레이어 코앞에 몬스터가 순간이동하는 셈이 된다.
+        //
+        // 표에 적힌 수보다 많으면 줄이지 않는다. 웨이브는 심해지기만 하는 것이 기획이고,
+        // 도중에 몬스터가 사라지면 방금까지 피하던 것이 증발해 오히려 혼란스럽다.
         private void Spawn_Enemies(CWaveInfo cWave)
         {
-            Collect_Enemies();
-
             if (m_cEnemyTable == null || cWave.lstEnemy.Count == 0)
                 return;
 
@@ -624,12 +628,28 @@ namespace Client
                     continue;
                 }
 
-                for (int n = 0; n < cEntry.iCount; ++n)
+                int iNeed = cEntry.iCount - Count_Enemy(cEntry.iEnemyID);
+
+                for (int n = 0; n < iNeed; ++n)
                 {
                     Spawn_Enemy(cInfo, Find_EnemySpawnCell(iSpawned, iTotal), Get_EnemySpawnDir(iSpawned));
                     ++iSpawned;
                 }
             }
+        }
+
+        /// <summary> 지금 살아 있는 그 종류의 몬스터 수. </summary>
+        private int Count_Enemy(int iEnemyID)
+        {
+            int iCount = 0;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                if (m_lstEnemy[i] != null && m_lstEnemy[i].ENEMY_ID == iEnemyID)
+                    ++iCount;
+            }
+
+            return iCount;
         }
 
         private void Spawn_Enemy(CEnemyInfo cInfo, Vector2Int vCell, Vector2 vDir)
@@ -644,6 +664,7 @@ namespace Client
                 cGrid           = m_cGrid,
                 vStartCell      = vCell,
                 vStartDir       = vDir,
+                iEnemyID        = cInfo.iEnemyID,
                 eGimmick        = cInfo.eGimmick,
                 fSpeed          = cInfo.fSpeed,
                 fChaseSpeed     = cInfo.fChaseSpeed,

@@ -46,6 +46,8 @@ namespace Client
         public Vector2Int       vStartCell  { get; set; }
         public Vector2          vStartDir   { get; set; }
 
+        // 260912_웨이브가 넘어갈 때 '이 종류가 몇 마리 있나'를 세려면 ID가 필요하다.
+        public int              iEnemyID        { get; set; }
         public ENEMY_GIMMICK    eGimmick        { get; set; }
         public float            fSpeed          { get; set; }   // 초당 셀
         public float            fChaseSpeed     { get; set; }   // 초당 셀

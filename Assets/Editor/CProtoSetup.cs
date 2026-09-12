@@ -76,6 +76,13 @@ namespace Client
         private const string PATH_PREFAB_UI_CARD    = DIR_PREFAB + "/Prefab_UI_CardPick.prefab";
         private const string UI_INVENTORY           = "Prefab_UI_Inventory";
         private const string UI_CARDPICK            = "Prefab_UI_CardPick";
+
+        // 260912_카드 아이콘. CARD_TYPE 이름을 그대로 쓴다 — 표에 종류를 더하면 여기에만 추가하면 된다.
+        private static readonly string[] ARR_CARD_ICON =
+        {
+            "Tex_Card_SHIELD", "Tex_Card_HEAL", "Tex_Card_SPEED", "Tex_Card_EVASION", "Tex_Card_SLOW",
+        };
+        private const string TEX_CARD_GLOW = "Tex_CardGlow";
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -157,7 +164,7 @@ namespace Client
             iFail += Validate_UIPrefab<CUI_Inventory>(PATH_PREFAB_UI_INVEN, UI_INVENTORY,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_CardPick>(PATH_PREFAB_UI_CARD, UI_CARDPICK,
-                                                 new[] { "m_txtTitle", "m_btnTemplate", "m_trContent" });
+                                                 new[] { "m_txtTitle", "m_btnTemplate", "m_trContent", "m_arrIcon" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -497,6 +504,7 @@ namespace Client
             Import_AsSprite(PATH_TEX_BG, 100, true);
 
             Create_LayerTextures(iBgW, iBgH);
+            Create_CardTextures();
 
             // 260904_기믹 소환물. 탄은 작고 밝게, 거미줄은 성기게 비치도록 반투명하게.
             Write_Png(PATH_TEX_PROJECTILE, Make_CircleTexture(32, new Color(1f, 0.55f, 0.2f)));
@@ -586,6 +594,135 @@ namespace Client
                 // 가림막은 런타임에 픽셀을 읽어 마스크로 다시 찍으므로 Read/Write가 반드시 켜져 있어야 한다.
                 Import_AsSprite(strPath, 100, true);
             }
+        }
+
+        // 260912_카드 아이콘과 테두리 발광.
+        // 아이콘은 종류를 한눈에 가르는 것이 목적이라 모양과 색만 다르게 그린다.
+        private static void Create_CardTextures()
+        {
+            const int ICON = 128;
+
+            for (int i = 0; i < ARR_CARD_ICON.Length; ++i)
+            {
+                string strPath = $"{DIR_ART}/{ARR_CARD_ICON[i]}.png";
+                Write_Png(strPath, Make_CardIcon(ICON, i));
+                Import_AsSprite(strPath, 100);
+            }
+
+            // 테두리 발광 — 9슬라이스로 늘려 쓰므로 가운데는 비워 둔다.
+            string strGlow = $"{DIR_ART}/{TEX_CARD_GLOW}.png";
+            Write_Png(strGlow, Make_CardGlow(64));
+            Import_AsSprite(strGlow, 100);
+            Set_SpriteBorder(strGlow, 20);
+        }
+
+        /// <summary> 카드 종류별 아이콘. 색과 모양만 달라도 셋을 가르는 데는 충분하다. </summary>
+        private static Texture2D Make_CardIcon(int iSize, int iKind)
+        {
+            Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
+
+            Color[] arrColor =
+            {
+                new Color(0.45f, 0.80f, 1.00f),     // SHIELD  — 푸른 방패
+                new Color(0.45f, 1.00f, 0.60f),     // HEAL    — 초록 십자
+                new Color(1.00f, 0.85f, 0.35f),     // SPEED   — 노란 화살
+                new Color(0.80f, 0.60f, 1.00f),     // EVASION — 보라 잔상
+                new Color(1.00f, 0.55f, 0.55f),     // SLOW    — 붉은 모래시계
+            };
+            Color cInk = arrColor[Mathf.Clamp(iKind, 0, arrColor.Length - 1)];
+
+            float fHalf = iSize * 0.5f;
+
+            for (int y = 0; y < iSize; ++y)
+            {
+                for (int x = 0; x < iSize; ++x)
+                {
+                    float fU = (x + 0.5f - fHalf) / fHalf;      // -1 ~ 1
+                    float fV = (y + 0.5f - fHalf) / fHalf;
+                    bool bInk = Is_IconInk(iKind, fU, fV);
+
+                    Color cColor = cInk;
+                    cColor.a = bInk == true ? 1f : 0f;
+                    tex.SetPixel(x, y, cColor);
+                }
+            }
+
+            tex.Apply();
+            return tex;
+        }
+
+        // 모양만 다르게 — 아이콘 다섯 개를 한 함수에서 가른다.
+        private static bool Is_IconInk(int iKind, float fU, float fV)
+        {
+            float fAbsU = Mathf.Abs(fU);
+
+            switch (iKind)
+            {
+                case 0:     // 방패 — 위는 각지고 아래는 뾰족하다
+                    return fAbsU < 0.62f && fV < 0.66f && fV > -0.88f + fAbsU * 0.9f;
+
+                case 1:     // 십자
+                    return (fAbsU < 0.22f && Mathf.Abs(fV) < 0.68f)
+                        || (Mathf.Abs(fV) < 0.22f && fAbsU < 0.68f);
+
+                case 2:     // 오른쪽을 가리키는 겹화살
+                    return Is_Chevron(fU - 0.18f, fV) || Is_Chevron(fU + 0.30f, fV);
+
+                case 3:     // 잔상 — 세로 막대 셋, 오른쪽으로 갈수록 굵다
+                    return (Mathf.Abs(fU + 0.52f) < 0.07f && Mathf.Abs(fV) < 0.34f)
+                        || (Mathf.Abs(fU) < 0.11f && Mathf.Abs(fV) < 0.5f)
+                        || (Mathf.Abs(fU - 0.52f) < 0.16f && Mathf.Abs(fV) < 0.66f);
+
+                default:    // 모래시계
+                    if (Mathf.Abs(fV) > 0.72f)
+                        return fAbsU < 0.5f;
+
+                    return fAbsU < Mathf.Abs(fV) * 0.68f + 0.05f;
+            }
+        }
+
+        private static bool Is_Chevron(float fU, float fV)
+        {
+            float fEdge = 0.5f - Mathf.Abs(fV) * 0.62f;      // 위아래로 갈수록 왼쪽으로
+            return fU < fEdge && fU > fEdge - 0.2f && Mathf.Abs(fV) < 0.62f;
+        }
+
+        /// <summary> 카드 테두리 발광 — 바깥은 투명하고 테두리에서 안으로 옅어진다. </summary>
+        private static Texture2D Make_CardGlow(int iSize)
+        {
+            Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
+            const float RIM = 12f;      // 테두리 두께(픽셀)
+
+            for (int y = 0; y < iSize; ++y)
+            {
+                for (int x = 0; x < iSize; ++x)
+                {
+                    // 네 변 중 가장 가까운 변까지의 거리
+                    float fEdge = Mathf.Min(Mathf.Min(x, iSize - 1 - x), Mathf.Min(y, iSize - 1 - y));
+                    float fGlow = Mathf.Clamp01(1f - fEdge / RIM);
+
+                    // 바깥 1픽셀은 선명한 테두리, 안으로 갈수록 부드럽게 사라진다
+                    float fAlpha = fEdge < 1.5f ? 1f : fGlow * fGlow * 0.7f;
+
+                    Color cColor = Color.white;
+                    cColor.a = fAlpha;
+                    tex.SetPixel(x, y, cColor);
+                }
+            }
+
+            tex.Apply();
+            return tex;
+        }
+
+        // 260912_9슬라이스 경계. 가운데를 늘려도 테두리 두께가 그대로 유지된다.
+        private static void Set_SpriteBorder(string strPath, int iBorder)
+        {
+            TextureImporter cImporter = AssetImporter.GetAtPath(strPath) as TextureImporter;
+            if (cImporter == null)
+                return;
+
+            cImporter.spriteBorder = new Vector4(iBorder, iBorder, iBorder, iBorder);
+            cImporter.SaveAndReimport();
         }
 
         /// <summary> 1웨이브를 덮는 마스크 — 격자 무늬가 옅게 깔린 어두운 막. </summary>
@@ -799,6 +936,14 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_UI_UPGRADE, UI_UPGRADE, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SHOP, UI_SHOP, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INVEN, UI_INVENTORY, CAddressableLabel.PREFAB);
+            for (int i = 0; i < ARR_CARD_ICON.Length; ++i)
+            {
+                Regist_Addressable(cSettings, $"{DIR_ART}/{ARR_CARD_ICON[i]}.png",
+                                   ARR_CARD_ICON[i], CAddressableLabel.TEXTURE);
+            }
+            Regist_Addressable(cSettings, $"{DIR_ART}/{TEX_CARD_GLOW}.png",
+                               TEX_CARD_GLOW, CAddressableLabel.TEXTURE);
+
             Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD, UI_CARDPICK, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
@@ -1314,8 +1459,32 @@ namespace Client
 
             // 템플릿 — 꺼 둔 채로 프리팹에 남겨 두고 런타임에 복제한다.
             GameObject goCard = Create_UIObject("Btn_CardTemplate", goContent.transform);
-            goCard.AddComponent<Image>().color = new Color(0.13f, 0.16f, 0.28f, 0.96f);
+            goCard.AddComponent<Image>().color = new Color(0.09f, 0.11f, 0.20f, 0.97f);
             Button cCard = goCard.AddComponent<Button>();
+
+            // 260912_테두리 발광. 9슬라이스라 카드 크기가 달라져도 두께가 유지된다.
+            // 색은 런타임에 카드 종류에 맞춰 CUI_CardPick이 칠한다.
+            GameObject goGlow = Create_UIObject("Img_Glow", goCard.transform);
+            RectTransform trGlow = goGlow.GetComponent<RectTransform>();
+            Stretch_Full(trGlow);
+            trGlow.offsetMin = new Vector2(-6f, -6f);       // 카드보다 살짝 크게 — 빛이 밖으로 번지게
+            trGlow.offsetMax = new Vector2(6f, 6f);
+            Image imgGlow = goGlow.AddComponent<Image>();
+            imgGlow.sprite = AssetDatabase.LoadAssetAtPath<Sprite>($"{DIR_ART}/{TEX_CARD_GLOW}.png");
+            imgGlow.type   = Image.Type.Sliced;
+            imgGlow.raycastTarget = false;
+
+            // 아이콘 — 이름 아래, 설명 위
+            GameObject goIcon = Create_UIObject("Img_Icon", goCard.transform);
+            RectTransform trIcon = goIcon.GetComponent<RectTransform>();
+            trIcon.anchorMin = new Vector2(0.5f, 1f);
+            trIcon.anchorMax = new Vector2(0.5f, 1f);
+            trIcon.pivot     = new Vector2(0.5f, 1f);
+            trIcon.anchoredPosition = new Vector2(0f, -104f);
+            trIcon.sizeDelta = new Vector2(120f, 120f);
+            Image imgIcon = goIcon.AddComponent<Image>();
+            imgIcon.preserveAspect = true;
+            imgIcon.raycastTarget  = false;
 
             GameObject goName = Create_UIObject("Txt_Name", goCard.transform);
             RectTransform trName = goName.GetComponent<RectTransform>();
@@ -1331,7 +1500,7 @@ namespace Client
             trDesc.anchorMin = new Vector2(0f, 0f);
             trDesc.anchorMax = new Vector2(1f, 1f);
             trDesc.offsetMin = new Vector2(12f, 18f);
-            trDesc.offsetMax = new Vector2(-12f, -104f);
+            trDesc.offsetMax = new Vector2(-12f, -240f);
             Text txtDesc = Make_Text(goDesc, "설명", 24, TextAnchor.UpperCenter);
             txtDesc.raycastTarget = false;
             txtDesc.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -1343,6 +1512,13 @@ namespace Client
             cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
             cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cCard;
             cSerialized.FindProperty("m_trContent").objectReferenceValue   = trContent;
+            cSerialized.FindProperty("m_arrIcon").arraySize                 = ARR_CARD_ICON.Length;
+
+            for (int i = 0; i < ARR_CARD_ICON.Length; ++i)
+            {
+                Sprite spIcon = AssetDatabase.LoadAssetAtPath<Sprite>($"{DIR_ART}/{ARR_CARD_ICON[i]}.png");
+                cSerialized.FindProperty("m_arrIcon").GetArrayElementAtIndex(i).objectReferenceValue = spIcon;
+            }
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_CARD);

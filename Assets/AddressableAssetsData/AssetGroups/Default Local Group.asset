@@ -15,6 +15,12 @@ MonoBehaviour:
   m_GroupName: Default Local Group
   m_GUID: ef30615706f72f943a3833e58f7ddeef
   m_SerializeEntries:
+  - m_GUID: 04e5b17d7ee4df04886d213f707e356b
+    m_Address: Tex_CardGlow
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 0e4f3f2ee03a8db4ab81de9a0618a287
     m_Address: Prefab_Player
     m_ReadOnly: 0
@@ -32,6 +38,18 @@ MonoBehaviour:
     m_ReadOnly: 0
     m_SerializedLabels:
     - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 25a48788c21a07b418c15930e59f1b3c
+    m_Address: Tex_Card_EVASION
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 292507b0617413947b2199845e2dc182
+    m_Address: Tex_Card_SPEED
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 2d49a0cb396a4d07a2822671c7f9a502
     m_Address: EnemyInfo
@@ -63,6 +81,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Prefabs
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 68fc9db2adbf9f44a841cd25380918cc
+    m_Address: Tex_Card_SLOW
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 75607a062d4e698429e9cfdd74c0b828
     m_Address: CardInfo
     m_ReadOnly: 0
@@ -87,6 +111,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Images
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 9609f401ec2cc894e90ec3fe173863fb
+    m_Address: Tex_Card_SHIELD
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: a1e3033d3e2cc364da2c50d11b7438c6
     m_Address: EquipInfo
     m_ReadOnly: 0
@@ -107,6 +137,12 @@ MonoBehaviour:
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: b7651c5835604f543ae2f133fb533c5a
     m_Address: Tex_Mask_01
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Images
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: b83a3c9739c479e4eadc25cb6775b857
+    m_Address: Tex_Card_HEAL
     m_ReadOnly: 0
     m_SerializedLabels:
     - Images
