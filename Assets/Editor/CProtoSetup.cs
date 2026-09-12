@@ -38,12 +38,13 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
         {
-            typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo), typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo),
+            typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo),
+            typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -72,7 +73,9 @@ namespace Client
         private const string PATH_PREFAB_UI_SHOP    = DIR_PREFAB + "/Prefab_UI_Shop.prefab";
         private const string UI_SHOP                = "Prefab_UI_Shop";
         private const string PATH_PREFAB_UI_INVEN   = DIR_PREFAB + "/Prefab_UI_Inventory.prefab";
+        private const string PATH_PREFAB_UI_CARD    = DIR_PREFAB + "/Prefab_UI_CardPick.prefab";
         private const string UI_INVENTORY           = "Prefab_UI_Inventory";
+        private const string UI_CARDPICK            = "Prefab_UI_CardPick";
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -153,6 +156,8 @@ namespace Client
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
             iFail += Validate_UIPrefab<CUI_Inventory>(PATH_PREFAB_UI_INVEN, UI_INVENTORY,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton" });
+            iFail += Validate_UIPrefab<CUI_CardPick>(PATH_PREFAB_UI_CARD, UI_CARDPICK,
+                                                 new[] { "m_txtTitle", "m_btnTemplate", "m_trContent" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -250,6 +255,16 @@ namespace Client
         private static int Validate_CsvTables()
         {
             int iFail = 0;
+
+            // 260912_표 이름과 파싱 클래스를 두 배열로 나란히 들고 있다.
+            // 한쪽에만 추가하면 아래 루프가 배열 밖을 짚어 예외로 죽는다 —
+            // 무슨 일이 났는지 알 수 없으므로 여기서 먼저 이름을 대고 멈춘다.
+            if (ARR_CSV.Length != ARR_CSV_TYPE.Length)
+            {
+                Debug.LogError($"  FAIL  ARR_CSV({ARR_CSV.Length})와 ARR_CSV_TYPE({ARR_CSV_TYPE.Length})의 "
+                             + "개수가 다릅니다. 표를 추가했으면 두 배열 모두에 넣으세요.");
+                return 1;
+            }
 
             for (int i = 0; i < ARR_CSV.Length; ++i)
             {
@@ -737,6 +752,7 @@ namespace Client
             Create_ShopUI();
             Create_InventoryUI();
             Create_PopupUI();
+            Create_CardPickUI();
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -783,6 +799,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_UI_UPGRADE, UI_UPGRADE, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SHOP, UI_SHOP, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INVEN, UI_INVENTORY, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD, UI_CARDPICK, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
@@ -1255,6 +1272,83 @@ namespace Client
         }
 
         // 260904_공용 팝업 프리팹. 일시정지와 결과 화면이 이걸 돌려쓴다.
+        // 260912_카드 3지선다. 카드는 비활성 템플릿을 복제해 쓰므로 겉모습은 여기서만 정한다.
+        private static void Create_CardPickUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_CARDPICK, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+            goRoot.AddComponent<CSafeArea>();
+
+            // 뒤를 어둡게 덮어 카드에 시선이 가게 하고, 뒤쪽 클릭도 막는다.
+            GameObject goDim = Create_UIObject("Dim", goRoot.transform);
+            Stretch_Full(goDim.GetComponent<RectTransform>());
+            goDim.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.82f);
+
+            GameObject goTitle = Create_UIObject("Txt_Title", goRoot.transform);
+            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
+            trTitle.anchorMin = new Vector2(0f, 0.5f);
+            trTitle.anchorMax = new Vector2(1f, 0.5f);
+            trTitle.pivot     = new Vector2(0.5f, 0f);
+            trTitle.anchoredPosition = new Vector2(0f, 330f);
+            trTitle.sizeDelta = new Vector2(-80f, 90f);
+            Text txtTitle = Make_Text(goTitle, "카드를 고르세요", 52, TextAnchor.MiddleCenter);
+            txtTitle.raycastTarget = false;
+
+            // 카드 세 장이 가로로 늘어선다. 세로 화면이라 폭이 좁아 간격을 촘촘히 둔다.
+            GameObject goContent = Create_UIObject("Content", goRoot.transform);
+            RectTransform trContent = goContent.GetComponent<RectTransform>();
+            trContent.anchorMin = new Vector2(0f, 0.5f);
+            trContent.anchorMax = new Vector2(1f, 0.5f);
+            trContent.pivot     = new Vector2(0.5f, 0.5f);
+            trContent.anchoredPosition = new Vector2(0f, 0f);
+            trContent.sizeDelta = new Vector2(-40f, 560f);
+
+            HorizontalLayoutGroup cLayout = goContent.AddComponent<HorizontalLayoutGroup>();
+            cLayout.padding   = new RectOffset(8, 8, 0, 0);
+            cLayout.spacing   = 14f;
+            cLayout.childAlignment = TextAnchor.MiddleCenter;
+            cLayout.childForceExpandWidth  = true;
+            cLayout.childForceExpandHeight = true;
+            cLayout.childControlWidth  = true;
+            cLayout.childControlHeight = true;
+
+            // 템플릿 — 꺼 둔 채로 프리팹에 남겨 두고 런타임에 복제한다.
+            GameObject goCard = Create_UIObject("Btn_CardTemplate", goContent.transform);
+            goCard.AddComponent<Image>().color = new Color(0.13f, 0.16f, 0.28f, 0.96f);
+            Button cCard = goCard.AddComponent<Button>();
+
+            GameObject goName = Create_UIObject("Txt_Name", goCard.transform);
+            RectTransform trName = goName.GetComponent<RectTransform>();
+            trName.anchorMin = new Vector2(0f, 1f);
+            trName.anchorMax = new Vector2(1f, 1f);
+            trName.pivot     = new Vector2(0.5f, 1f);
+            trName.anchoredPosition = new Vector2(0f, -26f);
+            trName.sizeDelta = new Vector2(-16f, 72f);
+            Make_Text(goName, "카드", 38, TextAnchor.MiddleCenter).raycastTarget = false;
+
+            GameObject goDesc = Create_UIObject("Txt_Desc", goCard.transform);
+            RectTransform trDesc = goDesc.GetComponent<RectTransform>();
+            trDesc.anchorMin = new Vector2(0f, 0f);
+            trDesc.anchorMax = new Vector2(1f, 1f);
+            trDesc.offsetMin = new Vector2(12f, 18f);
+            trDesc.offsetMax = new Vector2(-12f, -104f);
+            Text txtDesc = Make_Text(goDesc, "설명", 24, TextAnchor.UpperCenter);
+            txtDesc.raycastTarget = false;
+            txtDesc.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+            goCard.SetActive(false);
+
+            CUI_CardPick cUI = goRoot.AddComponent<CUI_CardPick>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
+            cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cCard;
+            cSerialized.FindProperty("m_trContent").objectReferenceValue   = trContent;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_CARD);
+            Object.DestroyImmediate(goRoot);
+        }
+
         private static void Create_PopupUI()
         {
             GameObject goRoot = Create_UIObject(UI_POPUP, null);

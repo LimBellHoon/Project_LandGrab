@@ -130,7 +130,11 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | 파일 | 파싱 클래스 | 내용 |
 |---|---|---|
 | `EnemyInfo.csv` | `CCSVData_EnemyInfo` | 몬스터 종류별 기믹·속도·충돌반경 |
-| `MapInfo.csv` | `CCSVData_MapInfo` | 맵 크기·플레이어 속도·모양 마스크·이미지 스택·웨이브 구성 |
+| `MapInfo.csv` | `CCSVData_MapInfo` | 맵 크기·플레이어 속도·모양 마스크·이미지 스택·웨이브 구성·카드 지급 지점 |
+| `CardInfo.csv` | `CCSVData_CardInfo` | 점령률 보상 카드 (3지선다) |
+
+> 표를 추가하면 `CProtoSetup`의 **`ARR_CSV`와 `ARR_CSV_TYPE` 두 곳 모두**에 넣을 것.
+> 한쪽만 넣으면 검증이 배열 밖을 짚어 예외로 죽는다(260912에 가드를 넣어 이제는 이름을 대고 멈춘다).
 
 #### Engine이 강제하는 CSV 규약 (어기면 표가 조용히 비어 버린다)
 - **구분자는 탭(`\t`).** 쉼표가 아니다. `Engine.CCSVData`가 `Split('\t')`로만 쪼갠다.
@@ -436,6 +440,27 @@ UI 띠는 여전히 빠진다. 따라가는 기준점은 **가운데 띠의 중�
 
 계산(`Calc_Size` · `Calc_PositionY` · `Calc_AnchorMin/Max`)은 전부 static이라
 화면 없이 `CProtoTest`에서 검증한다.
+
+### 2-10-1. 점령률 보상 카드 — 3지선다 (260912)
+`MapInfo.csv`의 `strCardRatio`(현재 `0.2|0.4|0.6`)를 넘을 때마다 카드 세 장 중 하나를 고른다.
+고른 효과는 **그 판이 끝날 때까지만** 유지된다 — 스테이지를 나가면 사라진다.
+
+```
+CStage_Manager.Check_CardReady  점령률이 지점을 넘었나 → OnCardReady
+CGameManager.On_CardReady       판을 세우고 CUI_CardPick을 연다
+CUI_CardPick                    셋을 보여 주고 고른 것을 돌려준다
+CStage_Manager.Apply_Card       효과를 건다
+```
+
+- **화면을 여는 것은 `CGameManager`다.** 스테이지가 UI를 직접 열면 화면 전환이 두 군데로 갈라진다(2-7)
+- **고르는 동안 판을 세운다.** 카드를 보는 사이에 맞으면 고르는 재미가 아니라 벌이 된다
+- **웨이브 판정보다 카드 판정이 먼저다.** 순서가 반대면 판이 넘어가며 점령률이 0으로 돌아가 카드를 영영 못 받는다
+- 이미 지나친 지점은 다시 주지 않는다(`m_iCardGiven`)
+- 같은 카드가 한 번에 두 장 나오지 않는다(`Pick_Random`). 고르는 재미는 서로 다른 선택지에서 나온다
+- 가중치(`iWeight`)가 0이면 안 나온다 — 카드를 지우지 않고 잠글 때 쓴다
+
+속도·회피·감속은 **누적**된다. 플레이어의 속도는 이제 세 갈래가 곱해진다 —
+거미줄(환경) × 질주(스킬) × 카드. 몬스터 감속도 스킬 × 카드다(2-11).
 
 ### 2-11. 플레이어 스킬 — 효과 모듈 (260912)
 스킬은 **기믹과 같은 조합 구조**다(2-6). `CPlayer`가 `CSkillEffect` 모듈을 하나 들고 있고,

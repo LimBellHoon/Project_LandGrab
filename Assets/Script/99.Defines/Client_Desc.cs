@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 using UnityEngine;
 
@@ -179,6 +180,21 @@ namespace Client
     /// 제목 · 본문 · 버튼 두 개가 전부인 팝업. 무엇을 보여줄지는 전부 이 Desc가 정한다.
     /// 화면마다 클래스를 새로 만들지 않으려는 것 — 팝업이 늘어도 프리팹은 하나면 된다.
     /// </summary>
+    // 260912_카드 3지선다
+    public class CUI_CardPickDesc : CUIDesc
+    {
+        public string                   strTitle { get; set; }
+        public IReadOnlyList<CCardInfo> lstCard  { get; set; }
+        public Action<CCardInfo>        OnPick   { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            lstCard = null;
+            OnPick  = null;
+        }
+    }
+
     public class CUI_PopupDesc : CUIDesc
     {
         public string   strTitle        { get; set; }

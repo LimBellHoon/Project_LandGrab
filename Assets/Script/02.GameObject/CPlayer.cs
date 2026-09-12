@@ -45,6 +45,8 @@ namespace Client
         private float           m_fEnvSpeedScale   = 1f;
         private float           m_fSkillSpeedScale = 1f;
         private float           m_fSkillSpeedTimer;
+        // 260912_카드로 얹은 속도. 판이 끝날 때까지 유지되므로 타이머가 없다.
+        private float           m_fCardSpeedScale = 1f;
 
         public int          LIFE            => m_iLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
@@ -91,6 +93,7 @@ namespace Client
             m_fEnvSpeedScale   = 1f;
             m_fSkillSpeedScale = 1f;
             m_fSkillSpeedTimer = 0f;
+            m_fCardSpeedScale  = 1f;
 
             m_cSkillEffect = CSkillEffect.Create(cDesc.cSkillInfo != null ? cDesc.cSkillInfo.eType
                                                                          : SKILL_TYPE.NONE);
@@ -191,6 +194,26 @@ namespace Client
             Apply_Speed();
         }
 
+        // 260912_카드 효과. 판이 끝날 때까지 유지된다.
+        /// <param name="fRatio"> 더할 비율. 0.15면 15% 빨라진다 </param>
+        public void Add_CardSpeed(float fRatio)
+        {
+            if (fRatio <= 0f)
+                return;
+
+            m_fCardSpeedScale += fRatio;
+            Apply_Speed();
+        }
+
+        /// <param name="fRatio"> 더할 회피 확률. 1을 넘지 않는다 </param>
+        public void Add_Evasion(float fRatio)
+        {
+            if (fRatio <= 0f)
+                return;
+
+            m_fEvasion = Mathf.Clamp01(m_fEvasion + fRatio);
+        }
+
         /// <summary> 잠깐 무적. 이미 더 길게 걸려 있으면 줄이지 않는다. </summary>
         public void Add_Invincible(float fSeconds)
         {
@@ -222,7 +245,7 @@ namespace Client
 
         private void Apply_Speed()
         {
-            m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale;
+            m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale * m_fCardSpeedScale;
         }
 
         // 260904_웨이브가 넘어가면 판을 새로 깔기 때문에 플레이어도 새 시작 칸으로 옮겨야 한다.

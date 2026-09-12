@@ -84,6 +84,18 @@
         HEAL,       // 목숨 1 회복
     }
 
+    // 260912_점령률을 넘길 때마다 셋 중 하나를 고르는 카드
+    /// <summary> 고른 그 판 동안만 유지된다. 스테이지를 나가면 사라진다. </summary>
+    public enum CARD_TYPE
+    {
+        NONE = 0,
+        SHIELD,     // 피격 1회 무효 (즉시)
+        HEAL,       // 목숨 1 회복 (즉시)
+        SPEED,      // 이동 속도 상승
+        EVASION,    // 회피 확률 상승
+        SLOW,       // 몬스터 감속
+    }
+
 
 
     /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>

@@ -50,6 +50,7 @@ namespace Client
             Test_GameConfig();
             Test_CameraFit();
             Test_CameraFollow();
+            Test_CardPick();
             Test_SafeArea();
             Test_SkillTable();
             Test_BattleConsumable();
@@ -810,8 +811,7 @@ namespace Client
                 return;
             }
 
-            const int SHIELD = 401;     // 보호막
-            const int POTION = 402;     // 포션
+            const int SHIELD = 401;     // 보호막 (지금 단 하나뿐인 소모품)
             const int SHOES  = 101;     // 소모품이 아닌 장비
 
             CProgress_Manager cManager = new CProgress_Manager();
@@ -828,14 +828,9 @@ namespace Client
             cManager.Add_Item(SHIELD);
             Check("장착하지 않아도 잡힌다", cManager.Get_BattleConsumable()?.iEquipID ?? 0, SHIELD);
 
-            // 장착한 것이 있으면 그쪽이 우선이다 (여러 개일 때 고르라고 둔 슬롯이다)
-            cManager.Add_Item(POTION);
-            cManager.Try_Equip(POTION);
-            Check("장착한 쪽이 우선", cManager.Get_BattleConsumable()?.iEquipID ?? 0, POTION);
-
-            // 장착한 것을 다 쓰면 남아 있는 다른 것으로 넘어간다
-            cManager.Use_Item(POTION);
-            Check("다 쓰면 남은 것으로", cManager.Get_BattleConsumable()?.iEquipID ?? 0, SHIELD);
+            // 장착하면 그쪽이 우선이다 (여러 개일 때 고르라고 둔 슬롯이다)
+            cManager.Try_Equip(SHIELD);
+            Check("장착한 쪽이 우선", cManager.Get_BattleConsumable()?.iEquipID ?? 0, SHIELD);
 
             cManager.Use_Item(SHIELD);
             Check("전부 떨어지면 null", cManager.Get_BattleConsumable() == null);
@@ -898,6 +893,66 @@ namespace Client
             Check("스킬 ID가 겹치지 않는다", bDup == false);
         }
 
+
+        // 260912_카드 3지선다 — 표가 읽히고, 서로 다른 카드가 뽑히고, 효과가 걸리는지
+        private static void Test_CardPick()
+        {
+            CCSVData_CardInfo cTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");
+            if (cTable == null)
+            {
+                Check("CardInfo.csv 로드", false);
+                return;
+            }
+
+            Check("카드가 셋 이상 있다", cTable.COUNT >= 3);
+
+            for (int i = 0; i < cTable.ALL.Count; ++i)
+            {
+                CCardInfo cInfo = cTable.ALL[i];
+                Check($"{cInfo.strName} 종류가 있다", cInfo.eType != CARD_TYPE.NONE);
+                Check($"{cInfo.strName} 이름이 있다", string.IsNullOrEmpty(cInfo.strName) == false);
+            }
+
+            // 한 번에 같은 카드가 두 장 나오면 고르는 재미가 없다
+            List<CCardInfo> lstPick = new List<CCardInfo>();
+            bool bDup = false;
+            for (int n = 0; n < 200; ++n)
+            {
+                cTable.Pick_Random(3, lstPick);
+                if (lstPick.Count != 3)
+                    bDup = true;
+
+                for (int i = 0; i < lstPick.Count; ++i)
+                {
+                    for (int j = i + 1; j < lstPick.Count; ++j)
+                    {
+                        if (lstPick[i].iCardID == lstPick[j].iCardID)
+                            bDup = true;
+                    }
+                }
+            }
+
+            Check("같은 카드가 겹쳐 나오지 않는다", bDup == false);
+
+            // 표에 있는 것보다 많이 달라고 해도 있는 만큼만 준다
+            cTable.Pick_Random(99, lstPick);
+            Check("표보다 많이 뽑지 않는다", lstPick.Count, cTable.COUNT);
+
+            // 가중치가 0인 카드는 안 나온다
+            CCSVData_CardInfo cZero = new CCSVData_CardInfo();
+            string strTab = ((char)9).ToString();    // 탭과 개행을 escape 없이 만든다
+            string strNl  = ((char)10).ToString();
+
+            cZero.Read_CSVData(new TextAsset(
+                  string.Join(strTab, "iCardID", "eType", "strName", "strDesc",
+                                      "fValue", "iWeight", "NONE") + strNl
+                + string.Join(strTab, "1", "SHIELD", "보호막", "설명", "1", "0", "") + strNl
+                + string.Join(strTab, "2", "HEAL", "회복", "설명", "1", "5", "")));
+
+            cZero.Pick_Random(2, lstPick);
+            Check("가중치 0은 안 뽑힌다", lstPick.Count, 1);
+            Check("남은 카드가 뽑힌다", lstPick[0].eType == CARD_TYPE.HEAL);
+        }
 
         // 260912_추적 카메라 — 플레이어를 따라가되 맵 밖이 보이면 안 된다
         private static void Test_CameraFollow()

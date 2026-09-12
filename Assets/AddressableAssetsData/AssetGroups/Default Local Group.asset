@@ -63,6 +63,12 @@ MonoBehaviour:
     m_SerializedLabels:
     - Prefabs
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 75607a062d4e698429e9cfdd74c0b828
+    m_Address: CardInfo
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - CSV
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 7a2f9c14e63b0d84fb5e28c71a934d60
     m_Address: Prefab_Enemy
     m_ReadOnly: 0
@@ -119,6 +125,12 @@ MonoBehaviour:
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: bce0f770c999fa34a8041c58a0ca6a2c
     m_Address: Prefab_UI_Upgrade
+    m_ReadOnly: 0
+    m_SerializedLabels:
+    - Prefabs
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: c5eb058e8502ca447aa6e4f94ee5ac88
+    m_Address: Prefab_UI_CardPick
     m_ReadOnly: 0
     m_SerializedLabels:
     - Prefabs

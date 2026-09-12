@@ -54,7 +54,9 @@ namespace Client
 
         public string   strShapeMask;               // 맵 모양 텍스처. 비어 있으면 직사각형 전체
         // 260905_별 1개당 주는 코인. 최고 기록을 갱신한 만큼만 지급한다.
-        public int      iCoinPerStar;
+        public int              iCoinPerStar;
+        // 260912_이 점령률을 넘을 때마다 카드를 한 번 고른다. 웨이브가 아니라 판 전체 기준이다.
+        public List<float>      lstCardRatio = new List<float>();
         public List<string>     lstLayerTex = new List<string>();
         public List<CWaveInfo>  lstWave     = new List<CWaveInfo>();
 
@@ -121,6 +123,7 @@ namespace Client
                 iWaveCount      = CCSV_Utility.To_Int(arrField, 8, 1),
                 strShapeMask    = CCSV_Utility.To_String(arrField, 9),
                 iCoinPerStar    = CCSV_Utility.To_Int(arrField, 14, 50),
+                lstCardRatio    = CCSV_Utility.To_FloatList(arrField, 15),
             };
 
             if (cInfo.iMapID <= 0)

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 using UnityEngine;
 
@@ -30,6 +31,8 @@ namespace Client
         private const string PREFAB_UI_UPGRADE      = "Prefab_UI_Upgrade";
         private const string PREFAB_UI_SHOP         = "Prefab_UI_Shop";
         private const string PREFAB_UI_INVENTORY    = "Prefab_UI_Inventory";
+        private const string PREFAB_UI_CARDPICK     = "Prefab_UI_CardPick";
+        private const int    CARD_PICK_COUNT        = 3;     // 260912_한 번에 보여 줄 카드 수
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
         // m_srBackground = 점령하면 드러날 이미지(reveal), m_srOverlay = 그 위를 덮는 가림막(cover).
@@ -59,10 +62,12 @@ namespace Client
         private CCSVData_UpgradeInfo m_cUpgradeTable;   // 260905_능력치 강화 표
         private CCSVData_SkillInfo  m_cSkillTable;      // 260905_스킬 표
         private CCSVData_EquipInfo  m_cEquipTable;      // 260905_장비 표
+        private CCSVData_CardInfo   m_cCardTable;       // 260912_카드 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cInGameUI;
         private CUI                 m_cPopupUI;
+        private CUI                 m_cCardUI;      // 260912_카드 3지선다
         private bool                m_bReady;
         private bool                m_bLastCleared;
         // 260905_결과 화면에 넘길 별 정보
@@ -230,6 +235,8 @@ namespace Client
             // 260905_스킬 표도 없으면 스킬 없이 진행한다.
             m_cSkillTable = m_cGameInstance.Get_CSVData(CCSVData_SkillInfo.CSV_KEY) as CCSVData_SkillInfo;
             m_cEquipTable = m_cGameInstance.Get_CSVData(CCSVData_EquipInfo.CSV_KEY) as CCSVData_EquipInfo;
+            // 260912_카드 표가 없으면 카드만 안 나오고 나머지는 그대로 돈다.
+            m_cCardTable  = m_cGameInstance.Get_CSVData(CCSVData_CardInfo.CSV_KEY) as CCSVData_CardInfo;
 
             m_cUpgradeTable = m_cGameInstance.Get_CSVData(CCSVData_UpgradeInfo.CSV_KEY) as CCSVData_UpgradeInfo;
             if (m_cUpgradeTable == null)
@@ -331,6 +338,52 @@ namespace Client
 
         // 260905_장착한 스킬을 골라 준다. 스킬은 통틀어 하나만 낌다.
         // 아직 골라 놓은 게 없으면 표의 첫 액티브 스킬을 기본으로 준다.
+        // 260912_점령률이 지급 지점을 넘었다. 고르는 동안은 판을 세운다 —
+        // 카드를 보는 사이에 몬스터에게 맞으면 고르는 재미가 아니라 벌이 된다.
+        private void On_CardReady()
+        {
+            if (m_cCardTable == null || m_cCardTable.COUNT == 0)
+                return;
+
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_CARDPICK) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_CARDPICK}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            List<CCardInfo> lstCard = m_cCardTable.Pick_Random(CARD_PICK_COUNT);
+            if (lstCard.Count == 0)
+                return;
+
+            m_cStageManager.Set_Pause(true);
+            (m_cInGameUI as CUI_InGame)?.Set_Interactable(false);
+
+            CUI_CardPickDesc cDesc = new CUI_CardPickDesc
+            {
+                eObjectType = OBJECT_TYPE.UI_POPUP,
+                strTitle    = "카드를 고르세요",
+                lstCard     = lstCard,
+                OnPick      = On_CardPicked,
+            };
+
+            m_cCardUI = m_cGameInstance.Open_UI<CUI_CardPick>(cDesc, m_trUIPopup);
+        }
+
+        private void On_CardPicked(CCardInfo cInfo)
+        {
+            m_cStageManager.Apply_Card(cInfo);
+
+            if (m_cCardUI != null)
+            {
+                m_cGameInstance.Close_UI(m_cCardUI);
+                m_cCardUI = null;
+            }
+
+            (m_cInGameUI as CUI_InGame)?.Set_Interactable(true);
+            m_cStageManager.Set_Pause(false);
+        }
+
         private CSkillInfo Get_EquippedSkill()
         {
             if (m_cSkillTable == null)
@@ -480,6 +533,7 @@ namespace Client
             m_cCameraFitter.Fit(cGrid.WORLD_SIZE, cGrid.WORLD_CENTER, vStart);
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
+            m_cStageManager.OnCardReady    += On_CardReady;
 
             if (m_cStageManager.Start_Stage() == false)
             {

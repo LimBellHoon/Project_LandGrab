@@ -48,6 +48,11 @@ namespace Client
         // 도중에 새로 소환되는 몬스터에게도 같은 배율을 걸어야 해서 값을 남겨 둔다.
         private float                       m_fEnemySlowScale = 1f;
         private float                       m_fEnemySlowTimer;
+        // 260912_카드로 얹은 몬스터 감속. 판이 끝날 때까지 유지되므로 타이머가 없다.
+        private float                       m_fEnemyCardSlow = 1f;
+
+        // 260912_카드 지급 — 이미 넘긴 지점은 다시 주지 않는다.
+        private int                         m_iCardGiven;
 
         // 260904_기믹이 소환한 것들. 수명과 충돌을 여기서 한꺼번에 본다.
         private readonly List<CProjectile>  m_lstProjectile = new List<CProjectile>();
@@ -70,6 +75,10 @@ namespace Client
 
         // 260904_클리어/실패를 밖(CGameManager)이 알아야 진행도를 저장하고 선택 화면으로 돌아갈 수 있다.
         public event Action<STAGE_STATE> OnStateChanged;
+
+        // 260912_점령률이 카드 지급 지점을 넘었다. 화면을 띄우는 것은 CGameManager가 한다 —
+        // 스테이지가 UI를 직접 열면 화면 전환이 두 군데로 갈라진다(2-7).
+        public event Action OnCardReady;
 
         public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
@@ -160,6 +169,9 @@ namespace Client
             m_eWavePhase   = WAVE_PHASE.NONE;
             m_fEnemySlowScale = 1f;     // 260912_다음 판에 감속이 남아 있지 않게
             m_fEnemySlowTimer = 0f;
+            m_fEnemyCardSlow  = 1f;
+            m_iCardGiven      = 0;
+            OnCardReady       = null;
 
             Collect_Player();
             Collect_Enemies();
@@ -378,6 +390,61 @@ namespace Client
         // 260905_소모품은 인벤토리에서 개수를 깎는 쪽(CGameManager)이 먼저 판단하고,
         // 실제 효과만 여기서 플레이어에게 건다.
         /// <returns> 효과를 걸었으면 true </returns>
+        // 260912_카드 — 점령률이 정해 둔 지점을 넘으면 한 번씩 준다.
+        // 이미 지나친 지점은 다시 주지 않는다. 웨이브를 넘겨 점령률이 0으로 돌아가도 마찬가지다.
+        private void Check_CardReady()
+        {
+            if (OnCardReady == null || m_cMapInfo == null)
+                return;
+
+            List<float> lstRatio = m_cMapInfo.lstCardRatio;
+            if (m_iCardGiven >= lstRatio.Count)
+                return;
+
+            if (m_cGrid.OWNED_RATIO < lstRatio[m_iCardGiven])
+                return;
+
+            ++m_iCardGiven;
+            OnCardReady.Invoke();
+        }
+
+        // 260912_카드 효과. 고른 판이 끝날 때까지 유지된다.
+        // 즉시 효과(보호막 / 회복)와 누적 효과(속도 / 회피 / 감속)를 한곳에서 본다.
+        /// <returns> 효과를 걸었으면 true </returns>
+        public bool Apply_Card(CCardInfo cInfo)
+        {
+            if (cInfo == null || m_cPlayer == null)
+                return false;
+
+            switch (cInfo.eType)
+            {
+                case CARD_TYPE.SHIELD:
+                    m_cPlayer.Add_Shield();
+                    return true;
+
+                case CARD_TYPE.HEAL:
+                    m_cPlayer.Heal(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    return true;
+
+                case CARD_TYPE.SPEED:
+                    m_cPlayer.Add_CardSpeed(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.EVASION:
+                    m_cPlayer.Add_Evasion(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.SLOW:
+                    // 곱해서 쌓는다 — 여러 장을 먹어도 0으로 떨어지지 않는다.
+                    m_fEnemyCardSlow = Mathf.Clamp(m_fEnemyCardSlow * cInfo.fValue, 0.15f, 1f);
+                    Apply_EnemySpeed();
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+
         public bool Apply_Consumable(CONSUME_EFFECT eEffect)
         {
             if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true || m_cPlayer == null)
@@ -404,8 +471,16 @@ namespace Client
             m_fEnemySlowScale = Mathf.Clamp(fScale, 0.1f, 1f);
             m_fEnemySlowTimer = Mathf.Max(m_fEnemySlowTimer, fDuration);
 
+            Apply_EnemySpeed();
+        }
+
+        // 260912_감속은 두 갈래다 — 스킬(한동안)과 카드(판 내내). 곱해서 넣는다.
+        private void Apply_EnemySpeed()
+        {
+            float fScale = m_fEnemySlowScale * m_fEnemyCardSlow;
+
             for (int i = 0; i < m_lstEnemy.Count; ++i)
-                m_lstEnemy[i].Set_SpeedScale(m_fEnemySlowScale);
+                m_lstEnemy[i].Set_SpeedScale(fScale);
         }
 
         private void Tick_EnemySlow(float fDeltaTime)
@@ -418,8 +493,7 @@ namespace Client
                 return;
 
             m_fEnemySlowScale = 1f;
-            for (int i = 0; i < m_lstEnemy.Count; ++i)
-                m_lstEnemy[i].Set_SpeedScale(1f);
+            Apply_EnemySpeed();
         }
 
 
@@ -599,8 +673,7 @@ namespace Client
             cEnemy.Set_GimmickHost(this);
 
             // 260912_감속이 걸려 있는 동안 소환된 몬스터만 멀쩡하면 스킬이 반쪽이 된다.
-            if (m_fEnemySlowTimer > 0f)
-                cEnemy.Set_SpeedScale(m_fEnemySlowScale);
+            cEnemy.Set_SpeedScale(m_fEnemySlowScale * m_fEnemyCardSlow);
             m_lstEnemy.Add(cEnemy);
         }
 
@@ -847,6 +920,10 @@ namespace Client
         {
             if (m_eState != STAGE_STATE.PLAYING)
                 return;
+
+            // 260912_웨이브를 넘기기 전에 카드부터 본다.
+            // 순서가 반대면 판이 넘어가면서 점령률이 초기화돼 카드를 영영 못 받는다.
+            Check_CardReady();
 
             CWaveInfo cWave = m_cMapInfo.Get_Wave(m_iWave);
             if (cWave != null && m_cGrid.OWNED_RATIO >= cWave.fClearRatio)
