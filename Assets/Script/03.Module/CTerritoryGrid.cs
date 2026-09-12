@@ -41,6 +41,9 @@ namespace Client
 
         // 260904_맵 모양 마스크. Reset이 BLOCK을 되살려야 하므로 셀 상태와 따로 들고 있는다.
         private bool[]          m_arrBlocked;
+        // 260912_시작할 때 깔아 준 테두리. 플레이어가 직접 딴 땅과 구분한다.
+        // 안전 지대인 것은 같지만, 가림막에 구멍을 내지 않아 시작 화면이 전부 덮인다.
+        private bool[]          m_arrStartOwned;
 
         // 260904_바뀐 칸만 다시 그리기 위한 목록.
         // 그리는 중에는 매 프레임 한두 칸만 바뀌는데 전체를 다시 찍으면 모바일에서 낭비가 크다.
@@ -116,6 +119,9 @@ namespace Client
         /// </summary>
         public void Reset(int iBorderThick)
         {
+            if (m_arrStartOwned == null || m_arrStartOwned.Length != m_arrCell.Length)
+                m_arrStartOwned = new bool[m_arrCell.Length];
+
             m_lstTrail.Clear();
             m_iOwnedCount    = 0;
             m_iPlayableCount = 0;
@@ -138,6 +144,8 @@ namespace Client
 
                     bool bBorder = x < iBorderThick || y < iBorderThick
                                 || x >= m_iWidth - iBorderThick || y >= m_iHeight - iBorderThick;
+
+                    m_arrStartOwned[iIndex] = bBorder;
 
                     if (bBorder == true)
                     {
@@ -221,6 +229,13 @@ namespace Client
         public CELL_STATE Get_Cell(int iIndex) => m_arrCell[iIndex];
 
         // 260904_맵 모양 마스크로 잘라낸 칸 — 플레이어도 몬스터도 못 들어간다.
+        /// <summary> 260912_시작할 때 깔아 준 테두리인가 (플레이어가 딴 땅이 아니다). </summary>
+        public bool Is_StartOwned(int iIndex)
+        {
+            return m_arrStartOwned != null && iIndex >= 0 && iIndex < m_arrStartOwned.Length
+                && m_arrStartOwned[iIndex] == true;
+        }
+
         public bool Is_Blocked(int x, int y) => Get_Cell(x, y) == CELL_STATE.BLOCK;
         public bool Is_Blocked(Vector2Int vCell) => Is_Blocked(vCell.x, vCell.y);
 

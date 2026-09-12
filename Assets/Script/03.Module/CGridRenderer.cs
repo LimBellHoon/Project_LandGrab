@@ -340,7 +340,7 @@ namespace Client
                     int iRow = py * m_iTexWidth;
 
                     for (int px = px0; px < px1; ++px)
-                        m_arrPixel[iRow + px] = Get_PixelColor(eState, iRow + px);
+                        m_arrPixel[iRow + px] = Get_PixelColor(eState, i, iRow + px);
                 }
             }
 
@@ -377,7 +377,7 @@ namespace Client
 
                     for (int dx = 0; dx < iW; ++dx)
                     {
-                        Color32 cColor = Get_PixelColor(eState, iRow + px0 + dx);
+                        Color32 cColor = Get_PixelColor(eState, iIndex, iRow + px0 + dx);
                         m_arrPixel[iRow + px0 + dx] = cColor;
                         m_arrCellPixel[dy * iW + dx] = cColor;
                     }
@@ -389,11 +389,16 @@ namespace Client
             m_texMask.Apply(false);
         }
 
-        private Color32 Get_PixelColor(CELL_STATE eState, int iPixel)
+        // 260912_시작 테두리는 점령 상태지만 뚫지 않는다.
+        // 스테이지에 들어서자마자 보상이 테두리처럼 비치면 '드러내는 재미'가 먼저 새어 나간다.
+        // 플레이어가 직접 딴 땅만 구멍이 난다.
+        private Color32 Get_PixelColor(CELL_STATE eState, int iCellIndex, int iPixel)
         {
             switch (eState)
             {
-                case CELL_STATE.OWNED: return COLOR_OWNED;
+                case CELL_STATE.OWNED:
+                    return m_cGrid.Is_StartOwned(iCellIndex) == true ? m_arrCoverPixel[iPixel]
+                                                                    : COLOR_OWNED;
                 case CELL_STATE.TRAIL: return COLOR_TRAIL;
                 case CELL_STATE.BLOCK: return COLOR_BLOCK;
                 default:               return m_arrCoverPixel[iPixel];
