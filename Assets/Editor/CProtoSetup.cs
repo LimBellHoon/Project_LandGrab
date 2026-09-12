@@ -614,7 +614,12 @@ namespace Client
                     Color cColor = Color.Lerp(cBase, cBase * 1.4f, fStripe * 0.4f);
 
                     // 몇 번째 장인지 한눈에 보이도록 큰 숫자 대신 동심원 개수로 표시한다.
-                    float fDist = Vector2.Distance(new Vector2(fU, fT), new Vector2(0.5f, 0.6f));
+                    // 260912_가로를 비율만큼 늘려서 재야 화면에서 '진짜 원'으로 보인다.
+                    // 정규화 좌표에서 그냥 재면 세로로 긴 타원이 되어, 그림이 눌린 것인지
+                    // 원래 그렇게 그린 것인지 구분할 수 없다 — 눈으로 확인할 수 있는 기준을 남긴다.
+                    float fAspect = (float)iWidth / iHeight;
+                    float fDist = Vector2.Distance(new Vector2(fU * fAspect, fT),
+                                                   new Vector2(0.5f * fAspect, 0.6f));
                     float fRing = Mathf.Repeat(fDist * iStep * 14f, 1f);
                     if (fDist < 0.26f && fRing < 0.35f)
                         cColor = Color.Lerp(cColor, Color.white, 0.45f);

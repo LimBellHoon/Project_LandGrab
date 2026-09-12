@@ -53,6 +53,7 @@ namespace Client
             Test_SkillTable();
             Test_BattleConsumable();
             Test_CoverResolution();
+            Test_LayerBounds();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -666,6 +667,51 @@ namespace Client
             Check("비율 0도 견딘다", CCameraFitter.Calc_Size(vMap1, 0f, 0f, 0f) > 0f);
         }
 
+
+        // 260912_가림막과 보상이 화면에서 정확히 같은 자리·같은 크기인지.
+        // 눈으로는 테두리 한 줄만 보여 맞춰 볼 특징이 없다. 월드 경계를 숫자로 본다.
+        private static void Test_LayerBounds()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(60, 100, 0.12f, new Vector2(-3.6f, -6f), 2, null);
+
+            GameObject goCover  = new GameObject("Cover_Bounds");
+            GameObject goReveal = new GameObject("Reveal_Bounds");
+            SpriteRenderer srCover  = goCover.AddComponent<SpriteRenderer>();
+            SpriteRenderer srReveal = goReveal.AddComponent<SpriteRenderer>();
+
+            CGridRenderer cRenderer = new CGridRenderer();
+            cRenderer.Initialize(cGrid, srCover, srReveal);
+
+            // 일부러 크기가 다른 두 장을 넣는다.
+            // 원본 크기가 어떻든 화면에서는 같아야 한다는 것이 이 검사의 요점이다.
+            cRenderer.Set_WaveTexture(Make_TestTexture(540, 900), Make_TestTexture(1080, 1800));
+
+            Bounds bCover  = srCover.bounds;
+            Bounds bReveal = srReveal.bounds;
+
+            Check("가로가 같다", Mathf.RoundToInt(bCover.size.x * 1000f),
+                                 Mathf.RoundToInt(bReveal.size.x * 1000f));
+            Check("세로가 같다", Mathf.RoundToInt(bCover.size.y * 1000f),
+                                 Mathf.RoundToInt(bReveal.size.y * 1000f));
+            Check("중심이 같다",  Mathf.RoundToInt(bCover.center.x * 1000f),
+                                 Mathf.RoundToInt(bReveal.center.x * 1000f));
+            Check("중심 높이가 같다", Mathf.RoundToInt(bCover.center.y * 1000f),
+                                      Mathf.RoundToInt(bReveal.center.y * 1000f));
+
+            // 그리고 그 크기가 곧 그리드 크기여야 한다 (7.2 x 12.0)
+            Vector2 vWorld = cGrid.WORLD_SIZE;
+            Check("그리드 가로와 같다", Mathf.RoundToInt(bCover.size.x * 1000f),
+                                        Mathf.RoundToInt(vWorld.x * 1000f));
+            Check("그리드 세로와 같다", Mathf.RoundToInt(bCover.size.y * 1000f),
+                                        Mathf.RoundToInt(vWorld.y * 1000f));
+            Check("그리드 중심과 같다", Mathf.RoundToInt(bCover.center.x * 1000f),
+                                        Mathf.RoundToInt(cGrid.WORLD_CENTER.x * 1000f));
+
+            cRenderer.Release();
+            Object.DestroyImmediate(goCover);
+            Object.DestroyImmediate(goReveal);
+        }
 
         // 260912_가림막 사본은 원본과 같은 해상도여야 한다.
         // 한 장이 보상이었다가 다음 웨이브에 가림막이 되므로, 줄여 찍으면 같은 그림이
