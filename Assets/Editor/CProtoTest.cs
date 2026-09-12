@@ -52,6 +52,7 @@ namespace Client
             Test_SafeArea();
             Test_SkillTable();
             Test_BattleConsumable();
+            Test_CoverResolution();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -665,6 +666,90 @@ namespace Client
             Check("비율 0도 견딘다", CCameraFitter.Calc_Size(vMap1, 0f, 0f, 0f) > 0f);
         }
 
+
+        // 260912_가림막 사본은 원본과 같은 해상도여야 한다.
+        // 한 장이 보상이었다가 다음 웨이브에 가림막이 되므로, 줄여 찍으면 같은 그림이
+        // 갑자기 거칠어져 크기가 달라진 것처럼 보인다.
+        private static void Test_CoverResolution()
+        {
+            const int SRC_W = 540;
+            const int SRC_H = 960;
+
+            // 테두리 두께를 크게 잡아 모든 칸이 점령된 상태로 만든다.
+            // 그래야 '빈틈 없이 덮였는가'를 픽셀 하나까지 볼 수 있다.
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            Check("그리드 초기화", cGrid.Initialize(6, 10, 0.12f, Vector2.zero, 6, null));
+
+            GameObject goCover = new GameObject("Cover_Test");
+            SpriteRenderer srCover = goCover.AddComponent<SpriteRenderer>();
+
+            CGridRenderer cRenderer = new CGridRenderer();
+            Check("렌더러 초기화", cRenderer.Initialize(cGrid, srCover, null));
+
+            // 원본이 없을 때는 기본 해상도(PIXEL_PER_CELL)로 잡힌다
+            Texture2D texBefore = srCover.sprite.texture;
+            Check("원본 없으면 기본 해상도", texBefore.width, 6 * 4);
+
+            Texture2D texCover = Make_TestTexture(SRC_W, SRC_H);
+            cRenderer.Set_WaveTexture(texCover, null);
+
+            Texture2D texMask = srCover.sprite.texture;
+            Check("가림막 원본 가로를 따라간다", texMask.width, SRC_W);
+            Check("가림막 원본 세로를 따라간다", texMask.height, SRC_H);
+
+            // 칸 수로 나누어떨어지지 않는다(960 / 10칸은 96, 540 / 6칸은 90 — 여기선 떨어지지만
+            // 아래 60x100 검사에서 9.6이 나온다). 빈틈 검사가 본론이다.
+            Color32[] arrPixel = texMask.GetPixels32();
+            int iHole = 0;
+            for (int i = 0; i < arrPixel.Length; ++i)
+            {
+                if (arrPixel[i].a != 0)
+                    ++iHole;
+            }
+
+            Check("전부 점령이면 빈틈 없이 뚫린다", iHole, 0);
+
+            // 실제 맵 1 크기 — 960 / 100칸 = 9.6이라 칸 높이가 9와 10을 오간다.
+            // 여기서 칸 경계를 잘못 잡으면 덮이지 않은 줄이 남는다.
+            CTerritoryGrid cGrid2 = new CTerritoryGrid();
+            cGrid2.Initialize(60, 100, 0.12f, Vector2.zero, 100, null);
+
+            GameObject goCover2 = new GameObject("Cover_Test2");
+            SpriteRenderer srCover2 = goCover2.AddComponent<SpriteRenderer>();
+
+            CGridRenderer cRenderer2 = new CGridRenderer();
+            cRenderer2.Initialize(cGrid2, srCover2, null);
+            cRenderer2.Set_WaveTexture(Make_TestTexture(SRC_W, SRC_H), null);
+
+            Color32[] arrPixel2 = srCover2.sprite.texture.GetPixels32();
+            int iHole2 = 0;
+            for (int i = 0; i < arrPixel2.Length; ++i)
+            {
+                if (arrPixel2[i].a != 0)
+                    ++iHole2;
+            }
+
+            Check("나누어떨어지지 않아도 빈틈 없다", iHole2, 0);
+
+            cRenderer.Release();
+            cRenderer2.Release();
+            Object.DestroyImmediate(goCover);
+            Object.DestroyImmediate(goCover2);
+            Object.DestroyImmediate(texCover);
+        }
+
+        private static Texture2D Make_TestTexture(int iWidth, int iHeight)
+        {
+            Texture2D tex = new Texture2D(iWidth, iHeight, TextureFormat.RGBA32, false);
+            Color32[] arrPixel = new Color32[iWidth * iHeight];
+
+            for (int i = 0; i < arrPixel.Length; ++i)
+                arrPixel[i] = new Color32(200, 100, 50, 255);
+
+            tex.SetPixels32(arrPixel);
+            tex.Apply();
+            return tex;
+        }
 
         // 260912_전투 소모품은 장착이 아니라 보유 기준이다.
         // 사 놓고 장착을 잊으면 전투에서 버튼이 안 떠 버렸다.

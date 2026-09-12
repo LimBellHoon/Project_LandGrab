@@ -8,16 +8,21 @@ namespace Client
     /// 화면은 두 장으로 이뤄진다.
     ///   · srReveal — 이번 웨이브를 다 점령하면 드러날 이미지. 항상 전체가 깔려 있다.
     ///   · srCover  — 그 위를 덮는 가림막. 점령한 칸만 알파 0으로 뚫어 아래를 보여준다.
-    /// 가림막 텍스처는 셀 격자에 맞춰 다시 찍은 사본이다. 원본을 그대로 쓰면 셀 단위로
-    /// 구멍을 낼 수 없기 때문 — 셰이더 없이 SpriteRenderer만으로 해결하려는 제약 때문이다.
+    /// 가림막 텍스처는 원본을 다시 찍은 사본이다. 원본을 그대로 쓰면 셀 단위로 구멍을 낼 수 없기 때문 —
+    /// 셰이더 없이 SpriteRenderer만으로 해결하려는 제약 때문이다.
     ///
     /// N웨이브의 가림막은 이미지 스택의 [N-1]이고, 그걸 다 걷으면 [N]이 나온다.
     /// 그래서 1웨이브의 가림막이 곧 '마스크'다 (MapInfo.csv의 strLayerTex 참고).
+    ///
+    /// 260912_사본은 원본과 같은 해상도로 만든다.
+    /// 한 장이 이번 웨이브에는 보상(reveal)이었다가 다음 웨이브에는 가림막(cover)이 되므로,
+    /// 사본을 더 낮은 해상도로 찍으면 같은 그림이 역할만 바뀌었는데 갑자기 거칠어져
+    /// 크기가 달라진 것처럼 보인다. 두 자리에서 똑같이 보이는 것이 이 연출의 전제다.
     /// </summary>
     public class CGridRenderer
     {
-        // 셀 하나를 텍스처 몇 픽셀로 찍을지. 1이면 가림막 그림이 셀 크기로 뭉개진다.
-        // 올릴수록 가림막이 선명해지지만 갱신 비용과 메모리가 제곱으로 는다.
+        // 가림막 원본이 없을 때만 쓰는 기본 해상도 (셀 하나를 몇 픽셀로 찍을지).
+        // 원본이 있으면 그 해상도를 그대로 따라가므로 이 값은 쓰이지 않는다.
         private const int PIXEL_PER_CELL = 4;
 
         private static readonly Color32 COLOR_OWNED     = new Color32(0, 0, 0, 0);          // 뚫린 칸
@@ -35,7 +40,7 @@ namespace Client
 
         private Color32[]   m_arrPixel;         // 마스크 전체 픽셀
         private Color32[]   m_arrCoverPixel;    // 가림막 이미지를 마스크 해상도로 미리 샘플링해 둔 것
-        private Color32[]   m_arrCellPixel;     // 셀 한 칸(PIXEL_PER_CELL 제곱) 부분 갱신용 버퍼
+        private Color32[]   m_arrCellPixel;     // 셀 한 칸 부분 갱신용 버퍼
 
         private int m_iTexWidth;
         private int m_iTexHeight;
@@ -58,31 +63,10 @@ namespace Client
             m_srCover   = srCover;
             m_srReveal  = srReveal;
 
-            m_iTexWidth  = cGrid.WIDTH * PIXEL_PER_CELL;
-            m_iTexHeight = cGrid.HEIGHT * PIXEL_PER_CELL;
-
-            m_texMask = new Texture2D(m_iTexWidth, m_iTexHeight, TextureFormat.RGBA32, false)
-            {
-                name        = "Tex_TerritoryMask",
-                filterMode  = FilterMode.Point,     // 셀 경계가 뭉개지지 않도록
-                wrapMode    = TextureWrapMode.Clamp,
-            };
-
-            m_arrPixel      = new Color32[m_iTexWidth * m_iTexHeight];
-            m_arrCoverPixel = new Color32[m_iTexWidth * m_iTexHeight];
-            m_arrCellPixel  = new Color32[PIXEL_PER_CELL * PIXEL_PER_CELL];
-
-            Fill_Cover(null);
-
-            // pixelsPerUnit을 '셀 하나당 픽셀 수 / 셀 크기'로 두면 스프라이트 월드 크기 = 그리드 월드 크기.
-            m_spMask = Sprite.Create(m_texMask, new Rect(0f, 0f, m_iTexWidth, m_iTexHeight),
-                                     new Vector2(0.5f, 0.5f), PIXEL_PER_CELL / cGrid.CELL_SIZE,
-                                     0u, SpriteMeshType.FullRect);
-            m_spMask.name = "Sprite_TerritoryMask";
-
-            m_srCover.sprite = m_spMask;
-            m_srCover.transform.position = new Vector3(cGrid.WORLD_CENTER.x, cGrid.WORLD_CENTER.y, 0f);
-            m_srCover.transform.localScale = Vector3.one;
+            // 아직 가림막 원본을 모르므로 기본 해상도로 잡아 둔다.
+            // 첫 Set_WaveTexture에서 원본 크기에 맞춰 다시 잡힌다.
+            Build_Mask(cGrid.WIDTH * PIXEL_PER_CELL, cGrid.HEIGHT * PIXEL_PER_CELL);
+            Fill_CoverFallback();
 
             Refresh_All();
             return true;
@@ -92,8 +76,17 @@ namespace Client
         // 텍스처만 파괴하면 스프라이트가 그대로 새고, 렌더러는 파괴된 텍스처를 물고 깨져 보인다.
         public void Release()
         {
-            Clear_Sprite(m_srCover, ref m_spMask);
+            Clear_Mask();
             Clear_Sprite(m_srReveal, ref m_spReveal);
+
+            m_cGrid     = null;
+            m_srCover   = null;
+            m_srReveal  = null;
+        }
+
+        private void Clear_Mask()
+        {
+            Clear_Sprite(m_srCover, ref m_spMask);
 
             if (m_texMask != null)
                 Object.Destroy(m_texMask);
@@ -102,9 +95,6 @@ namespace Client
             m_arrPixel      = null;
             m_arrCoverPixel = null;
             m_arrCellPixel  = null;
-            m_cGrid         = null;
-            m_srCover       = null;
-            m_srReveal      = null;
         }
 
         private static void Clear_Sprite(SpriteRenderer srTarget, ref Sprite spOwned)
@@ -116,6 +106,56 @@ namespace Client
                 Object.Destroy(spOwned);
 
             spOwned = null;
+        }
+
+        // 260912_마스크 텍스처를 그 해상도로 새로 만든다.
+        // 웨이브마다 원본 크기가 같으면 한 번만 돌고, 다르면 그때만 다시 만든다.
+        private void Build_Mask(int iTexWidth, int iTexHeight)
+        {
+            // 칸 하나에 최소 1픽셀은 있어야 구멍을 낼 수 있다.
+            m_iTexWidth  = Mathf.Max(m_cGrid.WIDTH, iTexWidth);
+            m_iTexHeight = Mathf.Max(m_cGrid.HEIGHT, iTexHeight);
+
+            Clear_Mask();
+
+            m_texMask = new Texture2D(m_iTexWidth, m_iTexHeight, TextureFormat.RGBA32, false)
+            {
+                name        = "Tex_TerritoryMask",
+                filterMode  = FilterMode.Point,     // 셀 경계가 뭉개지지 않도록
+                wrapMode    = TextureWrapMode.Clamp,
+            };
+
+            m_arrPixel      = new Color32[m_iTexWidth * m_iTexHeight];
+            m_arrCoverPixel = new Color32[m_iTexWidth * m_iTexHeight];
+
+            // 칸마다 픽셀 수가 1씩 다를 수 있어(나누어떨어지지 않는 경우) 가장 큰 칸에 맞춰 둔다.
+            int iMaxW = Mathf.CeilToInt((float)m_iTexWidth / m_cGrid.WIDTH) + 1;
+            int iMaxH = Mathf.CeilToInt((float)m_iTexHeight / m_cGrid.HEIGHT) + 1;
+            m_arrCellPixel = new Color32[iMaxW * iMaxH];
+
+            m_spMask = Sprite.Create(m_texMask, new Rect(0f, 0f, m_iTexWidth, m_iTexHeight),
+                                     new Vector2(0.5f, 0.5f), 100f, 0u, SpriteMeshType.FullRect);
+            m_spMask.name = "Sprite_TerritoryMask";
+            m_srCover.sprite = m_spMask;
+
+            Fit_ToGrid(m_srCover, m_spMask);
+        }
+
+        // 260912_가림막과 보상은 반드시 같은 자리에 같은 크기로 놓인다.
+        // 한쪽만 원본 비율을 지키면 역할이 바뀔 때 그림이 어긋나 보인다.
+        private void Fit_ToGrid(SpriteRenderer srTarget, Sprite spSprite)
+        {
+            if (srTarget == null || spSprite == null)
+                return;
+
+            Vector2 vSpriteSize = spSprite.bounds.size;
+            if (vSpriteSize.x <= 0f || vSpriteSize.y <= 0f)
+                return;
+
+            Vector2 vWorldSize = m_cGrid.WORLD_SIZE;
+            srTarget.transform.position   = new Vector3(m_cGrid.WORLD_CENTER.x, m_cGrid.WORLD_CENTER.y, 0f);
+            srTarget.transform.localScale = new Vector3(vWorldSize.x / vSpriteSize.x,
+                                                        vWorldSize.y / vSpriteSize.y, 1f);
         }
         #endregion 초기화 / 해제
 
@@ -159,15 +199,7 @@ namespace Client
             m_spReveal.name = "Sprite_Reveal";
             m_srReveal.sprite = m_spReveal;
 
-            // 보상 이미지를 그리드와 정확히 같은 크기로 맞춘다 (원본 비율은 무시하고 꽉 채운다).
-            Vector2 vSpriteSize = m_spReveal.bounds.size;
-            if (vSpriteSize.x <= 0f || vSpriteSize.y <= 0f)
-                return;
-
-            Vector2 vWorldSize = m_cGrid.WORLD_SIZE;
-            m_srReveal.transform.position   = new Vector3(m_cGrid.WORLD_CENTER.x, m_cGrid.WORLD_CENTER.y, 0f);
-            m_srReveal.transform.localScale = new Vector3(vWorldSize.x / vSpriteSize.x,
-                                                          vWorldSize.y / vSpriteSize.y, 1f);
+            Fit_ToGrid(m_srReveal, m_spReveal);
         }
 
         /// <summary>
@@ -190,6 +222,11 @@ namespace Client
                 Fill_CoverFallback();
                 return;
             }
+
+            // 260912_원본과 같은 해상도로 맞춘다. 줄여 찍으면 같은 그림인데도 거칠어져
+            // 보상이었을 때와 가림막이 됐을 때가 다르게 보인다.
+            if (texCover.width != m_iTexWidth || texCover.height != m_iTexHeight)
+                Build_Mask(texCover.width, texCover.height);
 
             Color32[] arrSrc = texCover.GetPixels32();
             int iSrcW = texCover.width;
@@ -234,6 +271,11 @@ namespace Client
             m_cGrid.Clear_Dirty();
         }
 
+        // 260912_칸 하나가 차지하는 픽셀 범위. 텍스처 크기가 칸 수로 나누어떨어지지 않아도
+        // 빈틈이나 겹침이 생기지 않도록 '다음 칸의 시작'을 끝으로 삼는다.
+        private int Cell_ToPixelX(int x) => x * m_iTexWidth / m_cGrid.WIDTH;
+        private int Cell_ToPixelY(int y) => y * m_iTexHeight / m_cGrid.HEIGHT;
+
         private void Refresh_All()
         {
             if (m_texMask == null)
@@ -244,15 +286,21 @@ namespace Client
             for (int i = 0; i < iCellCount; ++i)
             {
                 CELL_STATE eState = m_cGrid.Get_Cell(i);
-                int px0 = (i % m_cGrid.WIDTH) * PIXEL_PER_CELL;
-                int py0 = (i / m_cGrid.WIDTH) * PIXEL_PER_CELL;
 
-                for (int dy = 0; dy < PIXEL_PER_CELL; ++dy)
+                int cx = i % m_cGrid.WIDTH;
+                int cy = i / m_cGrid.WIDTH;
+
+                int px0 = Cell_ToPixelX(cx);
+                int px1 = Cell_ToPixelX(cx + 1);
+                int py0 = Cell_ToPixelY(cy);
+                int py1 = Cell_ToPixelY(cy + 1);
+
+                for (int py = py0; py < py1; ++py)
                 {
-                    int iRow = (py0 + dy) * m_iTexWidth + px0;
+                    int iRow = py * m_iTexWidth;
 
-                    for (int dx = 0; dx < PIXEL_PER_CELL; ++dx)
-                        m_arrPixel[iRow + dx] = Get_PixelColor(eState, iRow + dx);
+                    for (int px = px0; px < px1; ++px)
+                        m_arrPixel[iRow + px] = Get_PixelColor(eState, iRow + px);
                 }
             }
 
@@ -272,22 +320,30 @@ namespace Client
                 int iIndex = lstDirty[n];
                 CELL_STATE eState = m_cGrid.Get_Cell(iIndex);
 
-                int px0 = (iIndex % m_cGrid.WIDTH) * PIXEL_PER_CELL;
-                int py0 = (iIndex / m_cGrid.WIDTH) * PIXEL_PER_CELL;
+                int cx = iIndex % m_cGrid.WIDTH;
+                int cy = iIndex / m_cGrid.WIDTH;
 
-                for (int dy = 0; dy < PIXEL_PER_CELL; ++dy)
+                int px0 = Cell_ToPixelX(cx);
+                int py0 = Cell_ToPixelY(cy);
+                int iW  = Cell_ToPixelX(cx + 1) - px0;
+                int iH  = Cell_ToPixelY(cy + 1) - py0;
+
+                if (iW <= 0 || iH <= 0)
+                    continue;
+
+                for (int dy = 0; dy < iH; ++dy)
                 {
-                    int iRow = (py0 + dy) * m_iTexWidth + px0;
+                    int iRow = (py0 + dy) * m_iTexWidth;
 
-                    for (int dx = 0; dx < PIXEL_PER_CELL; ++dx)
+                    for (int dx = 0; dx < iW; ++dx)
                     {
-                        Color32 cColor = Get_PixelColor(eState, iRow + dx);
-                        m_arrPixel[iRow + dx]                   = cColor;
-                        m_arrCellPixel[dy * PIXEL_PER_CELL + dx] = cColor;
+                        Color32 cColor = Get_PixelColor(eState, iRow + px0 + dx);
+                        m_arrPixel[iRow + px0 + dx] = cColor;
+                        m_arrCellPixel[dy * iW + dx] = cColor;
                     }
                 }
 
-                m_texMask.SetPixels32(px0, py0, PIXEL_PER_CELL, PIXEL_PER_CELL, m_arrCellPixel);
+                m_texMask.SetPixels32(px0, py0, iW, iH, m_arrCellPixel);
             }
 
             m_texMask.Apply(false);
