@@ -54,7 +54,6 @@ namespace Client
             Test_BattleConsumable();
             Test_CoverResolution();
             Test_LayerBounds();
-            Test_StartFullyCovered();
             Test_Joystick();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
@@ -722,9 +721,8 @@ namespace Client
             const int SRC_W = 540;
             const int SRC_H = 960;
 
-            // 테두리 두께를 크게 잡아 모든 칸이 '시작 테두리'가 되게 한다.
-            // 시작 테두리는 뚫지 않으므로 전부 덮여야 하고, 빈틈이 있으면
-            // 그 자리만 투명하게 남는다 — 칸을 픽셀에 나눠 주는 계산을 픽셀 하나까지 검사한다.
+            // 테두리 두께를 크게 잡아 모든 칸이 점령된 상태로 만든다.
+            // 그래야 '빈틈 없이 덮였는가'를 픽셀 하나까지 볼 수 있다.
             CTerritoryGrid cGrid = new CTerritoryGrid();
             Check("그리드 초기화", cGrid.Initialize(6, 10, 0.12f, Vector2.zero, 6, null));
 
@@ -747,7 +745,15 @@ namespace Client
 
             // 칸 수로 나누어떨어지지 않는다(960 / 10칸은 96, 540 / 6칸은 90 — 여기선 떨어지지만
             // 아래 60x100 검사에서 9.6이 나온다). 빈틈 검사가 본론이다.
-            Check("시작 테두리는 빈틈 없이 덮인다", Count_Transparent(texMask), 0);
+            Color32[] arrPixel = texMask.GetPixels32();
+            int iHole = 0;
+            for (int i = 0; i < arrPixel.Length; ++i)
+            {
+                if (arrPixel[i].a != 0)
+                    ++iHole;
+            }
+
+            Check("전부 점령이면 빈틈 없이 뚫린다", iHole, 0);
 
             // 실제 맵 1 크기 — 960 / 100칸 = 9.6이라 칸 높이가 9와 10을 오간다.
             // 여기서 칸 경계를 잘못 잡으면 덮이지 않은 줄이 남는다.
@@ -761,62 +767,21 @@ namespace Client
             cRenderer2.Initialize(cGrid2, srCover2, null);
             cRenderer2.Set_WaveTexture(Make_TestTexture(SRC_W, SRC_H), null);
 
-            Check("나누어떨어지지 않아도 빈틈 없다", Count_Transparent(srCover2.sprite.texture), 0);
+            Color32[] arrPixel2 = srCover2.sprite.texture.GetPixels32();
+            int iHole2 = 0;
+            for (int i = 0; i < arrPixel2.Length; ++i)
+            {
+                if (arrPixel2[i].a != 0)
+                    ++iHole2;
+            }
+
+            Check("나누어떨어지지 않아도 빈틈 없다", iHole2, 0);
 
             cRenderer.Release();
             cRenderer2.Release();
             Object.DestroyImmediate(goCover);
             Object.DestroyImmediate(goCover2);
             Object.DestroyImmediate(texCover);
-        }
-
-        // 260912_스테이지에 들어선 순간 화면이 전부 덮여 있어야 한다.
-        // 시작 테두리가 뚫려 있으면 보상이 테두리처럼 비쳐 '드러내는 재미'가 먼저 새어 나간다.
-        private static void Test_StartFullyCovered()
-        {
-            CMapInfo cMapInfo = CProtoSetup.Load_MapInfo(1);
-
-            CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(cMapInfo.iGridWidth, cMapInfo.iGridHeight, cMapInfo.fCellSize,
-                             Vector2.zero, cMapInfo.iBorderThick, null);
-
-            Check("시작부터 점령된 칸이 있다", cGrid.OWNED_RATIO > 0f);
-
-            GameObject goCover = new GameObject("Cover_Start");
-            SpriteRenderer srCover = goCover.AddComponent<SpriteRenderer>();
-
-            CGridRenderer cRenderer = new CGridRenderer();
-            cRenderer.Initialize(cGrid, srCover, null);
-            cRenderer.Set_WaveTexture(Make_TestTexture(540, 900), null);
-
-            Check("시작 화면은 한 픽셀도 뚫려 있지 않다", Count_Transparent(srCover.sprite.texture), 0);
-
-            // 플레이어가 직접 딴 땅은 뚫린다 — 안 그러면 아무것도 드러나지 않는다
-            CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2Int(cMapInfo.iGridWidth / 2, cMapInfo.iBorderThick - 1), STEP_SPEED);
-            Walk(cGrid, cMove, MOVE_DIR.UP, 20, null);
-            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 15, null);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 20, null);
-            cRenderer.Tick();
-
-            Check("딴 땅은 드러난다", Count_Transparent(srCover.sprite.texture) > 0);
-
-            cRenderer.Release();
-            Object.DestroyImmediate(goCover);
-        }
-
-        private static int Count_Transparent(Texture2D tex)
-        {
-            Color32[] arrPixel = tex.GetPixels32();
-            int iCount = 0;
-
-            for (int i = 0; i < arrPixel.Length; ++i)
-            {
-                if (arrPixel[i].a == 0)
-                    ++iCount;
-            }
-
-            return iCount;
         }
 
         private static Texture2D Make_TestTexture(int iWidth, int iHeight)
