@@ -49,6 +49,7 @@ namespace Client
             Test_SkillUpgrade();
             Test_GameConfig();
             Test_CameraFit();
+            Test_CameraFollow();
             Test_SafeArea();
             Test_SkillTable();
             Test_BattleConsumable();
@@ -897,6 +898,77 @@ namespace Client
             Check("스킬 ID가 겹치지 않는다", bDup == false);
         }
 
+
+        // 260912_추적 카메라 — 플레이어를 따라가되 맵 밖이 보이면 안 된다
+        private static void Test_CameraFollow()
+        {
+            const float PORTRAIT = 9f / 16f;
+            const float TOP      = 0.10f;
+            const float BOTTOM   = 0.22f;
+            float fUsable = 1f - TOP - BOTTOM;
+
+            Vector2 vMap    = new Vector2(7.2f, 12f);       // 60 x 100 셀 x 0.12
+            Vector2 vCenter = Vector2.zero;                 // 스테이지가 원점 기준으로 깐다
+
+            // 44칸(5.28 월드)만 보여 준다 — 맵 세로 100칸보다 훨씬 좁다
+            float fViewHeight = 44f * 0.12f;
+            float fSize = CCameraFitter.Calc_Size(new Vector2(0f, fViewHeight), PORTRAIT, fUsable, 0f);
+
+            float fHalfW = fSize * PORTRAIT;
+            float fHalfH = fSize * fUsable;
+
+            Check("보이는 세로는 정한 칸 수만큼",
+                  Mathf.RoundToInt(fHalfH * 2f * 1000f), Mathf.RoundToInt(fViewHeight * 1000f));
+            Check("맵 전체보다 좁게 본다", fHalfH * 2f < vMap.y);
+
+            // 한가운데에서는 그대로 따라간다
+            Vector2 vMid = CCameraFitter.Clamp_Center(new Vector2(0f, 0f), vMap, vCenter, fHalfW, fHalfH);
+            Check("가운데는 그대로", Mathf.RoundToInt(vMid.y * 1000f), 0);
+
+            // 위 끝으로 가면 맵 밖이 안 보이게 멈춘다
+            Vector2 vTop = CCameraFitter.Clamp_Center(new Vector2(0f, 99f), vMap, vCenter, fHalfW, fHalfH);
+            Check("위로 넘어가지 않는다",
+                  Mathf.RoundToInt(vTop.y * 1000f), Mathf.RoundToInt((vMap.y * 0.5f - fHalfH) * 1000f));
+            Check("위 끝에서도 맵 안", vTop.y + fHalfH <= vMap.y * 0.5f + 0.001f);
+
+            Vector2 vBottom = CCameraFitter.Clamp_Center(new Vector2(0f, -99f), vMap, vCenter, fHalfW, fHalfH);
+            Check("아래로도 넘어가지 않는다",
+                  Mathf.RoundToInt(vBottom.y * 1000f), Mathf.RoundToInt((-vMap.y * 0.5f + fHalfH) * 1000f));
+
+            // 가로도 맵보다 좁게 보이므로 좌우로도 따라간다 (4.368 < 7.2)
+            Check("가로도 맵보다 좁게 본다", fHalfW * 2f < vMap.x);
+            Vector2 vSide = CCameraFitter.Clamp_Center(new Vector2(99f, 0f), vMap, vCenter, fHalfW, fHalfH);
+            Check("오른쪽으로도 넘어가지 않는다",
+                  Mathf.RoundToInt(vSide.x * 1000f), Mathf.RoundToInt((vMap.x * 0.5f - fHalfW) * 1000f));
+            Check("오른쪽 끝에서도 맵 안", vSide.x + fHalfW <= vMap.x * 0.5f + 0.001f);
+
+            // 맵이 커져도 보이는 범위는 그대로여야 한다 — 스테이지 확장의 전제다
+            Vector2 vBigMap = new Vector2(14.4f, 24f);
+            Vector2 vBigTop = CCameraFitter.Clamp_Center(new Vector2(0f, 99f), vBigMap, vCenter, fHalfW, fHalfH);
+            Check("맵이 커지면 더 멀리까지 간다", vBigTop.y > vTop.y);
+            Check("보이는 세로는 그대로", Mathf.RoundToInt(fHalfH * 2f * 1000f),
+                                          Mathf.RoundToInt(fViewHeight * 1000f));
+
+            // 맵이 시야보다 작으면 가운데 고정 — 작은 맵에서 카메라가 흔들리면 안 된다
+            Vector2 vTinyMap = new Vector2(2f, 3f);
+            Vector2 vTiny = CCameraFitter.Clamp_Center(new Vector2(9f, 9f), vTinyMap, vCenter, fHalfW, fHalfH);
+            Check("작은 맵은 가운데 고정", Mathf.RoundToInt(vTiny.y * 1000f), 0);
+
+            // 원점이 아닌 맵도 같은 규칙을 따른다
+            Vector2 vOffset = new Vector2(50f, -30f);
+            Vector2 vOffTop = CCameraFitter.Clamp_Center(new Vector2(0f, 99f), vMap, vOffset, fHalfW, fHalfH);
+            Check("중심이 옮겨가도 같은 규칙",
+                  Mathf.RoundToInt(vOffTop.y * 1000f),
+                  Mathf.RoundToInt((vOffset.y + vMap.y * 0.5f - fHalfH) * 1000f));
+            Check("가로도 옮겨간 중심을 기준으로", Mathf.RoundToInt(vOffTop.x * 1000f),
+                  Mathf.RoundToInt((vOffset.x - vMap.x * 0.5f + fHalfW) * 1000f));
+
+            // 시야가 맵보다 넓은 축은 가둘 여유가 없으므로 가운데 고정 — 억지로 밀면 맵이 흔들린다
+            Vector2 vWideView = CCameraFitter.Clamp_Center(new Vector2(99f, 99f), vMap, vCenter,
+                                                           vMap.x, vMap.y);
+            Check("시야가 넓으면 가로 가운데", Mathf.RoundToInt(vWideView.x * 1000f), 0);
+            Check("시야가 넓으면 세로 가운데", Mathf.RoundToInt(vWideView.y * 1000f), 0);
+        }
 
         // 260912_노치 / 홈 인디케이터 회피 + 시간 표기
         private static void Test_SafeArea()

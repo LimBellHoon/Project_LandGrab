@@ -34,6 +34,14 @@ namespace Client
         [Range(0f, 2f)]
         [SerializeField] private float m_fCameraMargin = 0.3f;
 
+        [Header("카메라 추적")]
+        [Tooltip("화면에 보여 줄 세로 칸 수. 0이면 맵 전체를 한 화면에 맞춘다. 맵이 커져도 이 값은 그대로라, 스테이지가 오를수록 좁게 느껴지고 속도 강화가 필요해진다.")]
+        [Min(0f)]
+        [SerializeField] private float m_fViewCellHeight = 44f;
+
+        [Tooltip("카메라가 플레이어를 따라붙는 데 걸리는 시간(초). 0이면 딱 붙어 따라간다.")]
+        [Range(0f, 0.6f)]
+        [SerializeField] private float m_fCameraFollowTime = 0.12f;
 
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
@@ -50,6 +58,8 @@ namespace Client
         public float UI_RESERVE_TOP     => Mathf.Clamp(m_fUIReserveTop, 0f, 0.4f);
         public float UI_RESERVE_BOTTOM  => Mathf.Clamp(m_fUIReserveBottom, 0f, 0.5f);
         public float CAMERA_MARGIN      => Mathf.Max(0f, m_fCameraMargin);
+        public float VIEW_CELL_HEIGHT   => Mathf.Max(0f, m_fViewCellHeight);
+        public float CAMERA_FOLLOW_TIME => Mathf.Clamp(m_fCameraFollowTime, 0f, 0.6f);
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);

@@ -114,7 +114,17 @@ namespace Client
 
             m_cGameInstance.Tick();
             m_cStageManager.Tick(Get_LayerDeltaTime(OBJECT_TYPE.DEFAULT));
-            m_cCameraFitter.Tick();
+            Tick_Camera();
+        }
+
+        // 260912_카메라는 플레이어를 따라간다. 액터가 움직인 뒤에 따라붙어야 한 프레임 밀리지 않는다.
+        private void Tick_Camera()
+        {
+            CPlayer cPlayer = m_cStageManager.PLAYER;
+            if (cPlayer == null)
+                return;
+
+            m_cCameraFitter.Tick(cPlayer.transform.position, Time.deltaTime);
         }
 
         public void LateUpdate()
@@ -159,8 +169,7 @@ namespace Client
                     return;
 
                 m_cConfig = CGameConfig.Load();
-                m_cCameraFitter.Initialize(Camera.main, m_cConfig.UI_RESERVE_TOP,
-                                           m_cConfig.UI_RESERVE_BOTTOM, m_cConfig.CAMERA_MARGIN);
+
 
                 if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local(), m_cEquipTable) == false)
                     return;
@@ -457,8 +466,18 @@ namespace Client
                 cSkill != null ? m_cProgressManager.Get_SkillLevel(cSkill.eType) : 0);
 
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
-            // 에디터에서 잡아 둔 카메라 크기는 맵 1 기준이라 크기가 다른 맵이 어긋난다.
-            m_cCameraFitter.Fit(m_cStageManager.GRID.WORLD_SIZE);
+            // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.
+            CTerritoryGrid cGrid = m_cStageManager.GRID;
+            m_cCameraFitter.Initialize(Camera.main, m_cConfig.UI_RESERVE_TOP, m_cConfig.UI_RESERVE_BOTTOM,
+                                       m_cConfig.CAMERA_MARGIN,
+                                       m_cConfig.VIEW_CELL_HEIGHT * cGrid.CELL_SIZE,
+                                       m_cConfig.CAMERA_FOLLOW_TIME);
+
+            Vector2 vStart = m_cStageManager.PLAYER != null
+                           ? (Vector2)m_cStageManager.PLAYER.transform.position
+                           : cGrid.WORLD_CENTER;
+
+            m_cCameraFitter.Fit(cGrid.WORLD_SIZE, cGrid.WORLD_CENTER, vStart);
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
 
