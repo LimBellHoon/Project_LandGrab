@@ -54,6 +54,8 @@ namespace Client
             Test_CardPick();
             Test_SafeArea();
             Test_SkillTable();
+            Test_RunSkillTable();
+            Test_RunSkill();
             Test_BattleConsumable();
             Test_CoverResolution();
             Test_LayerBounds();
@@ -959,6 +961,141 @@ namespace Client
             Check("스킬 ID가 겹치지 않는다", bDup == false);
         }
 
+        // 260916_런 전용 스킬(뱀서라이크) 표 — 8종이 전부 읽히고, 레벨 스케일링·해금 가중치 뽑기가 맞는지
+        private static void Test_RunSkillTable()
+        {
+            CCSVData_RunSkillInfo cTable = Load_RunSkillTable();
+            if (cTable == null)
+            {
+                Check("RunSkillInfo.csv 로드", false);
+                return;
+            }
+
+            RUN_SKILL_TYPE[] arrType =
+            {
+                RUN_SKILL_TYPE.MOONWALK, RUN_SKILL_TYPE.EVASION, RUN_SKILL_TYPE.MAGNET,
+                RUN_SKILL_TYPE.EDGE_WRAP, RUN_SKILL_TYPE.RAGE, RUN_SKILL_TYPE.SOUL_COLLECTOR,
+                RUN_SKILL_TYPE.ORBIT, RUN_SKILL_TYPE.CLUB,
+            };
+
+            for (int i = 0; i < arrType.Length; ++i)
+                Check($"{arrType[i]} 표에 있다", cTable.Find_ByType(arrType[i]) != null);
+
+            // 온/오프뿐인 스킬은 레벨업이 없다
+            CRunSkillInfo cMoonwalk = cTable.Find_ByType(RUN_SKILL_TYPE.MOONWALK);
+            Check("월보는 만렙 1", cMoonwalk.iMaxLevel, 1);
+
+            // 레벨이 오르면 수치도 오른다
+            CRunSkillInfo cMagnet = cTable.Find_ByType(RUN_SKILL_TYPE.MAGNET);
+            Check("자석 레벨1 > 레벨0(미보유)", cMagnet.Get_Value(1) > cMagnet.Get_Value(0));
+            Check("자석 레벨2 > 레벨1", cMagnet.Get_Value(2) > cMagnet.Get_Value(1));
+            Check("자석은 만렙을 넘지 않는다", Mathf.Approximately(cMagnet.Get_Value(99), cMagnet.Get_Value(cMagnet.iMaxLevel)));
+
+            // 해금 전이면 뽑히지 않는다
+            List<CRunSkillInfo> lstLocked = cTable.Pick_Random(8, eType => 0, iMapID => false);
+            bool bAnyGated = false;
+            for (int i = 0; i < lstLocked.Count; ++i)
+            {
+                if (lstLocked[i].iUnlockMapID > 0)
+                    bAnyGated = true;
+            }
+            Check("맵을 하나도 안 깼으면 해금 스킬은 안 나온다", bAnyGated == false);
+
+            // 해금되면 나온다 — 모든 맵을 깼다고 치면 8종 전부가 후보다
+            List<CRunSkillInfo> lstAll = cTable.Pick_Random(8, eType => 0, iMapID => true);
+            Check("전부 해금되면 8종 다 후보", lstAll.Count, 8);
+
+            // 이미 만렙이면 후보에서 빠진다
+            List<CRunSkillInfo> lstMaxed = cTable.Pick_Random(8,
+                eType => eType == RUN_SKILL_TYPE.MOONWALK ? cMoonwalk.iMaxLevel : 0, iMapID => true);
+            bool bMoonwalkStillOffered = false;
+            for (int i = 0; i < lstMaxed.Count; ++i)
+            {
+                if (lstMaxed[i].eType == RUN_SKILL_TYPE.MOONWALK)
+                    bMoonwalkStillOffered = true;
+            }
+            Check("만렙인 스킬은 다시 안 나온다", bMoonwalkStillOffered == false);
+
+            // 같은 스킬이 한 번에 두 장 나오지 않는다(카드 뽑기와 같은 규칙)
+            List<CRunSkillInfo> lstThree = cTable.Pick_Random(3, eType => 0, iMapID => true);
+            HashSet<RUN_SKILL_TYPE> hsPicked = new HashSet<RUN_SKILL_TYPE>();
+            bool bDupSkill = false;
+            for (int i = 0; i < lstThree.Count; ++i)
+            {
+                if (hsPicked.Add(lstThree[i].eType) == false)
+                    bDupSkill = true;
+            }
+            Check("3지선다는 서로 다른 스킬 셋", bDupSkill == false);
+            Check("3지선다는 정확히 3장", lstThree.Count, 3);
+        }
+
+        // 260916_런 전용 스킬을 실제 CPlayer에 붙였을 때 — 이동 플래그·회피·습득 범위가 걸리고,
+        // 스테이지 재사용(Initialize) 때 전부 리셋되는지
+        private static void Test_RunSkill()
+        {
+            CCSVData_RunSkillInfo cTable = Load_RunSkillTable();
+            if (cTable == null)
+            {
+                Check("RunSkillInfo.csv 로드(Test_RunSkill)", false);
+                return;
+            }
+
+            CTerritoryGrid cGrid = Make_Grid();
+            GameObject goPlayer = new GameObject("Test_RunSkillPlayer");
+            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            CPlayerDesc cDesc = new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
+                fMoveSpeed    = STEP_SPEED,
+                iMaxHp        = 3,
+                fEvasion      = 0f,
+            };
+            cPlayer.Initialize(cDesc);
+
+            Check("처음엔 런 스킬 없음", cPlayer.RUN_SKILL.Has(RUN_SKILL_TYPE.MOONWALK) == false);
+
+            // 260916_월보/어디로든 신발이 실제로 이동 판정을 바꾸는지는 CMoveHandler의
+            // Try_StartMove(선분 자동 추적 포함)까지 얽혀 있어 화면 없이 좌표를 손으로
+            // 재현하면 오히려 틀리기 쉽다 — 여기서는 '스킬을 얻으면 레벨이 오른다'는
+            // 핸들러 연동까지만 검증하고, 실제 통과 여부는 Play로 눈으로 확인할 것.
+            cPlayer.Add_RunSkill(cTable.Find_ByType(RUN_SKILL_TYPE.MOONWALK));
+            Check("월보 획득 시 1레벨", cPlayer.RUN_SKILL.Get_Level(RUN_SKILL_TYPE.MOONWALK), 1);
+
+            cPlayer.Add_RunSkill(cTable.Find_ByType(RUN_SKILL_TYPE.EDGE_WRAP));
+            Check("어디로든 신발 획득 시 1레벨", cPlayer.RUN_SKILL.Get_Level(RUN_SKILL_TYPE.EDGE_WRAP), 1);
+
+            // 자석 — 레벨업마다 습득 범위가 커진다
+            CRunSkillInfo cMagnetInfo = cTable.Find_ByType(RUN_SKILL_TYPE.MAGNET);
+            cPlayer.Add_RunSkill(cMagnetInfo);
+            float fRadiusLv1 = cPlayer.PICKUP_RADIUS;
+            Check("자석 1레벨이면 습득 범위가 0보다 크다", fRadiusLv1 > 0f);
+            cPlayer.Add_RunSkill(cMagnetInfo);
+            Check("자석 2레벨이면 범위가 더 커진다", cPlayer.PICKUP_RADIUS > fRadiusLv1);
+
+            // 회피 — 레벨업마다 누적되고, 두 배로 더해지지 않는다
+            CRunSkillInfo cEvasionInfo = cTable.Find_ByType(RUN_SKILL_TYPE.EVASION);
+            cPlayer.Add_RunSkill(cEvasionInfo);
+            float fEvasionLv1 = cEvasionInfo.Get_Value(1);
+            cPlayer.Add_RunSkill(cEvasionInfo);
+            float fEvasionLv2 = cEvasionInfo.Get_Value(2);
+            Check("회피 레벨2 수치가 레벨1보다 크다", fEvasionLv2 > fEvasionLv1);
+
+            // 같은 스킬을 세 번째 받아도 만렙을 넘지 않는다
+            for (int i = 0; i < 10; ++i)
+                cPlayer.Add_RunSkill(cMagnetInfo);
+            Check("자석은 만렙을 넘지 않는다", cPlayer.RUN_SKILL.Get_Level(RUN_SKILL_TYPE.MAGNET), cMagnetInfo.iMaxLevel);
+
+            // 스테이지 재사용(Initialize) — 런 스킬은 전부 사라져야 한다(뱀서라이크는 판마다 초기화)
+            cPlayer.Initialize(cDesc);
+            Check("재초기화하면 런 스킬이 전부 사라진다", cPlayer.RUN_SKILL.Has(RUN_SKILL_TYPE.MOONWALK) == false);
+            Check("재초기화하면 습득 범위도 0", Mathf.Approximately(cPlayer.PICKUP_RADIUS, 0f));
+
+            Object.DestroyImmediate(goPlayer);
+        }
+
 
         // 260912_카드 3지선다 — 표가 읽히고, 서로 다른 카드가 뽑히고, 효과가 걸리는지
         private static void Test_CardPick()
@@ -1315,6 +1452,7 @@ namespace Client
         private static CCSVData_EquipInfo   Load_EquipTable()   => Load_CsvTable<CCSVData_EquipInfo>("EquipInfo");
         private static CCSVData_SkillInfo   Load_SkillTable()   => Load_CsvTable<CCSVData_SkillInfo>("SkillInfo");
         private static CCSVData_UpgradeInfo Load_UpgradeTable() => Load_CsvTable<CCSVData_UpgradeInfo>("UpgradeInfo");
+        private static CCSVData_RunSkillInfo Load_RunSkillTable() => Load_CsvTable<CCSVData_RunSkillInfo>("RunSkillInfo");
 
         // 260904_가상 조이스틱 — 판정만 떼어 두었으므로 화면 없이 검증할 수 있다
         // 260916_카메라 흔들림. 판정(CCameraShake)만 검증한다 — 실제 Transform에 더하는 건

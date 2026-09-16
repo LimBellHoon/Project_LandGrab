@@ -19,9 +19,19 @@ namespace Client
         private bool            m_bMoving;
         private bool            m_bFollowing;               // 직전 이동이 선분 자동 추적이었는가
 
+        // 260916_런 스킬(뱀서라이크) — '월보'/'어디로든 신발'이 걸어 두는 플래그.
+        // CPlayer가 CRunSkillEffect를 통해 켜고 끈다. 그리드 규칙 자체(Step_To)는 그대로 두고
+        // 이동 가능 여부(Can_Move)만 완화/확장하는 자리라 여기 둔다.
+        private bool            m_bAllowOwnedInterior;      // 월보 — 점령지 내부도 통과
+        private bool            m_bEdgeWrap;                // 어디로든 신발 — 좌우 끝을 잇는다
+
         public Vector2Int   CUR_CELL    => m_vCurCell;
         public MOVE_DIR     CUR_DIR     => m_eCurDir;
+        public bool         IS_MOVING   => m_bMoving;
         public float        SPEED       { get { return m_fSpeed; } set { m_fSpeed = Mathf.Max(0f, value); } }
+
+        public void Set_AllowOwnedInterior(bool bAllow) => m_bAllowOwnedInterior = bAllow;
+        public void Set_EdgeWrap(bool bWrap) => m_bEdgeWrap = bWrap;
 
         public Vector3 WORLD_POS
         {
@@ -118,9 +128,21 @@ namespace Client
 
             m_bFollowing = bFollowing;
             m_eCurDir   = eDir;
-            m_vNextCell = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
+            m_vNextCell = Get_NextCell(eDir);
             m_bMoving   = true;
             return true;
+        }
+
+        // 260916_다음 셀 계산을 한 곳으로 모은다 — '어디로든 신발'의 좌우 랩어라운드가
+        // Can_Move/Can_Follow/Try_StartMove 세 곳 중 한 곳만 반영되면 판정과 실제 이동이 어긋난다.
+        private Vector2Int Get_NextCell(MOVE_DIR eDir)
+        {
+            Vector2Int vNext = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
+
+            if (m_bEdgeWrap == true && m_cGrid.WIDTH > 0)
+                vNext.x = ((vNext.x % m_cGrid.WIDTH) + m_cGrid.WIDTH) % m_cGrid.WIDTH;
+
+            return vNext;
         }
 
         // 260902_선분 자동 추적
@@ -160,7 +182,7 @@ namespace Client
             if (m_bFollowing == true && eDir == CTerritoryGrid.Dir_Reverse(m_eCurDir))
                 return false;
 
-            Vector2Int vNext = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
+            Vector2Int vNext = Get_NextCell(eDir);
             if (m_cGrid.Get_Cell(vNext) != CELL_STATE.OWNED)
                 return false;
 
@@ -172,7 +194,7 @@ namespace Client
             if (eDir == MOVE_DIR.NONE)
                 return false;
 
-            Vector2Int vNext = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
+            Vector2Int vNext = Get_NextCell(eDir);
             if (m_cGrid.Is_InBounds(vNext.x, vNext.y) == false)
                 return false;
 
@@ -191,7 +213,9 @@ namespace Client
             // 260902_점령지 '내부'는 통과할 수 없다 — 영토의 선(경계)만 따라 움직인다.
             // 단, 점령 직후 자기가 내부에 갇힌 경우에는 선으로 빠져나가야 하므로 허용한다.
             // (선을 그리는 중에는 현재 칸이 TRAIL이라 Is_Boundary가 false → 도형을 닫는 이동은 항상 통과)
-            if (m_cGrid.Get_Cell(vNext) == CELL_STATE.OWNED
+            // 260916_런 스킬 '월보'를 들고 있으면 이 제한 자체를 끈다.
+            if (m_bAllowOwnedInterior == false
+                && m_cGrid.Get_Cell(vNext) == CELL_STATE.OWNED
                 && m_cGrid.Is_Boundary(vNext) == false
                 && m_cGrid.Is_Boundary(m_vCurCell) == true)
             {

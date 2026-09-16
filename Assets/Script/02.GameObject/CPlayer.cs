@@ -44,6 +44,11 @@ namespace Client
         private CSkillEffect    m_cSkillEffect;
         private ISkillHost      m_cSkillHost;
 
+        // 260916_런 전용 스킬(뱀서라이크) — 장착 스킬 하나(위)와 달리 여러 개를 동시에 든다.
+        private readonly CRunSkillHandler          m_cRunSkillHandler = new CRunSkillHandler();
+        private readonly List<CRunSkillEffect>     m_lstRunSkillEffect = new List<CRunSkillEffect>();
+        private float           m_fPickupRadius;    // 260916_자석 스킬이 걸어 두는 값(셀). 픽업 쪽이 읽는다
+
         // 260912_속도는 두 갈래로 곱해진다 — 거미줄(환경)과 질주(스킬).
         // 스테이지가 매 프레임 환경 배율을 넣어 주므로, 스킬 배율을 따로 두지 않으면
         // 질주를 걸어도 다음 프레임에 덮어써져 아무 일도 일어나지 않는다.
@@ -63,6 +68,12 @@ namespace Client
         public CVirtualJoystick JOYSTICK    => m_cInputHandler.JOYSTICK;
         /// <summary> 260905_UI가 쿨타임 게이지를 그리려고 읽는다. </summary>
         public CSkillHandler    SKILL       => m_cSkillHandler;
+        /// <summary> 260916_지금 들고 있는 런 스킬들의 레벨. UI/디버그가 읽는다. </summary>
+        public CRunSkillHandler RUN_SKILL   => m_cRunSkillHandler;
+        /// <summary> 260916_지금 이동 중인가. 분노 게이지가 '달릴 때' 조건으로 쓴다. </summary>
+        public bool             IS_MOVING   => m_cMoveHandler.IS_MOVING;
+        /// <summary> 260916_자석 스킬이 걸어 둔 습득 범위(셀). 픽업 쪽이 읽는다. </summary>
+        public float            PICKUP_RADIUS => m_fPickupRadius;
 
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
@@ -105,6 +116,9 @@ namespace Client
             m_fSkillSpeedTimer = 0f;
             m_fCardSpeedScale  = 1f;
 
+            // 260916_런 스킬은 판마다 완전히 초기화된다(뱀서라이크 — 스테이지를 나가면 사라진다).
+            Clear_RunSkill();
+
             m_cSkillEffect = CSkillEffect.Create(cDesc.cSkillInfo != null ? cDesc.cSkillInfo.eType
                                                                          : SKILL_TYPE.NONE);
             if (m_cSkillEffect != null && m_cSkillEffect.Initialize(this) == true)
@@ -135,6 +149,7 @@ namespace Client
 
             Tick_SkillSpeed(fDeltaTime);
             m_cSkillHandler.Tick(fDeltaTime);
+            Tick_RunSkill(fDeltaTime);
 
             m_cInputHandler.Tick();
 
@@ -146,6 +161,8 @@ namespace Client
 
         public override void Hide()
         {
+            Clear_RunSkill();
+
             // 풀에 반납되므로 외부 구독을 끊어 다음 재사용에 새지 않게 한다.
             OnCapture       = null;
             OnHpChanged     = null;
@@ -240,6 +257,61 @@ namespace Client
             m_cSkillHost = cHost;
             m_cSkillEffect?.Set_Host(cHost);
         }
+
+        // 260916_런 전용 스킬(뱀서라이크) — 스테이지 내 3지선다가 고른 것을 여기로 넘긴다.
+        /// <summary> 새로 얻으면 1레벨로 붙고, 이미 있으면 다음 레벨로 오른다. </summary>
+        public void Add_RunSkill(CRunSkillInfo cInfo)
+        {
+            if (cInfo == null)
+                return;
+
+            int iLevel = m_cRunSkillHandler.Add_Or_LevelUp(cInfo);
+
+            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+            {
+                if (m_lstRunSkillEffect[i].TYPE != cInfo.eType)
+                    continue;
+
+                m_lstRunSkillEffect[i].On_LevelChanged(cInfo, iLevel);
+                return;
+            }
+
+            CRunSkillEffect cEffect = CRunSkillEffect.Create(cInfo.eType);
+            if (cEffect == null)
+                return;
+
+            cEffect.Initialize(this);
+            cEffect.On_LevelChanged(cInfo, iLevel);
+            m_lstRunSkillEffect.Add(cEffect);
+        }
+
+        private void Tick_RunSkill(float fDeltaTime)
+        {
+            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+                m_lstRunSkillEffect[i].Tick(fDeltaTime);
+        }
+
+        private void Clear_RunSkill()
+        {
+            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+                m_lstRunSkillEffect[i].Release();
+
+            m_lstRunSkillEffect.Clear();
+            m_cRunSkillHandler.Clear();
+            m_fPickupRadius = 0f;
+
+            Set_MoveFlag_AllowOwnedInterior(false);
+            Set_MoveFlag_EdgeWrap(false);
+        }
+
+        /// <summary> 월보 — 점령지 내부(이미지 위)도 지나갈 수 있게 한다. </summary>
+        public void Set_MoveFlag_AllowOwnedInterior(bool bAllow) => m_cMoveHandler.Set_AllowOwnedInterior(bAllow);
+
+        /// <summary> 어디로든 신발 — 맵 좌우 끝을 잇는다. </summary>
+        public void Set_MoveFlag_EdgeWrap(bool bWrap) => m_cMoveHandler.Set_EdgeWrap(bWrap);
+
+        /// <summary> 자석 — 습득 범위(셀). 0이면 스킬 없음. </summary>
+        public void Set_PickupRadius(float fRadius) => m_fPickupRadius = Mathf.Max(0f, fRadius);
 
         private void Tick_SkillSpeed(float fDeltaTime)
         {
