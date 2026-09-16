@@ -28,18 +28,11 @@ namespace Client
 
         private float m_fTrauma;           // 0~1
         private float m_fNoiseTime;
-        private readonly float m_fSeedX;
-        private readonly float m_fSeedY;
+        private float m_fSeedX;
+        private float m_fSeedY;
 
         /// <summary> 디버그 표시용. 흔들림 세기 자체는 Tick의 반환값을 쓸 것. </summary>
         public float TRAUMA => m_fTrauma;
-
-        public CCameraShake()
-        {
-            // 같은 프레임에 X/Y가 같은 값을 훑지 않도록 시드를 떼어 둔다.
-            m_fSeedX = Random.Range(0f, 1000f);
-            m_fSeedY = Random.Range(0f, 1000f);
-        }
 
         /// <param name="fMaxOffset"> 트라우마 1일 때 카메라가 밀리는 최대 거리(월드 단위) </param>
         /// <param name="fDecayPerSecond"> 트라우마가 초당 줄어드는 양. 클수록 빨리 잦아든다 </param>
@@ -47,6 +40,12 @@ namespace Client
         {
             m_fMaxOffset      = Mathf.Max(0f, fMaxOffset);
             m_fDecayPerSecond = Mathf.Max(0.01f, fDecayPerSecond);
+
+            // 260917_같은 프레임에 X/Y가 같은 값을 훑지 않도록 시드를 떼어 둔다.
+            // 생성자에서 뽑으면 안 된다 — CGameManager(MonoBehaviour)의 필드 초기화에서 new 되는데,
+            // Unity는 그 시점에 Random을 부르면 예외를 던지고 뒤따르는 필드(m_cAudioManager 등)가 null로 남는다.
+            m_fSeedX = Random.Range(0f, 1000f);
+            m_fSeedY = Random.Range(0f, 1000f);
         }
 
         // 260916_옵션창은 아직 없지만 끄는 자리는 미리 하나로 못박아 둔다.
