@@ -1088,6 +1088,14 @@ namespace Client
                 cPlayer.Add_RunSkill(cMagnetInfo);
             Check("자석은 만렙을 넘지 않는다", cPlayer.RUN_SKILL.Get_Level(RUN_SKILL_TYPE.MAGNET), cMagnetInfo.iMaxLevel);
 
+            // 영혼 수집가 — 호스트를 안 꽂아도(에디터 테스트라 스테이지가 없다) 레벨업/습득 콜백이
+            // 예외 없이 동작해야 한다. 실제 속도 증가는 CPlayer.Add_CardSpeed를 그대로 타므로
+            // 카드 쪽 검증(Test_CardPick)과 같은 값이라 여기서 다시 재지 않는다.
+            cPlayer.Add_RunSkill(cTable.Find_ByType(RUN_SKILL_TYPE.SOUL_COLLECTOR));
+            Check("영혼 수집가 획득 시 1레벨", cPlayer.RUN_SKILL.Get_Level(RUN_SKILL_TYPE.SOUL_COLLECTOR), 1);
+            cPlayer.On_SoulCollected();
+            Check("영혼 습득 콜백은 예외 없이 끝난다", true);
+
             // 스테이지 재사용(Initialize) — 런 스킬은 전부 사라져야 한다(뱀서라이크는 판마다 초기화)
             cPlayer.Initialize(cDesc);
             Check("재초기화하면 런 스킬이 전부 사라진다", cPlayer.RUN_SKILL.Has(RUN_SKILL_TYPE.MOONWALK) == false);

@@ -262,4 +262,19 @@ namespace Client
             cGrid = null;
         }
     }
+
+    // 260916_런 스킬 '영혼 수집가'가 떨어뜨리는 픽업.
+    /// <summary> CSoul 생성 Desc. 주우면 사라지고, 안 주워도 fLifeTime이 지나면 사라진다. </summary>
+    public class CSoulDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid       { get; set; }
+        public Vector2Int       vCell       { get; set; }
+        public float            fLifeTime   { get; set; }   // 초
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
 }

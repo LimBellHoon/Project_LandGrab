@@ -56,6 +56,9 @@ namespace Client
         private const string PATH_TEX_WEB         = DIR_ART + "/Tex_Web.png";
         private const string PATH_PREFAB_PROJECTILE = DIR_PREFAB + "/Prefab_Projectile.prefab";
         private const string PATH_PREFAB_WEB        = DIR_PREFAB + "/Prefab_Web.prefab";
+        // 260916_런 스킬 '영혼 수집가' 픽업
+        private const string PATH_TEX_SOUL          = DIR_ART + "/Tex_Soul.png";
+        private const string PATH_PREFAB_SOUL       = DIR_PREFAB + "/Prefab_Soul.prefab";
         // 260904_스테이지 선택 UI
         // 260904_UI 프리팹 이름은 Engine이 강제한다.
         // Engine.CUI_Manager.Open<T>가 Desc의 strPrefabName을
@@ -152,6 +155,7 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_ENEMY, "Prefab_Enemy", typeof(CEnemy));
             iFail += Validate_ActorPrefab(PATH_PREFAB_PROJECTILE, "Prefab_Projectile", typeof(CProjectile));
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_SOUL, "Prefab_Soul", typeof(CSoul));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
@@ -519,6 +523,10 @@ namespace Client
 
             Write_Png(PATH_TEX_WEB, Make_WebTexture(64));
             Import_AsSprite(PATH_TEX_WEB, 64);
+
+            // 260916_런 스킬 '영혼 수집가' 픽업. 기존 원형 텍스처 생성기를 그대로 쓴다.
+            Write_Png(PATH_TEX_SOUL, Make_CircleTexture(28, new Color(0.6f, 0.95f, 1f)));
+            Import_AsSprite(PATH_TEX_SOUL, 28);
 
             // 260904_조이스틱. 바깥은 테두리 링, 손잡이는 꽉 찬 원.
             Write_Png(PATH_TEX_JOY_BASE, Make_RingTexture(128));
@@ -889,6 +897,7 @@ namespace Client
             // 260904_탄은 몬스터보다 앞에, 거미줄은 바닥에 깔리도록 정렬 순서를 나눈다.
             Create_ActorPrefab<CProjectile>("Prefab_Projectile", PATH_TEX_PROJECTILE, PATH_PREFAB_PROJECTILE, 18);
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
+            Create_ActorPrefab<CSoul>("Prefab_Soul", PATH_TEX_SOUL, PATH_PREFAB_SOUL, 14);
             Create_StageSelectUI();
             Create_InGameUI();
             Create_LobbyUI();
@@ -937,6 +946,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_ENEMY, "Prefab_Enemy", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_PROJECTILE, "Prefab_Projectile", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_SOUL, "Prefab_Soul", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_LOBBY, UI_LOBBY, CAddressableLabel.PREFAB);

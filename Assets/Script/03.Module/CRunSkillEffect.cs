@@ -29,9 +29,10 @@ namespace Client
                 case RUN_SKILL_TYPE.MAGNET:    cEffect = new CRunSkillEffect_Magnet();    break;
                 case RUN_SKILL_TYPE.EVASION:   cEffect = new CRunSkillEffect_Evasion();   break;
                 case RUN_SKILL_TYPE.RAGE:      cEffect = new CRunSkillEffect_Rage();      break;
+                case RUN_SKILL_TYPE.SOUL_COLLECTOR: cEffect = new CRunSkillEffect_SoulCollector(); break;
 
-                // 260916_영혼 수집가 / 회전탄 / 몽둥이는 아직 없다 — 픽업·몬스터 피격 시스템이
-                // 먼저 필요해서 다음 단계로 미뤘다. 지금은 null(=효과 없음)로 둔다.
+                // 260916_회전탄 / 몽둥이는 아직 없다 — 몬스터 피격 시스템이 먼저 필요해서
+                // 다음 단계로 미뤘다. 지금은 null(=효과 없음)로 둔다.
                 default: return null;
             }
 
@@ -51,6 +52,12 @@ namespace Client
 
         /// <summary> 스킬을 잃을 때(스테이지 종료) — 걸어 둔 플래그·구독을 되돌린다. </summary>
         public virtual void Release() { }
+
+        // 260916_맵 위에 무언가를 놓아야 하는 스킬(영혼 수집가)만 쓴다. 나머지는 그냥 무시한다.
+        public virtual void Set_Host(IRunSkillHost cHost) { }
+
+        /// <summary> 영혼을 주웠을 때 CPlayer가 모든 효과에 알린다 — 관심 없는 효과는 무시한다. </summary>
+        public virtual void On_SoulCollected() { }
     }
 
     /// <summary> 월보 — 점령지 내부(이미지 위)도 통과할 수 있게 된다. 레벨 개념 없이 on/off뿐이다. </summary>
@@ -160,6 +167,48 @@ namespace Client
         {
             if (m_cOwner != null)
                 m_cOwner.OnDamaged -= On_PlayerDamaged;
+        }
+    }
+
+    /// <summary>
+    /// 영혼 수집가 — 주기적으로 맵에 영혼을 떨어뜨리고, 주울 때마다 이번 판 한정으로
+    /// 영구히 빨라진다. 발동 주기는 기믹(CEnemyGimmick)과 같은 자리에서 스스로 재고,
+    /// 실제 습득 판정은 CStage_Manager가 한다(2-6과 같은 구조 — 화면 없이 검증 못 할 부분만 넘긴다).
+    /// </summary>
+    public class CRunSkillEffect_SoulCollector : CRunSkillEffect
+    {
+        private const float SPAWN_INTERVAL = 4f;   // 초
+
+        private IRunSkillHost m_cHost;
+        private float         m_fSpawnTimer = SPAWN_INTERVAL;
+        private float         m_fSpeedGainPerSoul;
+
+        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+            m_fSpeedGainPerSoul = cInfo.Get_Value(iLevel);
+        }
+
+        public override void Tick(float fDeltaTime)
+        {
+            if (m_cHost == null)
+                return;
+
+            m_fSpawnTimer -= fDeltaTime;
+            if (m_fSpawnTimer > 0f)
+                return;
+
+            m_fSpawnTimer = SPAWN_INTERVAL;
+            m_cHost.Spawn_Soul();
+        }
+
+        public override void On_SoulCollected()
+        {
+            // 260912_카드 속도 배율을 그대로 쓴다 — "판이 끝날 때까지 유지되는 영구 가산"이
+            // 이미 CPlayer.Add_CardSpeed가 하는 일과 정확히 같다(중복 필드를 만들지 않는다).
+            m_cOwner.Add_CardSpeed(m_fSpeedGainPerSoul);
         }
     }
 }

@@ -16,12 +16,18 @@ namespace Client
     /// 웨이브: N웨이브를 fClearRatio만큼 점령하면 그리드를 다시 깔고 이미지 스택을 한 장 벗긴다.
     /// 마지막 웨이브까지 넘기면 CLEAR.
     /// </summary>
-    public class CStage_Manager : IGimmickHost, ISkillHost
+    public class CStage_Manager : IGimmickHost, ISkillHost, IRunSkillHost
     {
         private const string PREFAB_PLAYER      = "Prefab_Player";
         private const string PREFAB_PROJECTILE  = "Prefab_Projectile";
         private const string PREFAB_WEB         = "Prefab_Web";
+        private const string PREFAB_SOUL        = "Prefab_Soul";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
+
+        // 260916_런 스킬 '영혼 수집가'. 자석(CPlayer.PICKUP_RADIUS)이 없어도 이 정도는 기본으로 줍는다 —
+        // 몬스터/탄 충돌 반경(PROJECTILE_HIT_RANGE)과 같은 자리라 CSV로 뺄 이유가 아직 없다.
+        private const float  SOUL_PICKUP_RADIUS_BASE = 0.6f;   // 셀
+        private const float  SOUL_LIFETIME           = 12f;    // 초. 안 주우면 사라진다
 
         // 260904_소환 기믹의 안전장치. RefID가 다시 SPAWN 몬스터를 가리키면 끝없이 늘어난다.
         // 규칙 값이 아니라 사고 방지용 상한이라 CSV로 빼지 않는다.
@@ -62,6 +68,8 @@ namespace Client
         // 260904_기믹이 소환한 것들. 수명과 충돌을 여기서 한꺼번에 본다.
         private readonly List<CProjectile>  m_lstProjectile = new List<CProjectile>();
         private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
+        // 260916_런 스킬이 떨어뜨린 것들. 위 두 목록과 같은 자리다.
+        private readonly List<CSoul>        m_lstSoul       = new List<CSoul>();
 
         private CMapInfo            m_cMapInfo;
         private CCSVData_EnemyInfo  m_cEnemyTable;
@@ -289,6 +297,7 @@ namespace Client
             Tick_Enemy();
             Tick_Projectile();
             Tick_Web();
+            Tick_Soul();
 
             m_fRemainTime -= fDeltaTime;
             if (m_fRemainTime <= 0f)
@@ -567,6 +576,7 @@ namespace Client
 
             m_cPlayer = goPlayer.GetComponent<CPlayer>();
             m_cPlayer?.Set_SkillHost(this);     // 260912_감속 스킬이 몬스터를 건드릴 창구
+            m_cPlayer?.Set_RunSkillHost(this);  // 260916_영혼 수집가가 맵 위에 영혼을 놓을 창구
             if (m_cPlayer == null)
             {
                 Debug.LogError("[CStage_Manager] 프리팹에 CPlayer 컴포넌트가 없습니다.");
@@ -710,6 +720,7 @@ namespace Client
             Collect_All(m_lstEnemy);
             Collect_All(m_lstProjectile);
             Collect_All(m_lstWeb);
+            Collect_All(m_lstSoul);
         }
 
         // 목록 세 개가 같은 일을 하므로 하나로 묶는다.
@@ -941,6 +952,64 @@ namespace Client
             m_cPlayer?.Set_SpeedScale(fSlowRatio);
         }
         #endregion 기믹 소환물 (IGimmickHost)
+
+        #region 런 스킬 소환물 (IRunSkillHost)
+        // 260916_영혼 수집가. 위 기믹 소환물과 같은 이유로 여기서 만들고 여기서 회수한다.
+        public void Spawn_Soul()
+        {
+            if (Has_Prefab(PREFAB_SOUL) == false)
+                return;
+
+            Vector2Int vDesired = new Vector2Int(UnityEngine.Random.Range(0, m_cMapInfo.iGridWidth),
+                                                 UnityEngine.Random.Range(0, m_cMapInfo.iGridHeight));
+            if (m_cGrid.Try_Find_NearestCell(vDesired, CELL_STATE.EMPTY, SPAWN_SEARCH_RADIUS,
+                                             out Vector2Int vCell) == false)
+                return;
+
+            CSoulDesc cDesc = new CSoulDesc
+            {
+                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName   = PREFAB_SOUL,
+                cGrid           = m_cGrid,
+                vCell           = vCell,
+                fLifeTime       = SOUL_LIFETIME,
+            };
+
+            GameObject goSoul = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goSoul == null)
+                return;
+
+            CSoul cSoul = goSoul.GetComponent<CSoul>();
+            if (cSoul != null)
+                m_lstSoul.Add(cSoul);
+        }
+
+        private void Tick_Soul()
+        {
+            if (m_cPlayer == null)
+                return;
+
+            Vector2 vPlayerPos = m_cPlayer.transform.position;
+            float   fPickupRange = (SOUL_PICKUP_RADIUS_BASE + m_cPlayer.PICKUP_RADIUS) * m_cGrid.CELL_SIZE;
+
+            for (int i = m_lstSoul.Count - 1; i >= 0; --i)
+            {
+                CSoul cSoul = m_lstSoul[i];
+
+                if (cSoul == null || cSoul.IS_EXPIRED == true)
+                {
+                    m_lstSoul.RemoveAt(i);
+                    continue;
+                }
+
+                if (Vector2.Distance(cSoul.POS, vPlayerPos) <= fPickupRange)
+                {
+                    cSoul.Expire();
+                    m_cPlayer.On_SoulCollected();
+                }
+            }
+        }
+        #endregion 런 스킬 소환물 (IRunSkillHost)
 
         #region 콜백
         private void On_PlayerCapture(int iCapturedCount)

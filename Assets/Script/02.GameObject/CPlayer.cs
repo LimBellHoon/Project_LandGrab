@@ -48,6 +48,8 @@ namespace Client
         private readonly CRunSkillHandler          m_cRunSkillHandler = new CRunSkillHandler();
         private readonly List<CRunSkillEffect>     m_lstRunSkillEffect = new List<CRunSkillEffect>();
         private float           m_fPickupRadius;    // 260916_자석 스킬이 걸어 두는 값(셀). 픽업 쪽이 읽는다
+        // 260916_영혼 수집가가 맵 위에 영혼을 놓을 창구. ISkillHost처럼 스테이지가 꽂아 준다.
+        private IRunSkillHost   m_cRunSkillHost;
 
         // 260912_속도는 두 갈래로 곱해진다 — 거미줄(환경)과 질주(스킬).
         // 스테이지가 매 프레임 환경 배율을 넣어 주므로, 스킬 배율을 따로 두지 않으면
@@ -281,8 +283,25 @@ namespace Client
                 return;
 
             cEffect.Initialize(this);
+            cEffect.Set_Host(m_cRunSkillHost);
             cEffect.On_LevelChanged(cInfo, iLevel);
             m_lstRunSkillEffect.Add(cEffect);
+        }
+
+        /// <summary> 영혼 수집가가 맵 위에 영혼을 놓을 창구. 스테이지가 꽂아 준다. </summary>
+        public void Set_RunSkillHost(IRunSkillHost cHost)
+        {
+            m_cRunSkillHost = cHost;
+
+            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+                m_lstRunSkillEffect[i].Set_Host(cHost);
+        }
+
+        /// <summary> 영혼을 주웠을 때(CStage_Manager가 판정) 모든 런 스킬 효과에 알린다. </summary>
+        public void On_SoulCollected()
+        {
+            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+                m_lstRunSkillEffect[i].On_SoulCollected();
         }
 
         private void Tick_RunSkill(float fDeltaTime)

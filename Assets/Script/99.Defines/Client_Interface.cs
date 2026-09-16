@@ -37,6 +37,17 @@ namespace Client
         void Slow_Enemies(float fScale, float fDuration);
     }
 
+    // 260916_런 전용 스킬(2-11-1)이 플레이어 밖(맵 위)에 무언가를 놓아야 할 때 쓰는 창구.
+    /// <summary>
+    /// IGimmickHost/ISkillHost와 같은 이유다 — 소환물의 생성·수명·플레이어 충돌은
+    /// CStage_Manager가 한곳에서 봐야 웨이브가 넘어갈 때 통째로 회수할 수 있다.
+    /// </summary>
+    public interface IRunSkillHost
+    {
+        /// <summary> 무작위 미점령 칸에 영혼 하나를 떨어뜨린다. </summary>
+        void Spawn_Soul();
+    }
+
 
     // 260904_진행도 저장소
     /// <summary>
