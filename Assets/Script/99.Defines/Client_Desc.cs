@@ -24,7 +24,8 @@ namespace Client
         public CTerritoryGrid   cGrid       { get; set; }
         public Vector2Int       vStartCell  { get; set; }
         public float            fMoveSpeed  { get; set; }
-        public int              iLife       { get; set; }
+        // 260916_목숨 개수 → HP 전환. 시작/최대 체력이다.
+        public int              iMaxHp      { get; set; }
         // 260905_능력치 강화 — 피격을 무시할 확률 0~1
         public float            fEvasion    { get; set; }
         // 260905_장착한 액티브 스킬. null이면 스킬 없음.

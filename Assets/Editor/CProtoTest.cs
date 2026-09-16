@@ -39,6 +39,7 @@ namespace Client
             Test_BoundaryOnlyMove();
             Test_LineFollow();
             Test_Enemy();
+            Test_Player();
             Test_ShapeMask();
             Test_DirtyCell();
             Test_StageProgress();
@@ -311,6 +312,66 @@ namespace Client
                   cGrid.Try_Find_NearestCell(new Vector2Int(0, 0), CELL_STATE.EMPTY, 4, out Vector2Int vNear)
                   && cGrid.Get_Cell(vNear) == CELL_STATE.EMPTY);
         }
+
+        // 260916_목숨 개수(-1 고정) → HP 풀(가변 피해량) 전환 검증
+        private static void Test_Player()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            Vector2Int vStart = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1);
+
+            GameObject goPlayer = new GameObject("Test_HpPlayer");
+            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            cPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = vStart,
+                fMoveSpeed    = STEP_SPEED,
+                iMaxHp        = 3,
+            });
+
+            Check("초기 HP = 최대 HP", cPlayer.HP, 3);
+            Check("최대 HP 기록", cPlayer.MAX_HP, 3);
+
+            int iLastHp = -1;
+            cPlayer.OnHpChanged += iHp => iLastHp = iHp;
+
+            cPlayer.Damage(2);
+            Check("피해량만큼 HP 감소", cPlayer.HP, 1);
+            Check("OnHpChanged가 새 HP를 전달", iLastHp, 1);
+
+            // 방금 맞아 무적 시간이 걸려 있으므로 추가 피해는 들어가지 않는다
+            cPlayer.Damage(1);
+            Check("무적 중 피해 무시", cPlayer.HP, 1);
+
+            cPlayer.Heal(10);
+            Check("회복은 최대 HP를 넘지 않는다", cPlayer.HP, 3);
+
+            Object.DestroyImmediate(goPlayer);
+
+            // 치명적 피해 — HP는 0에서 멈추고 OnDead가 발동한다
+            GameObject goDeath = new GameObject("Test_HpPlayer_Death");
+            CPlayer cDeathPlayer = goDeath.AddComponent<CPlayer>();
+            cDeathPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = vStart,
+                fMoveSpeed    = STEP_SPEED,
+                iMaxHp        = 2,
+            });
+
+            bool bDied = false;
+            cDeathPlayer.OnDead += () => bDied = true;
+            cDeathPlayer.Damage(5);
+            Check("치명적 피해는 HP를 0에서 멈춘다", cDeathPlayer.HP, 0);
+            Check("HP가 0이 되면 OnDead 발동", bDied);
+
+            Object.DestroyImmediate(goDeath);
+        }
+
         // 260904_맵 모양 마스크 — 잘라낸 칸은 아무도 못 들어가고 점령률 분모에서도 빠진다
         private static void Test_ShapeMask()
         {
@@ -420,7 +481,7 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
                 fMoveSpeed    = STEP_SPEED,
-                iLife         = 3,
+                iMaxHp        = 3,
                 cSkillInfo    = cInfo,
             });
 
@@ -1153,7 +1214,7 @@ namespace Client
             const string TAB = "\t";
             string strCsv =
                   string.Join(TAB, "iMapID", "strMapName", "iGridWidth", "iGridHeight", "fCellSize",
-                                   "iBorderThick", "iLife", "fPlayerSpeed", "iWaveCount", "strShapeMask",
+                                   "iBorderThick", "iMaxHp", "fPlayerSpeed", "iWaveCount", "strShapeMask",
                                    "strLayerTex", "strWaveEnemy", "strWaveClearRatio", "strWaveTimeLimit",
                                    "iCoinPerStar", "NONE") + "\n"
                 + string.Join(TAB, "901", "테스트A", "20", "20", "0.1", "1", "3", "8", "1", "-",

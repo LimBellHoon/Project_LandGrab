@@ -48,7 +48,8 @@ namespace Client
         public int      iGridHeight;
         public float    fCellSize;
         public int      iBorderThick;
-        public int      iLife;
+        // 260916_목숨 개수 → HP 전환. 플레이어의 시작/최대 체력이다.
+        public int      iMaxHp;
         public float    fPlayerSpeed;               // 초당 셀
         public int      iWaveCount;
 
@@ -118,7 +119,7 @@ namespace Client
                 iGridHeight     = CCSV_Utility.To_Int(arrField, 3, 100),
                 fCellSize       = CCSV_Utility.To_Float(arrField, 4, 0.12f),
                 iBorderThick    = CCSV_Utility.To_Int(arrField, 5, 2),
-                iLife           = CCSV_Utility.To_Int(arrField, 6, 3),
+                iMaxHp          = CCSV_Utility.To_Int(arrField, 6, 3),
                 fPlayerSpeed    = CCSV_Utility.To_Float(arrField, 7, 9f),
                 iWaveCount      = CCSV_Utility.To_Int(arrField, 8, 1),
                 strShapeMask    = CCSV_Utility.To_String(arrField, 9),

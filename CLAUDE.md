@@ -671,6 +671,33 @@ Game 뷰에서 하는 일이 없는 것과 같은 성격, 2-10) 실기기에서�
 `CGameConfig`에는 켬/끔(`m_bHapticEnabled`) 하나뿐이다 — 세기 조절 자체가 없으니 볼륨 같은
 값을 만들 게 없다. 옵션창 후보로만 남겨 뒀다(1-6).
 
+### 2-14. 플레이어 체력 — 목숨 개수에서 HP 풀로 (260916)
+M4(보스 콘텐츠) 설계에서 보스가 몬스터보다 더 아프게 때려야 한다는 요구가 나왔는데,
+예전 `CPlayer.Damage()`는 인자가 없어 **항상 목숨 1개**만 깎았다 — 공격력이 다른 두 몬스터를
+구분할 방법이 아예 없었다. 그래서 목숨 개수(`m_iLife`, -1 고정)를 HP 풀(`m_iHp`/`m_iMaxHp`,
+가변 피해량)로 바꿨다.
+
+```
+CPlayer.HP / MAX_HP        남은 체력 / 최대 체력
+CPlayer.Damage(iAmount)    iAmount만큼 깎는다. 무적·보호막·회피 판정은 그대로다
+CPlayer.Heal(iAmount)      MAX_HP를 넘지 않게 회복한다 (전엔 상한이 아예 없었다)
+CPlayer.OnHpChanged        옛 OnLifeChanged와 같은 자리 — 이름만 HP에 맞췄다
+```
+
+**이번에 몬스터/탄의 공격력까지 CSV로 뺀 것은 아니다.** `EnemyInfo.csv`·`ProjectileInfo.csv`에
+아직 공격력 열이 없어서, 몬스터 접촉과 탄 피격 둘 다 `CStage_Manager.DEFAULT_HIT_DAMAGE`(1)라는
+임시 고정값을 넘긴다 — 지금까지의 밸런스(목숨 1개 = 피해 1)와 정확히 같은 결과가 나오도록 맞춘
+값이다. `Damage()` 쪽은 이미 가변 피해량을 받을 준비가 됐으니, M4에서 몬스터별 공격력 열이
+생기면 이 상수를 그 값으로 바꿔 끼우기만 하면 된다 — 호출부 구조는 손댈 필요가 없다.
+
+자기 선분을 밟은 즉사(`STEP_RESULT.DEAD`)는 공격력을 가진 몬스터가 없으므로
+`CPlayer.SELF_TRAIL_DAMAGE`(1)라는 별도 고정값을 쓴다. 마찬가지로 예전 동작과 같다.
+
+`MapInfo.csv`의 `iLife` 열은 `iMaxHp`로 이름을 바꿨다 — 값이 의미하는 것이 이제 '시작 목숨
+개수'가 아니라 '시작/최대 체력'이기 때문이다. `UpgradeInfo.csv`/`EquipInfo.csv`의 `HP` 스탯은
+여전히 같은 자리(`Get_TotalStat(..., STAT_TYPE.HP, ...)`)에서 `CStage_Manager.Set_PlayerUpgrade`의
+`iBonusHp`로 들어가 `iMaxHp`에 더해진다 — 강화/장비가 최종 수치를 만드는 흐름 자체는 그대로다.
+
 
 ---
 

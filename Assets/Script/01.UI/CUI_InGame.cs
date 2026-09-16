@@ -330,7 +330,7 @@ namespace Client
 
             m_txtStatus.text = $"{m_cStage.WAVE}/{m_cStage.WAVE_COUNT} 웨이브"
                              + $"   {m_cStage.OWNED_RATIO:P0} / {m_cStage.CLEAR_RATIO:P0}"
-                             + $"   ♥{m_cStage.LIFE}";
+                             + $"   ♥{m_cStage.HP}/{m_cStage.MAX_HP}";
         }
     }
 }

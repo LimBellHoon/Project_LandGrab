@@ -30,6 +30,11 @@ namespace Client
         // 탄의 충돌 반경(셀). 몬스터와 달리 종류가 하나뿐이라 CSV로 뺄 이유가 아직 없다.
         private const float  PROJECTILE_HIT_RANGE = 0.7f;
 
+        // 260916_목숨 개수 → HP 전환. EnemyInfo/ProjectileInfo에 공격력 열이 아직 없어
+        // 몬스터/탄 피격 모두 임시로 같은 고정 피해량을 쓴다 — M4 보스 작업에서
+        // 몬스터별 공격력이 CSV에 들어오면 이 상수를 그 값으로 대체할 것.
+        private const int    DEFAULT_HIT_DAMAGE = 1;
+
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
         private const float  HOLD_TIME   = 0.9f;     // 드러난 보상을 보여주는 시간
@@ -87,7 +92,8 @@ namespace Client
         public STAGE_STATE      STATE           => m_eState;
         public float            REMAIN_TIME     => m_fRemainTime;
         public float            OWNED_RATIO     => m_cGrid.OWNED_RATIO;
-        public int              LIFE            => m_cPlayer != null ? m_cPlayer.LIFE : 0;
+        public int              HP              => m_cPlayer != null ? m_cPlayer.HP : 0;
+        public int              MAX_HP          => m_cPlayer != null ? m_cPlayer.MAX_HP : 0;
         public int              ENEMY_COUNT     => m_lstEnemy.Count;
         public int              WAVE            => m_iWave;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
@@ -96,18 +102,18 @@ namespace Client
         // 260905_능력치 강화 반영. Start_Stage 전에 넣어 둔다.
         private float           m_fSpeedRate = 1f;      // 이동 속도 배율
         private float           m_fEvasion;             // 피격 회피 확률 0~1
-        private int             m_iBonusLife;           // 강화로 늘어난 시작 목숨
+        private int             m_iBonusHp;             // 260916_강화로 늘어난 최대 체력(구 목숨)
         private CSkillInfo      m_cSkillInfo;           // 260905_장착한 액티브 스킬
         private int             m_iSkillLevel;          // 260905_스킬 강화 레벨
 
         /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
         /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
-        /// <param name="iBonusLife"> 맵 기본 목숨에 더할 개수 </param>
-        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion, int iBonusLife)
+        /// <param name="iBonusHp"> 맵 기본 최대 체력에 더할 양 </param>
+        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion, int iBonusHp)
         {
             m_fSpeedRate = Mathf.Max(0.1f, fSpeedRate);
             m_fEvasion   = Mathf.Clamp01(fEvasion);
-            m_iBonusLife = Mathf.Max(0, iBonusLife);
+            m_iBonusHp   = Mathf.Max(0, iBonusHp);
         }
 
         // 260905_장착 시스템이 생기기 전까지는 CGameManager가 표에서 골라 넣어 준다.
@@ -549,7 +555,7 @@ namespace Client
                 fEvasion        = m_fEvasion,
                 cSkillInfo      = m_cSkillInfo,
                 iSkillLevel     = m_iSkillLevel,
-                iLife           = m_cMapInfo.iLife + m_iBonusLife,
+                iMaxHp          = m_cMapInfo.iMaxHp + m_iBonusHp,
             };
 
             GameObject goPlayer = CGameInstance.Instance.Reuse_Object(cPlayerDesc);
@@ -779,7 +785,7 @@ namespace Client
             }
 
             if (bHit == true)
-                m_cPlayer.Damage();
+                m_cPlayer.Damage(DEFAULT_HIT_DAMAGE);
         }
 
         /// <summary> 점령 판정에 넘길 몬스터 셀 목록. 매 호출마다 버퍼를 재사용해 GC를 만들지 않는다. </summary>
@@ -909,7 +915,7 @@ namespace Client
             }
 
             if (bHit == true && m_cPlayer != null)
-                m_cPlayer.Damage();
+                m_cPlayer.Damage(DEFAULT_HIT_DAMAGE);
         }
 
         private void Tick_Web()

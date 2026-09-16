@@ -19,6 +19,9 @@ namespace Client
         // 260912_마감 스킬이 점령지를 찾아 나가는 한계. 맵을 통째로 훑지 않게 막는다.
         private const int   SEAL_MAX_RADIUS  = 40;      // 셀
         private const int   SEAL_MAX_STEP    = 120;     // 셀
+        // 260916_목숨 개수 → HP 전환. 자기 선분을 밟은 즉사는 몬스터/탄과 달리 공격력을 가진
+        // 주체가 없으므로, 예전과 같은 피해량(1)을 여기 고정값으로 둔다.
+        private const int   SELF_TRAIL_DAMAGE = 1;
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
@@ -29,7 +32,9 @@ namespace Client
 
         private CTerritoryGrid  m_cGrid;
         private Vector2Int      m_vLastSafeCell;        // 안전 지대를 벗어나기 직전 셀 — 사망 시 복귀 지점
-        private int             m_iLife;
+        // 260916_목숨 개수(-1씩) → HP 풀(가변 피해량) 전환.
+        private int             m_iHp;
+        private int             m_iMaxHp;
         private float           m_fInvincibleTimer;
         private float           m_fBaseSpeed;       // 260904_거미줄 감속의 기준이 되는 원래 속도
         private float           m_fEvasion;         // 260905_피격 회피 확률 0~1
@@ -48,7 +53,8 @@ namespace Client
         // 260912_카드로 얹은 속도. 판이 끝날 때까지 유지되므로 타이머가 없다.
         private float           m_fCardSpeedScale = 1f;
 
-        public int          LIFE            => m_iLife;
+        public int          HP              => m_iHp;
+        public int          MAX_HP          => m_iMaxHp;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
         /// <summary> 260905_보호막을 들고 있는가. UI가 표시에 쓴다. </summary>
@@ -60,14 +66,14 @@ namespace Client
 
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
-        /// <summary> 남은 목숨을 전달 </summary>
-        public event Action<int> OnLifeChanged;
-        /// <summary> 목숨을 전부 잃음 </summary>
+        /// <summary> 남은 HP를 전달 </summary>
+        public event Action<int> OnHpChanged;
+        /// <summary> HP를 전부 잃음 </summary>
         public event Action OnDead;
         /// <summary> 260905_회피 성공. 연출/사운드를 붙일 자리. </summary>
         public event Action OnEvade;
-        // 260916_OnLifeChanged는 Heal에도 불려 '맞았다'만 골라 듣기 어렵다.
-        /// <summary> 실제로 맞아 목숨이 줄었을 때만. 카메라 흔들림 같은 피격 연출은 이걸 들을 것. </summary>
+        // 260916_OnHpChanged는 Heal에도 불려 '맞았다'만 골라 듣기 어렵다.
+        /// <summary> 실제로 맞아 HP가 줄었을 때만. 카메라 흔들림 같은 피격 연출은 이걸 들을 것. </summary>
         public event Action OnDamaged;
         /// <summary> 점령 판정에 쓸 몬스터 셀 목록 공급자 (없으면 null) </summary>
         public Func<IReadOnlyList<Vector2Int>> GetEnemyCells;
@@ -84,7 +90,8 @@ namespace Client
             }
 
             m_cGrid             = cDesc.cGrid;
-            m_iLife             = cDesc.iLife;
+            m_iMaxHp            = Mathf.Max(1, cDesc.iMaxHp);
+            m_iHp               = m_iMaxHp;
             m_fInvincibleTimer  = 0f;
             m_vLastSafeCell     = cDesc.vStartCell;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
@@ -141,7 +148,7 @@ namespace Client
         {
             // 풀에 반납되므로 외부 구독을 끊어 다음 재사용에 새지 않게 한다.
             OnCapture       = null;
-            OnLifeChanged   = null;
+            OnHpChanged     = null;
             OnDead          = null;
             OnEvade         = null;
             OnDamaged       = null;
@@ -162,7 +169,7 @@ namespace Client
             switch (eResult)
             {
                 case STEP_RESULT.DEAD:
-                    Damage();
+                    Damage(SELF_TRAIL_DAMAGE);
                     break;
 
                 case STEP_RESULT.CAPTURE:
@@ -268,11 +275,15 @@ namespace Client
 
         // 260904_이미 죽었거나 풀에 반납된 뒤의 호출을 막는다.
         // 같은 프레임에 여러 몬스터가 겹치거나 스테이지가 끝난 뒤에도 판정이 한 번 더 들어올 수 있어,
-        // 목숨이 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
-        /// <summary> 몬스터/탄 피격, 자기 선 밟기 등으로 목숨 1 감소. </summary>
-        public void Damage()
+        // HP가 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
+        // 260916_목숨 개수(-1 고정) → HP 풀(가변 피해량) 전환. 몬스터/탄마다 다른 공격력을
+        // 넣을 수 있도록 파라미터로 받는다 — 지금은 호출부가 전부 같은 값을 넘기지만
+        // (EnemyInfo/ProjectileInfo에 공격력 열이 아직 없다, M4 보스 작업에서 채울 예정),
+        // Damage 자체는 이미 가변 피해량을 받을 준비가 됐다.
+        /// <summary> 몬스터/탄 피격, 자기 선 밟기 등으로 HP를 iAmount만큼 줄인다. </summary>
+        public void Damage(int iAmount)
         {
-            if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
+            if (m_cGrid == null || iAmount <= 0 || m_iHp <= 0 || IS_INVINCIBLE == true)
                 return;
 
             // 260905_보호막이 있으면 확정으로 한 번 막는다. 확률인 회피보다 먼저 쓴다 —
@@ -297,11 +308,11 @@ namespace Client
 
             m_cGrid.Clear_Trail();
 
-            --m_iLife;
+            m_iHp = Mathf.Max(0, m_iHp - iAmount);
             OnDamaged?.Invoke();
-            OnLifeChanged?.Invoke(m_iLife);
+            OnHpChanged?.Invoke(m_iHp);
 
-            if (m_iLife <= 0)
+            if (m_iHp <= 0)
             {
                 OnDead?.Invoke();
                 return;
@@ -318,7 +329,7 @@ namespace Client
         // 효과가 실패하면 쿨타임을 돌리지 않는다 — 멈춘 채로 점멸을 눌러 쿨만 날리면 억울하다.
         public bool Try_UseSkill()
         {
-            if (m_cGrid == null || m_iLife <= 0 || m_cSkillEffect == null)
+            if (m_cGrid == null || m_iHp <= 0 || m_cSkillEffect == null)
                 return false;
 
             if (m_cSkillHandler.IS_READY == false)
@@ -429,14 +440,14 @@ namespace Client
         /// <summary> 보호막을 얻는다. 이미 있으면 그대로 둔다(중첩하지 않는다). </summary>
         public void Add_Shield() => m_bShield = true;
 
-        /// <summary> 목숨을 회복한다. </summary>
+        /// <summary> HP를 회복한다. 최대 HP를 넘기지 않는다. </summary>
         public void Heal(int iAmount)
         {
-            if (iAmount <= 0 || m_iLife <= 0)
+            if (iAmount <= 0 || m_iHp <= 0)
                 return;
 
-            m_iLife += iAmount;
-            OnLifeChanged?.Invoke(m_iLife);
+            m_iHp = Mathf.Min(m_iMaxHp, m_iHp + iAmount);
+            OnHpChanged?.Invoke(m_iHp);
         }
 
         #endregion 규칙 판정
