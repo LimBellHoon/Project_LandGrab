@@ -53,6 +53,7 @@ namespace Client
             Test_CameraFit();
             Test_CameraFollow();
             Test_CardPick();
+            Test_BehaviorTree();
             Test_SafeArea();
             Test_SkillTable();
             Test_RunSkillTable();
@@ -1188,6 +1189,101 @@ namespace Client
             Object.DestroyImmediate(goPlayer);
         }
 
+
+        // 260917_비헤이비어 트리 — 이식해 온 뼈대가 원본과 같은 규칙으로 도는지
+        private static void Test_BehaviorTree()
+        {
+            const float DT = 0.1f;
+
+            // --- Sequence : 앞이 성공해야 뒤로 간다 ---
+            List<string> lstLog = new List<string>();
+            CNode cSeq = new CNode_Sequence(new List<CNode>
+            {
+                new CNode_Action(dt => { lstLog.Add("A"); return NODE_STATE.SUCCESS; }),
+                new CNode_Action(dt => { lstLog.Add("B"); return NODE_STATE.SUCCESS; }),
+            });
+            Check("시퀀스 전부 성공", cSeq.Evaluate(DT) == NODE_STATE.SUCCESS);
+            Check("시퀀스는 순서대로", string.Join("", lstLog), "AB");
+
+            lstLog.Clear();
+            CNode cSeqFail = new CNode_Sequence(new List<CNode>
+            {
+                new CNode_Condition(() => false),
+                new CNode_Action(dt => { lstLog.Add("X"); return NODE_STATE.SUCCESS; }),
+            });
+            Check("앞이 실패하면 시퀀스 실패", cSeqFail.Evaluate(DT) == NODE_STATE.FAILURE);
+            Check("실패 뒤는 실행 안 함", lstLog.Count, 0);
+
+            // --- Wait : 시간이 다 차야 성공 ---
+            CNode cWait = new CNode_Wait(0.25f);
+            Check("기다리는 중", cWait.Evaluate(DT) == NODE_STATE.RUNNING);
+            Check("아직 기다리는 중", cWait.Evaluate(DT) == NODE_STATE.RUNNING);
+            Check("다 기다리면 성공", cWait.Evaluate(DT) == NODE_STATE.SUCCESS);
+
+            // --- RUNNING은 다음 프레임에 같은 자리에서 이어진다 ---
+            int iEnter = 0;
+            int iExit = 0;
+            CNode cSeqRun = new CNode_Sequence(new List<CNode>
+            {
+                new CNode_Action(dt => NODE_STATE.SUCCESS, () => ++iEnter, () => ++iExit),
+                new CNode_Wait(0.15f),
+            });
+            cSeqRun.Evaluate(DT);
+            cSeqRun.Evaluate(DT);
+            Check("진행 중이면 앞 노드를 다시 들어가지 않는다", iEnter, 1);
+
+            // --- Selector : 우선순위가 높은 자식이 끼어들면 하던 자식을 끊는다 ---
+            bool bInterrupt = false;
+            int iLowExit = 0;
+            CNode cLow = new CNode_Action(dt => NODE_STATE.RUNNING, null, () => ++iLowExit);
+            CNode cSel = new CNode_Selector(new List<CNode>
+            {
+                new CNode_Condition(() => bInterrupt),
+                cLow,
+            });
+            Check("낮은 순위가 진행 중", cSel.Evaluate(DT) == NODE_STATE.RUNNING);
+            Check("낮은 순위 노드가 돌고 있다", cLow.IS_RUNNING);
+
+            bInterrupt = true;
+            Check("높은 순위가 끼어든다", cSel.Evaluate(DT) == NODE_STATE.SUCCESS);
+            Check("끼어들면 하던 노드를 끊는다", iLowExit, 1);
+            Check("끊긴 노드는 멈춘다", cLow.IS_RUNNING == false);
+
+            // --- 원본 버그 수정 확인 : 셀렉터를 밖에서 끊으면 진행 중이던 자식도 끊긴다 ---
+            bInterrupt = false;
+            iLowExit = 0;
+            cSel.Evaluate(DT);
+            cSel.Abort();
+            Check("셀렉터를 끊으면 자식도 끊긴다", iLowExit, 1);
+
+            // --- 핸들러 : 트리를 갈아 끼우면 하던 노드를 끊고 메모리를 비운다 ---
+            CBehaviorTreeHandler cHandler = new CBehaviorTreeHandler();
+            Check("트리가 없으면 실패", cHandler.Tick(DT) == NODE_STATE.FAILURE);
+
+            int iOldExit = 0;
+            cHandler.Set_Tree(new CNode_Action(dt => NODE_STATE.RUNNING, null, () => ++iOldExit));
+            cHandler.BLACKBOARD.Set(BLACKBOARD_KEY.IS_ATTACKING, true);
+            cHandler.Tick(DT);
+            cHandler.Set_Tree(new CNode_Wait(1f));
+            Check("트리를 바꾸면 하던 노드를 끊는다", iOldExit, 1);
+            Check("트리를 바꾸면 메모리를 비운다", cHandler.BLACKBOARD.Has(BLACKBOARD_KEY.IS_ATTACKING) == false);
+
+            // --- Blackboard : 원본 버그 수정 확인 (값형 칸도 지워져야 한다) ---
+            CBlackboard cBoard = new CBlackboard();
+            cBoard.Set(BLACKBOARD_KEY.DETECT_RANGE, 7f);
+            cBoard.Set(BLACKBOARD_KEY.IS_SUPERARMOR, true);
+            cBoard.Set(BLACKBOARD_KEY.TARGET_POS, new Vector2(3f, 4f));
+            Check("float 읽기", Mathf.RoundToInt(cBoard.Get_Float(BLACKBOARD_KEY.DETECT_RANGE)), 7);
+            Check("Vector2 읽기", Mathf.RoundToInt(cBoard.Get_Vector(BLACKBOARD_KEY.TARGET_POS).y), 4);
+            Check("없는 키는 기본값", cBoard.Get_Bool(BLACKBOARD_KEY.IS_ATTACKING) == false);
+
+            cBoard.Remove(BLACKBOARD_KEY.DETECT_RANGE);
+            Check("float도 지워진다", cBoard.Has(BLACKBOARD_KEY.DETECT_RANGE) == false);
+
+            cBoard.Clear();
+            Check("bool도 비워진다", cBoard.Has(BLACKBOARD_KEY.IS_SUPERARMOR) == false);
+            Check("Vector2도 비워진다", cBoard.Has(BLACKBOARD_KEY.TARGET_POS) == false);
+        }
 
         // 260912_카드 3지선다 — 표가 읽히고, 서로 다른 카드가 뽑히고, 효과가 걸리는지
         private static void Test_CardPick()

@@ -102,6 +102,30 @@
     // (뱀서라이크 방식) 장비/강화 스킬(SKILL_TYPE)과는 완전히 별개의 표·핸들러를 쓴다 —
     // 저쪽은 '하나만 장착', 이쪽은 '여러 개를 동시에 들고 레벨업'이라 구조 자체가 다르다.
     /// <summary> 이름이 RunSkillInfo.csv의 eType 열과 정확히 같아야 한다. 뒤에만 추가할 것(저장 슬롯 없음 — 판마다 초기화되므로 순서 걱정은 없다). </summary>
+    // 260917_비헤이비어 트리 (Portfolio_SoloLeveling에서 이식)
+    /// <summary> 노드 한 번 평가의 결과. </summary>
+    public enum NODE_STATE
+    {
+        RUNNING,    // 아직 진행 중 — 다음 프레임에 같은 노드를 이어서 평가한다
+        SUCCESS,
+        FAILURE,
+    }
+
+    /// <summary>
+    /// 노드끼리 공유하는 작업 메모리의 키. 노드가 소유자를 구체 타입으로 캐스팅하지 않고도
+    /// 상태를 읽고 쓰게 해 준다. 원본(SoloLeveling)은 3D 액션용 키였으므로 이 게임에 맞게 다시 골랐다.
+    /// </summary>
+    public enum BLACKBOARD_KEY
+    {
+        TARGET_POS,         // Vector2 : 노리는 위치 (보통 플레이어)
+        DETECT_RANGE,       // float   : 감지 범위(셀)
+        ATTACK_RANGE,       // float   : 공격 범위(셀)
+        IS_ATTACKING,       // bool    : 공격 패턴 진행 중 — 중간에 끊지 않는다
+        PATTERN_INDEX,      // float   : 지금 차례인 패턴 번호
+        NEXT_PATTERN_TIME,  // float   : 다음 패턴을 시작해도 되는 누적 시간
+        IS_SUPERARMOR,      // bool    : 피격 반응을 무시하는 중
+    }
+
     public enum RUN_SKILL_TYPE
     {
         NONE = 0,
