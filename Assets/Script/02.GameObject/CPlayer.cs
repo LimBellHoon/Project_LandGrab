@@ -52,8 +52,6 @@ namespace Client
         private float           m_fPickupRadius;    // 260916_자석 스킬이 걸어 두는 값(셀). 픽업 쪽이 읽는다
         // 260916_영혼 수집가가 맵 위에 영혼을 놓을 창구. ISkillHost처럼 스테이지가 꽂아 준다.
         private IRunSkillHost   m_cRunSkillHost;
-        // 260916_회전탄 오프셋 재사용 버퍼. 매 프레임 새로 만들지 않는다.
-        private readonly List<Vector2> m_lstOrbitOffset = new List<Vector2>();
 
         // 260912_속도는 두 갈래로 곱해진다 — 거미줄(환경)과 질주(스킬).
         // 스테이지가 매 프레임 환경 배율을 넣어 주므로, 스킬 배율을 따로 두지 않으면
@@ -381,29 +379,6 @@ namespace Client
         {
             for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
                 m_lstRunSkillEffect[i].On_MonsterHit();
-        }
-
-        // 260916_회전탄. 효과는 셀 단위 오프셋만 알고, 월드 좌표 변환은 그리드를 아는 여기서 한다.
-        /// <summary> 지금 회전탄을 갖고 있으면 그 세계 좌표들을 채우고 true. </summary>
-        public bool Try_Get_OrbitPoints(List<Vector2> lstWorldPoints)
-        {
-            lstWorldPoints.Clear();
-            if (m_cGrid == null)
-                return false;
-
-            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
-            {
-                if (m_lstRunSkillEffect[i].Try_Get_OrbitOffsets(m_lstOrbitOffset) == false)
-                    continue;
-
-                Vector2 vCenter = transform.position;
-                for (int j = 0; j < m_lstOrbitOffset.Count; ++j)
-                    lstWorldPoints.Add(vCenter + m_lstOrbitOffset[j] * m_cGrid.CELL_SIZE);
-
-                return lstWorldPoints.Count > 0;
-            }
-
-            return false;
         }
 
         // 260916_몽둥이. 서 있는 방향이 없으면(멈춰 있으면) 휘두를 곳이 없다.

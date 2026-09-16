@@ -26,3 +26,5 @@
 17	십자 레이저	LASER	SYNC	-	0	1.6	40	0.5	1	1	-1	-	LASER_TELEGRAPH:0.25|LASER_THICKEN:0.1|LASER_FADE:0.25|LASER_WIDTH:1.6	각성: 레이저+신발. 쏜 쪽 몸에 붙어 뻗는다
 18	영혼 낫	POINT	BOOMERANG	KNOCKBACK_PUSH	6	6	0	1.2	2	1	-1	4	BOOMERANG_OUT:0.7|BOOMERANG_STAY:0.3|KNOCKBACK_DISTANCE:1.5	각성: 부메랑+영혼 수집가. 맞으면 도트(4)
 19	끝없는 튕김탄	POINT	STRAIGHT	REBOUND	8	10	0	0.7	1.2	1	12	-	-	각성: 튕기는 탄+월보. 11번 튕기고 12번째에 사라진다
+20	회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:180|CANCEL_SHOT:1	런 스킬 회전탄. 수명 0 = 스킬이 거둘 때까지. 닿은 적탄을 지운다
+21	광란 회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:360|CANCEL_SHOT:1	각성 광란의 칼바람 — 분노가 터진 동안 두 배로 빨리 돈다

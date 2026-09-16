@@ -664,7 +664,7 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 | 회피 | ✅ | 기존 `CPlayer.Add_Evasion`(누적 전용 API)에 레벨업 때마다 **직전 레벨과의 차이만** 더한다 — 레벨2를 받았는데 레벨1+레벨2를 둘 다 더하면 두 배가 된다 |
 | 분노조절못해 | ✅ | 달릴 때(`CPlayer.IS_MOVING`) · 맞을 때(`OnDamaged`) · 몬스터를 때릴 때(`CPlayer.On_MonsterHit`, 회전탄/몽둥이가 명중하면 `CStage_Manager`가 불러 준다) 셋 다 게이지가 오른다 |
 | 영혼 수집가 | ✅ | `CSoul`(신규 픽업 오브젝트, `CWeb`과 같은 자리 — 제자리에 머무르다 수명이 다하면 사라짐)을 `IRunSkillHost.Spawn_Soul()`로 요청하면 `CStage_Manager`가 무작위 미점령 칸에 놓고 수명·습득 판정까지 한곳에서 본다. 습득 범위는 `SOUL_PICKUP_RADIUS_BASE`(기본) + 자석 보너스. 속도 증가는 `CPlayer.Add_CardSpeed`를 그대로 탄다 — "판이 끝날 때까지 유지되는 영구 가산"이 카드 속도가 이미 하는 일과 같아서 필드를 새로 만들지 않았다 |
-| 회전탄 | ✅ | `CRunSkillEffect_Orbit`은 플레이어 중심 기준 셀 단위 오프셋(회전각)만 안다 — 월드 좌표 변환은 그리드를 아는 `CPlayer.Try_Get_OrbitPoints`가, 적탄 상쇄·몬스터 피해 판정은 목록을 아는 `CStage_Manager.Tick_Orbit`이 한다. 레벨업마다 탄이 1개씩 는다 |
+| 회전탄 | ✅ | 260917_**투사체로 옮겼다.** 예전엔 좌표만 계산해 스테이지가 판정했는데 **아무것도 그려지지 않았고**, 반경 안 몬스터를 매 프레임 때려 즉사시켰다. 이제 `CRunSkillEffect_Orbit`이 `ProjectileInfo` 20(ORBIT 이동 · 수명 0 · `CANCEL_SHOT:1`)을 레벨 수만큼 띄워 붙잡아 둔다. 피해는 닿는 순간만, 적탄 지우기는 `CStage_Manager.Cancel_EnemyShots`가 탄 속성으로 본다. 수가 바뀌면 전부 거두고 같은 간격으로 다시 띄운다. 붙잡은 탄은 `CProjectileCore.SERIAL`로 풀 재사용을 가린다 |
 | 몽둥이 | ✅ | `CRunSkillEffect_Club`은 "지금 휘두를 차례인가"(자체 쿨타임)와 반경만 안다. 실제 타격점(플레이어 위치 + 바라보는 방향)은 `CPlayer.Try_ConsumeClubSwing`이, 판정·넉백은 `CStage_Manager.Tick_Club`이 한다. 뱀서라이크의 다른 무기와 마찬가지로 버튼 없이 자동 발동한다 — "액티브"는 쿨타임을 가진 효과라는 뜻이지 버튼 여부가 아니다 |
 
 **회전탄/몽둥이를 위해 처음 생긴 것 — 몬스터 HP와 넉백.** 이전까지 몬스터는 전투로
@@ -717,7 +717,7 @@ CStage_Manager.Apply_Pick → CPlayer.Awaken_RunSkill → CRunSkillHandler.Awake
 
 | 각성 | 액티브 + 패시브 | 바뀌는 것 |
 |---|---|---|
-| 광란의 칼바람 | 회전탄 + 분노 | 탄 +1, **분노가 터진 동안** 수 · 회전 속도 2배 (`CPlayer.IS_FEVER`) |
+| 광란의 칼바람 | 회전탄 + 분노 | 탄 +1, **분노가 터진 동안** 수 2배 · 빠른 탄 21로 교체 (`CPlayer.IS_FEVER`) |
 | 반격의 몽둥이 | 몽둥이 + 회피 | 범위 1.3배, **회피하는 순간 쿨이 비워진다** (`CPlayer.OnEvade`) |
 | 블랙홀탄 | 마법탄 + 자석 | 탄 16(관통 + 끌어당김), 쿨 0.8배 |
 | 십자 레이저 | 레이저 + 신발 | 탄 17(몸에 붙는 레이저), SPIN 4방향 |
@@ -726,7 +726,7 @@ CStage_Manager.Apply_Pick → CPlayer.Awaken_RunSkill → CRunSkillHandler.Awake
 
 **투사체 무기의 각성은 표만으로 만든다** — `iProjectileID` · `eFirePattern`을 덮어쓰고 `strParam`으로 수를 조율한다
 (`COUNT_BONUS` `COUNT_OVERRIDE` `COOL_RATE` `FIRE_ANGLE`). 새 각성탄은 `ProjectileInfo.csv`에 줄만 늘리면 된다.
-회전탄 · 몽둥이처럼 동작이 바뀌는 각성만 코드가 필요하다(`FEVER_COUNT_RATE` `FEVER_SPEED_RATE` / `RADIUS_RATE` `COOL_RATE`).
+회전탄 · 몽둥이처럼 동작이 바뀌는 각성만 코드가 필요하다(`FEVER_COUNT_RATE` `FEVER_PROJECTILE_ID` / `RADIUS_RATE` `COOL_RATE`).
 
 **아직 안 만든 문서 후보**: 땅고르기 몽둥이(몽둥이 + 월보 — 때린 자리를 점령지로). 칸을 바깥에서 점령시키는 길이
 `CTerritoryGrid`에 없어 규칙 단일 진입점(2-3)을 건드려야 한다 — 따로 설계할 것.
@@ -857,7 +857,8 @@ GYM은 위치로 읽어 특성 하나를 빼면 값이 엉뚱한 특성으로 �
 `LASER_TELEGRAPH` `LASER_THICKEN` `LASER_FADE` `LASER_WIDTH` / `SWEEP_TIME` / `BLAST_GROW` `BLAST_SCALE` /
 `TRACE_TURN` / `SPIRAL_ROTATE` `SPIRAL_EXPAND` / `BOOMERANG_OUT` `BOOMERANG_STAY` / `ORBIT_RADIUS` `ORBIT_SPEED` /
 `GRAVITY_POWER` / `KNOCKBACK_DISTANCE` `KNOCKBACK_TIME` / `STUN_TIME` / `HITSTOP_TIME` / `GROW_SCALE` `GROW_TIME` /
-`STOP_SLOW` / `WHITE_TIME`. 없는 키는 기본값을 쓴다.
+`STOP_SLOW` / `WHITE_TIME` / `CANCEL_SHOT`(1이면 닿은 작은 적탄을 지운다 — 플레이어 탄 전용). 없는 키는 기본값을 쓴다.
+**수명(`fLifeTime`) 0은 무한**이다 — 회전탄처럼 스킬이 직접 거두는 탄에 쓴다.
 
 #### 닿음은 본체가 한 번만 가린다
 스테이지가 매 프레임 '맞을 수 있는 대상'을 넘기면(`Update_Contact`) 본체가 **닿기 시작 · 닿아 있음 · 떨어짐**을 가린다.

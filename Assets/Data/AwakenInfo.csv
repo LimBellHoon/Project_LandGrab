@@ -2,9 +2,9 @@
 ;== 런 스킬 각성 ==	액티브가 만렙이고 짝 패시브를 iPassiveLevel 이상 들고 있으면 3지선다에 "각성" 후보로 나온다(Docs/Design_RunSkill_Awaken.md)
 ;각성해도 슬롯을 새로 먹지 않는다	그 액티브가 그 자리에서 바뀐다. 액티브 하나는 한 번만 각성한다
 ;iProjectileID / eFirePattern	투사체 무기만 쓴다. 0 / - 이면 원래 값
-;strParam	KEY:VALUE를 | 로. 무기: COUNT_BONUS COUNT_OVERRIDE COOL_RATE FIRE_ANGLE / 회전탄: COUNT_BONUS FEVER_COUNT_RATE FEVER_SPEED_RATE / 몽둥이: RADIUS_RATE COOL_RATE
+;strParam	KEY:VALUE를 | 로. 무기: COUNT_BONUS COUNT_OVERRIDE COOL_RATE FIRE_ANGLE / 회전탄: COUNT_BONUS FEVER_COUNT_RATE FEVER_PROJECTILE_ID / 몽둥이: RADIUS_RATE COOL_RATE
 ;---	액티브	패시브	패시브요구레벨	이름	설명	가중치	탄ID	발사패턴	조율값	메모
-1	ORBIT	RAGE	1	광란의 칼바람	회전탄이 하나 늘고, 분노가 터지는 동안 두 배로 늘어 두 배로 빨리 돈다	30	0	-	COUNT_BONUS:1|FEVER_COUNT_RATE:2|FEVER_SPEED_RATE:2	문서 4장 후보
+1	ORBIT	RAGE	1	광란의 칼바람	회전탄이 하나 늘고, 분노가 터지는 동안 두 배로 늘어 두 배로 빨리 돈다	30	0	-	COUNT_BONUS:1|FEVER_COUNT_RATE:2|FEVER_PROJECTILE_ID:21	문서 4장 후보
 2	CLUB	EVASION	1	반격의 몽둥이	회피에 성공하면 곧바로 휘두른다. 휘두르는 범위가 넓어진다	30	0	-	RADIUS_RATE:1.3	문서 4장 후보
 3	MAGIC_BOLT	MAGNET	1	블랙홀탄	유도탄이 몬스터를 꿰뚫으며 끌어당긴다	30	16	-	COOL_RATE:0.8	
 4	LASER_BEAM	EDGE_WRAP	1	십자 레이저	몸에서 사방으로 맵 끝까지 레이저를 뿜고, 쏠 때마다 방향이 돈다	30	17	SPIN	COUNT_OVERRIDE:4|FIRE_ANGLE:45|COOL_RATE:0.8	

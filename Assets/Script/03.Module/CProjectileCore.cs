@@ -25,6 +25,10 @@ namespace Client
     /// </summary>
     public class CProjectileCore
     {
+        // 260917_풀에서 다시 쓰일 때마다 새 번호. 탄을 붙잡아 두는 쪽(회전탄)이 '아직 내가 쏜 그 탄인가'를 가린다 —
+        // 없으면 거둔 탄이 다른 탄으로 재사용된 뒤에 그 탄을 끄는 사고가 난다.
+        private static int s_iSerial;
+
         private CProjectileInfo         m_cInfo;
         private IProjectileHost         m_cHost;
         private IImpactTarget           m_cOwner;       // 쏜 쪽. ORBIT · SYNC · BOOMERANG이 따라간다. 없어도 된다
@@ -46,6 +50,8 @@ namespace Client
         private int     m_iDurability;
         private int     m_iHitCount;        // 260917_새로 맞힌 횟수. 플레이어 탄이 몬스터를 때렸는지 스테이지가 센다(분노 게이지)
         private bool    m_bExpired;
+        private int     m_iSerial;
+        private bool    m_bCancelShot;      // 260917_닿은 적탄을 지운다 (조율값 CANCEL_SHOT)
 
         // 지금 닿아 있는 대상. 이번 프레임 판정과 비교해 들어옴 / 머무름 / 나감을 가린다.
         private readonly HashSet<IImpactTarget> m_hsContact = new HashSet<IImpactTarget>();
@@ -68,6 +74,10 @@ namespace Client
         public float            SCALE           => m_cInfo.fScale * m_fScaleRate;
         public int              DURABILITY      => m_iDurability;
         public int              HIT_COUNT       => m_iHitCount;
+        public int              SERIAL          => m_iSerial;
+        public bool             CAN_CANCEL_SHOT => m_bCancelShot;
+        /// <summary> 판정 반경(월드) — 표의 반경 × 크기 배율. 적탄 지우기처럼 원끼리 볼 때 쓴다 </summary>
+        public float            HIT_RADIUS      => m_cInfo != null ? m_cInfo.fHitRange * SCALE * m_fCellSize : 0f;
         public bool             IS_EXPIRED      => m_bExpired;
         public bool             IS_HIT_STOP     => m_fHitStopTimer > 0f;
         public int              TRAIT_COUNT     => m_lstTrait.Count;
@@ -100,6 +110,8 @@ namespace Client
             m_fScaleRate    = 1f;
             m_iDurability   = cInfo.iDurability == 0 ? 1 : cInfo.iDurability;
             m_iHitCount     = 0;
+            m_iSerial       = ++s_iSerial;
+            m_bCancelShot   = cInfo.Get_Param("CANCEL_SHOT", 0f) > 0f;
             m_bExpired      = false;
             m_hsContact.Clear();
 

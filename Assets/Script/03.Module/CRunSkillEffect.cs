@@ -81,11 +81,6 @@ namespace Client
         /// <summary> 회전탄/몽둥이가 몬스터를 때렸을 때 CPlayer가 모든 효과에 알린다(분노 게이지용). </summary>
         public virtual void On_MonsterHit() { }
 
-        // 260916_회전탄 — 플레이어 중심 기준 상대 오프셋(셀)만 돌려준다. 월드 변환·그리드 참조는
-        // CPlayer(그리드를 아는 쪽)가 한다 — 효과 쪽을 화면/그리드 없이 계속 테스트하기 위해서다.
-        /// <returns> 이 효과가 회전탄을 갖고 있으면 true, lstOffsetCells에 오프셋을 채운다. </returns>
-        public virtual bool Try_Get_OrbitOffsets(List<Vector2> lstOffsetCells) => false;
-
         // 260916_몽둥이 — "지금 휘두를 차례인가"만 판단한다. 실제 위치 계산(플레이어 위치 +
         // 바라보는 방향)은 마찬가지로 CPlayer가 한다.
         /// <returns> 이번 프레임에 휘둘렀으면 true(그 즉시 쿨타임이 다시 찬다). fRadiusCells에 판정 반경(셀). </returns>
@@ -255,30 +250,34 @@ namespace Client
     }
 
     /// <summary>
-    /// 회전탄 — 주위를 도는 탄이 적탄을 없애고 몬스터에게 피해를 준다. 레벨업마다 탄이 1개씩
-    /// 늘어난다(1레벨=1개). 실제 충돌 판정은 <see cref="CStage_Manager"/>가 한다 — 적탄/몬스터
-    /// 목록을 들고 있는 쪽이 거기라서다(2-6과 같은 이유). 여기서는 "지금 탄이 어디 있는가"만 안다.
+    /// 회전탄 — 주위를 도는 탄이 적탄을 없애고 몬스터에게 피해를 준다. 레벨업마다 탄이 1개씩 늘어난다(1레벨=1개).
+    ///
+    /// 260917_투사체로 옮겼다. 예전에는 좌표만 계산해 스테이지가 판정했는데 **아무것도 그려지지 않았고**,
+    /// 반경 안의 몬스터를 매 프레임 때려 닿자마자 죽였다. 이제 ProjectileInfo의 회전 궤도탄(ORBIT 이동)을
+    /// 필요한 수만큼 띄워 두고 붙잡는다 — 그리기 · 닿는 순간만 피해 · 적탄 지우기(CANCEL_SHOT)가 탄 쪽에 다 있다.
+    ///
+    /// 수가 바뀌면(레벨업 · 각성 · 분노) 전부 거두고 같은 간격으로 다시 띄운다. 궤도가 어긋나지 않게 하는 가장 간단한 길이다.
     /// </summary>
     public class CRunSkillEffect_Orbit : CRunSkillEffect
     {
-        private const float ORBIT_RADIUS_CELLS = 1.5f;     // 플레이어로부터의 거리
-        private const float ANGULAR_SPEED_DEG  = 180f;     // 초당 회전각
+        private readonly List<CProjectileCore> m_lstCore   = new List<CProjectileCore>();
+        private readonly List<int>             m_lstSerial = new List<int>();
 
-        /// <summary> 탄 하나의 충돌 반경(셀). CStage_Manager가 세계 좌표로 환산해 쓴다. </summary>
-        public const float HIT_RADIUS_CELLS = 0.5f;
+        private IRunSkillHost m_cHost;
+        private CRunSkillInfo m_cInfo;
+        private int           m_iBaseCount;     // 레벨이 정한 수. 각성 보너스와 피버 배율은 매번 따로 곱한다
+        private int           m_iSpawnedID;     // 지금 떠 있는 탄의 종류(피버 동안 바뀐다)
 
-        private float m_fAngle;
-        private int   m_iCount;
-
-        private int   m_iBaseCount;     // 260917_레벨이 정한 수. 각성 보너스와 피버 배율은 매번 따로 곱한다
+        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
 
         public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
         {
             base.On_LevelChanged(cInfo, iLevel);
+            m_cInfo      = cInfo;
             m_iBaseCount = Mathf.RoundToInt(cInfo.Get_Value(iLevel));
         }
 
-        // 260917_광란의 칼바람(회전탄 + 분노). 분노가 터져 있는 동안만 수와 속도가 불어난다 —
+        // 260917_광란의 칼바람(회전탄 + 분노). 분노가 터져 있는 동안만 수가 불어나고 빠른 탄으로 바뀐다 —
         // 두 스킬이 서로를 모른 채 CPlayer.IS_FEVER 하나로만 겹친다(2-10-2의 흔들림/펀치와 같은 결).
         public int COUNT
         {
@@ -296,31 +295,85 @@ namespace Client
             }
         }
 
+        public int PROJECTILE_ID
+        {
+            get
+            {
+                if (Is_Frenzy() == true)
+                {
+                    int iFever = Mathf.RoundToInt(m_cAwaken.Get_Param("FEVER_PROJECTILE_ID", 0f));
+                    if (iFever > 0)
+                        return iFever;
+                }
+                return m_cInfo != null ? m_cInfo.iProjectileID : 0;
+            }
+        }
+
+        /// <summary> 지금 떠 있는(아직 살아 있는) 탄 수 </summary>
+        public int ALIVE_COUNT
+        {
+            get
+            {
+                int iAlive = 0;
+                for (int i = 0; i < m_lstCore.Count; ++i)
+                {
+                    if (Is_Mine(i) == true)
+                        ++iAlive;
+                }
+                return iAlive;
+            }
+        }
+
         private bool Is_Frenzy() => IS_AWAKENED == true && m_cOwner != null && m_cOwner.IS_FEVER == true;
+
+        // 붙잡아 둔 탄이 아직 내가 띄운 그 탄인가 — 풀에서 다른 탄으로 재사용됐으면 번호가 다르다.
+        private bool Is_Mine(int iIndex)
+            => m_lstCore[iIndex] != null && m_lstCore[iIndex].SERIAL == m_lstSerial[iIndex]
+               && m_lstCore[iIndex].IS_EXPIRED == false;
 
         public override void Tick(float fDeltaTime)
         {
-            float fSpeed = ANGULAR_SPEED_DEG * (Is_Frenzy() == true ? m_cAwaken.Get_Param("FEVER_SPEED_RATE", 1f) : 1f);
-            m_fAngle = (m_fAngle + fSpeed * fDeltaTime) % 360f;
-        }
+            if (m_cHost == null || m_cOwner == null)
+                return;
 
-        public override bool Try_Get_OrbitOffsets(List<Vector2> lstOffsetCells)
-        {
-            lstOffsetCells.Clear();
-            int iCount = COUNT;
-            if (iCount <= 0)
-                return false;
+            int iWant = COUNT;
+            int iID   = PROJECTILE_ID;
+            if (iID <= 0)
+                return;
 
-            float fStepDeg = 360f / iCount;
+            if (ALIVE_COUNT == iWant && m_lstCore.Count == iWant && iID == m_iSpawnedID)
+                return;
 
-            for (int i = 0; i < iCount; ++i)
+            Collect_All();
+
+            for (int i = 0; i < iWant; ++i)
             {
-                float fRad = (m_fAngle + fStepDeg * i) * Mathf.Deg2Rad;
-                lstOffsetCells.Add(new Vector2(Mathf.Cos(fRad), Mathf.Sin(fRad)) * ORBIT_RADIUS_CELLS);
+                // 궤도 이동은 쏜 방향을 시작 각도로 쓴다 — 같은 간격으로 흩어 놓는다.
+                float fRad = 360f / iWant * i * Mathf.Deg2Rad;
+                CProjectileCore cCore = m_cHost.Spawn_PlayerShot(iID, m_cOwner.POS, new Vector2(Mathf.Cos(fRad), Mathf.Sin(fRad)));
+                if (cCore == null)
+                    continue;
+
+                m_lstCore.Add(cCore);
+                m_lstSerial.Add(cCore.SERIAL);
             }
 
-            return true;
+            m_iSpawnedID = iID;
         }
+
+        private void Collect_All()
+        {
+            for (int i = 0; i < m_lstCore.Count; ++i)
+            {
+                if (Is_Mine(i) == true)
+                    m_lstCore[i].Expire();
+            }
+
+            m_lstCore.Clear();
+            m_lstSerial.Clear();
+        }
+
+        public override void Release() => Collect_All();
     }
 
     /// <summary>

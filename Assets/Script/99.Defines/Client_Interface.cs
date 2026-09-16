@@ -53,7 +53,8 @@ namespace Client
         IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind);
 
         /// <summary> 플레이어 탄을 쏜다. 쏜 쪽은 플레이어다(부메랑이 돌아오고 궤도탄이 따라온다). </summary>
-        void Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir);
+        /// <returns> 260917_만든 탄의 본체. 회전탄처럼 스킬이 직접 거둬야 하는 탄이 붙잡아 둔다. 실패하면 null </returns>
+        CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir);
     }
 
 

@@ -343,16 +343,14 @@ namespace Client
             CRunSkillEffect_Orbit cOrbit = new CRunSkillEffect_Orbit();
             cOrbit.On_LevelChanged(cOrbitInfo, 1);
 
-            List<Vector2> lstOffset = new List<Vector2>();
-            Check("회전탄 1레벨은 1개", cOrbit.Try_Get_OrbitOffsets(lstOffset) == true && lstOffset.Count == 1);
+            // 260917_회전탄은 투사체(20)를 띄운다 — 실제로 띄우는지는 Test_WeaponAndAwaken에서 본다
+            Check("회전탄 1레벨은 1개", cOrbit.COUNT, 1);
+            Check("회전탄은 탄 20을 띄운다", cOrbit.PROJECTILE_ID, 20);
 
             cOrbit.On_LevelChanged(cOrbitInfo, 2);
-            Check("회전탄 2레벨은 2개", cOrbit.Try_Get_OrbitOffsets(lstOffset) == true && lstOffset.Count == 2);
-
-            Vector2 vBefore = lstOffset[0];
+            Check("회전탄 2레벨은 2개", cOrbit.COUNT, 2);
             cOrbit.Tick(1f);
-            cOrbit.Try_Get_OrbitOffsets(lstOffset);
-            Check("시간이 지나면 회전한다", Vector2.Distance(vBefore, lstOffset[0]) > 0.01f);
+            Check("소유자 · 창구가 없으면 아무것도 띄우지 않는다", cOrbit.ALIVE_COUNT, 0);
 
             CRunSkillInfo cClubInfo = cTable.Find_ByType(RUN_SKILL_TYPE.CLUB);
             CRunSkillEffect_Club cClub = new CRunSkillEffect_Club();
@@ -1199,7 +1197,8 @@ namespace Client
         {
             CCSVData_RunSkillInfo cSkillTable = Load_RunSkillTable();
             CCSVData_AwakenInfo cAwakenTable = Load_CsvTable<CCSVData_AwakenInfo>("AwakenInfo");
-            if (cSkillTable == null || cAwakenTable == null)
+            CCSVData_ProjectileInfo cProjectileTable = Load_CsvTable<CCSVData_ProjectileInfo>("ProjectileInfo");
+            if (cSkillTable == null || cAwakenTable == null || cProjectileTable == null)
             {
                 Check("RunSkillInfo / AwakenInfo 로드(Test_WeaponAndAwaken)", false);
                 return;
@@ -1245,7 +1244,7 @@ namespace Client
             };
             cPlayer.Initialize(cDesc);
 
-            CFakeRunSkillHost cHost = new CFakeRunSkillHost();
+            CFakeRunSkillHost cHost = new CFakeRunSkillHost { cProjectileTable = cProjectileTable };
             cPlayer.Set_RunSkillHost(cHost);
 
             // ---- 마법탄: 대상이 없으면 쿨을 찬 채 기다린다
@@ -1345,6 +1344,19 @@ namespace Client
             cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.RAGE));
             CRunSkillEffect_Orbit cOrbit = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.ORBIT) as CRunSkillEffect_Orbit;
             int iOrbitBase = cOrbit != null ? cOrbit.COUNT : -1;
+
+            // 260917_회전탄은 실제 탄을 띄운다 (전에는 좌표만 있고 아무것도 그려지지 않았다)
+            cOrbit?.Tick(0.01f);
+            Check("회전탄 — 만렙 수만큼 탄을 띄운다", cOrbit != null ? cOrbit.ALIVE_COUNT : -1, iOrbitBase);
+            Check("회전탄 — 탄 20", cHost.lstShotID.Count > 0 ? cHost.lstShotID[cHost.lstShotID.Count - 1] : -1, 20);
+            int iShotBefore = cHost.lstShotID.Count;
+            cOrbit?.Tick(0.01f);
+            Check("회전탄 — 떠 있으면 다시 띄우지 않는다", cHost.lstShotID.Count, iShotBefore);
+            if (cHost.lstCore.Count > 0)
+                cHost.lstCore[cHost.lstCore.Count - 1].Expire();
+            cOrbit?.Tick(0.01f);
+            Check("회전탄 — 하나가 사라지면 다시 채운다", cOrbit != null ? cOrbit.ALIVE_COUNT : -1, iOrbitBase);
+
             cPlayer.Awaken_RunSkill(cAwakenTable.Get_Info(1));
             Check("광란의 칼바람 — 하나 는다", cOrbit != null ? cOrbit.COUNT : -1, iOrbitBase + 1);
             Check("분노 전에는 피버가 아니다", cPlayer.IS_FEVER == false);
@@ -1352,6 +1364,9 @@ namespace Client
                 cPlayer.On_MonsterHit();    // 한 번에 0.25씩 — 네 번이면 가득 찬다
             Check("분노가 터지면 피버", cPlayer.IS_FEVER == true);
             Check("피버 동안 회전탄이 두 배", cOrbit != null ? cOrbit.COUNT : -1, (iOrbitBase + 1) * 2);
+            cOrbit?.Tick(0.01f);
+            Check("피버 동안 빠른 탄(21)으로 바꿔 띄운다",
+                  cOrbit != null && cOrbit.ALIVE_COUNT == (iOrbitBase + 1) * 2 && cOrbit.PROJECTILE_ID == 21);
 
             // ---- 반격의 몽둥이: 몽둥이 + 회피
             CRunSkillInfo cClubInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.CLUB);
@@ -1368,8 +1383,11 @@ namespace Client
             Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
 
             // ---- 판이 끝나면 각성도 사라진다
+            List<CProjectileCore> lstOrbitCore = cHost.lstCore.FindAll(
+                cCore => cCore.INFO.iProjectileID == 20 || cCore.INFO.iProjectileID == 21);
             cPlayer.Initialize(cDesc);
             Check("재초기화하면 각성도 사라진다", cPlayer.RUN_SKILL.Is_Awakened(RUN_SKILL_TYPE.MAGIC_BOLT) == false);
+            Check("재초기화하면 회전탄도 거둔다", lstOrbitCore.TrueForAll(cCore => cCore.IS_EXPIRED == true));
 
             // ---- 플레이어 탄이 맞힌 수 (분노 게이지를 스테이지가 센다)
             CProjectileCore cCore = Make_Core(new CFakeProjectileHost(), new CProjectileInfo
@@ -1389,16 +1407,28 @@ namespace Client
             public readonly List<CFakeImpactTarget> lstEnemy   = new List<CFakeImpactTarget>();
             public readonly List<int>               lstShotID  = new List<int>();
             public readonly List<Vector2>           lstShotDir = new List<Vector2>();
+            public readonly List<CProjectileCore>   lstCore    = new List<CProjectileCore>();
+            public CCSVData_ProjectileInfo          cProjectileTable;
 
             public void Spawn_Soul() { }
 
             public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
                 => CTargetFinder_Utility.Find(lstEnemy, vFrom, eFind);
 
-            public void Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
+            // 표가 있으면 진짜 탄 본체를 만들어 돌려준다 — 회전탄이 붙잡고 거두는 길을 그대로 탄다
+            public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
             {
                 lstShotID.Add(iProjectileID);
                 lstShotDir.Add(vDir.normalized);
+
+                CProjectileInfo cInfo = cProjectileTable != null ? cProjectileTable.Get_Info(iProjectileID) : null;
+                if (cInfo == null)
+                    return null;
+
+                CProjectileCore cCore = new CProjectileCore();
+                cCore.Initialize(cInfo, null, new CFakeProjectileHost(), 1f, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, null);
+                lstCore.Add(cCore);
+                return cCore;
             }
         }
 

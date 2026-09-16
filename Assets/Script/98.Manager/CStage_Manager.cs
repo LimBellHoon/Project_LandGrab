@@ -86,8 +86,6 @@ namespace Client
         private float                       m_fDevAutoFireTimer;
         private int                         m_iDevEnemyShotID;      // 포수가 표 대신 쏘는 탄
 
-        // 260916_회전탄 좌표 재사용 버퍼. 매 프레임 새로 만들지 않는다.
-        private readonly List<Vector2>      m_lstOrbitPoint = new List<Vector2>();
 
         private CMapInfo            m_cMapInfo;
         private CCSVData_EnemyInfo  m_cEnemyTable;
@@ -328,7 +326,6 @@ namespace Client
             }
 
             Tick_EnemySlow(fDeltaTime);
-            Tick_Orbit();
             Tick_Club();
             Tick_Enemy();
             Tick_DevAutoFire(fDeltaTime);
@@ -983,6 +980,33 @@ namespace Client
                 if (cCore.IS_EXPIRED == true)
                     cProjectile.Expire();
             }
+
+            Cancel_EnemyShots();
+        }
+
+        // 260917_회전탄처럼 CANCEL_SHOT이 붙은 플레이어 탄은 닿은 적탄을 지운다.
+        // 예전에는 회전탄 좌표만 따로 받아 여기서 판정했다 — 이제 탄 표의 속성이라 어떤 탄에든 붙일 수 있다.
+        // 지우는 것은 작은 적탄(POINT)뿐이다. 레이저 · 충격파 · 폭발은 지워지지 않는다.
+        private void Cancel_EnemyShots()
+        {
+            for (int i = 0; i < m_lstProjectile.Count; ++i)
+            {
+                CProjectile cShield = m_lstProjectile[i];
+                if (cShield == null || cShield.IS_EXPIRED == true || cShield.SIDE != PROJECTILE_SIDE.PLAYER_SHOT
+                    || cShield.CORE.CAN_CANCEL_SHOT == false)
+                    continue;
+
+                for (int e = 0; e < m_lstProjectile.Count; ++e)
+                {
+                    CProjectile cShot = m_lstProjectile[e];
+                    if (cShot == null || cShot.IS_EXPIRED == true || cShot.SIDE != PROJECTILE_SIDE.ENEMY_SHOT
+                        || cShot.CORE.IS_CANCELABLE == false)
+                        continue;
+
+                    if (Vector2.Distance(cShot.POS, cShield.POS) <= cShot.CORE.HIT_RADIUS + cShield.CORE.HIT_RADIUS)
+                        cShot.Expire();
+                }
+            }
         }
 
         private void Build_ImpactTargets()
@@ -1077,17 +1101,17 @@ namespace Client
         public void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide)
             => Spawn_Projectile(iProjectileID, vPos, vDir, eSide, null);
 
-        private void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide,
-                                      IImpactTarget cOwner)
+        private CProjectileCore Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide,
+                                                 IImpactTarget cOwner)
         {
             if (m_cProjectileTable == null || Has_Prefab(PREFAB_PROJECTILE) == false)
-                return;
+                return null;
 
             CProjectileInfo cInfo = m_cProjectileTable.Get_Info(iProjectileID);
             if (cInfo == null)
             {
                 Debug.LogError($"[CStage_Manager] ProjectileInfo.csv에 탄 {iProjectileID}가 없습니다.");
-                return;
+                return null;
             }
 
             CProjectileDesc cDesc = new CProjectileDesc
@@ -1107,11 +1131,14 @@ namespace Client
 
             GameObject goProjectile = CGameInstance.Instance.Reuse_Object(cDesc);
             if (goProjectile == null)
-                return;
+                return null;
 
             CProjectile cProjectile = goProjectile.GetComponent<CProjectile>();
-            if (cProjectile != null && cProjectile.IS_EXPIRED == false)
-                m_lstProjectile.Add(cProjectile);
+            if (cProjectile == null || cProjectile.IS_EXPIRED == true)
+                return null;
+
+            m_lstProjectile.Add(cProjectile);
+            return cProjectile.CORE;
         }
 
         private List<CImpactInfo> Get_ImpactList(CProjectileInfo cInfo)
@@ -1173,7 +1200,7 @@ namespace Client
         public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
             => CTargetFinder_Utility.Find(m_lstEnemy, vFrom, eFind);
 
-        public void Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
+        public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
             => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer);
 
         private void Tick_Soul()
@@ -1203,49 +1230,10 @@ namespace Client
         }
         #endregion 런 스킬 소환물 (IRunSkillHost)
 
-        #region 런 스킬 전투 (회전탄 / 몽둥이)
-        // 260916_둘 다 플레이어가 만드는 판정이지만 적탄/몬스터 목록을 아는 곳이 여기뿐이라
+        #region 런 스킬 전투 (몽둥이)
+        // 260916_플레이어가 만드는 판정이지만 몬스터 목록을 아는 곳이 여기뿐이라
         // 위 기믹 소환물과 같은 이유로 CStage_Manager가 충돌만 대신 봐 준다.
-        private void Tick_Orbit()
-        {
-            if (m_cPlayer == null || m_cPlayer.Try_Get_OrbitPoints(m_lstOrbitPoint) == false)
-                return;
-
-            float fHitRange = CRunSkillEffect_Orbit.HIT_RADIUS_CELLS * m_cGrid.CELL_SIZE;
-
-            for (int i = 0; i < m_lstOrbitPoint.Count; ++i)
-            {
-                Vector2 vPoint = m_lstOrbitPoint[i];
-
-                for (int p = m_lstProjectile.Count - 1; p >= 0; --p)
-                {
-                    CProjectile cProjectile = m_lstProjectile[p];
-                    if (cProjectile == null || cProjectile.IS_EXPIRED == true)
-                        continue;
-
-                    // 260917_회전탄은 적탄 중 작은 탄만 지운다. 제 편 탄 · 레이저 · 폭발은 지우지 않는다.
-                    if (cProjectile.SIDE != PROJECTILE_SIDE.ENEMY_SHOT || cProjectile.CORE.IS_CANCELABLE == false)
-                        continue;
-
-                    if (Vector2.Distance(cProjectile.POS, vPoint) <= fHitRange)
-                        cProjectile.Expire();
-                }
-
-                for (int e = 0; e < m_lstEnemy.Count; ++e)
-                {
-                    CEnemy cEnemy = m_lstEnemy[e];
-                    if (cEnemy == null || cEnemy.IS_DEAD == true)
-                        continue;
-
-                    if (Vector2.Distance(cEnemy.POS, vPoint) <= fHitRange)
-                    {
-                        cEnemy.Damage(PLAYER_ATTACK_DAMAGE);
-                        m_cPlayer.On_MonsterHit();
-                    }
-                }
-            }
-        }
-
+        // 260917_회전탄은 투사체(ProjectileInfo 20)로 옮겼다 — 그려지지 않았고, 반경 안의 몬스터를 매 프레임 때려 즉사시켰다.
         private void Tick_Club()
         {
             if (m_cPlayer == null
