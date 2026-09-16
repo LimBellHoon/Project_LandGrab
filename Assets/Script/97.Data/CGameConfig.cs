@@ -109,6 +109,10 @@ namespace Client
         [Range(0f, 1f)]
         [SerializeField] private float m_fSfxVolume = 0.8f;
 
+        [Header("햅틱")]
+        [Tooltip("끄면 진동이 전혀 울리지 않는다. 세기 조절은 없다 — 몇 번 · 얼마나 간격으로 울릴지는 CHaptic_Manager 표에 있다.")]
+        [SerializeField] private bool m_bHapticEnabled = true;
+
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
         [SerializeField] private bool m_bUnlockAllStage;
@@ -142,6 +146,7 @@ namespace Client
         public float FLASH_EVADE_ALPHA       => Mathf.Clamp01(m_fFlashEvadeAlpha);
         public bool  SFX_ENABLED             => m_bSfxEnabled;
         public float SFX_VOLUME              => Mathf.Clamp01(m_fSfxVolume);
+        public bool  HAPTIC_ENABLED           => m_bHapticEnabled;
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);

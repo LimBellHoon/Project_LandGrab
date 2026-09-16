@@ -110,7 +110,7 @@ Assets/
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn), CSound_Utility
     │                       CSkillHandler, CSkillEffect(+_Warp/_Shield/_Dash/_Slow/_Seal)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
-    ├── 98.Manager/         CStage_Manager, CProgress_Manager, CAudio_Manager
+    ├── 98.Manager/         CStage_Manager, CProgress_Manager, CAudio_Manager, CHaptic_Manager
     └── 99.Defines/         Client_Enum, Client_Desc, Client_Interface
 
 Assets/Data/                EnemyInfo.csv, MapInfo.csv  ← 기획 데이터
@@ -642,6 +642,34 @@ CAudio_Manager.Play(SOUND_ID)  캐시에서 꺼내 PlayOneShot — 여러 개가
 **웨이브 하나를 깼을 때(중간 REVEAL)는 아직 소리가 없다.** `CStage_Manager`의 웨이브
 상태 기계에 새 이벤트를 뚫어야 하는데, 이미 잘 도는 핵심 흐름이라 이번엔 손대지 않았다 —
 필요해지면 그때 REVEAL 진입 지점에 이벤트를 하나 추가할 것.
+
+### 2-13. 햅틱 — 절차적 패턴 (260916)
+Unity 기본 API(`Handheld.Vibrate`)는 **세기 조절이 없다** — 한 번 울리거나 안 울리거나 둘뿐이다.
+그래서 세기 대신 **울리는 횟수와 간격**으로 종류를 구분한다. `CSound_Utility`가 파형(음높이·
+파형 종류)으로 소리의 정체성을 냈다면(2-12), `CHaptic_Manager`는 **리듬**으로 낸다 —
+피격은 한 번 짧게, 사망은 세 번 끊어서 울리는 식이다.
+
+```
+CHaptic_Manager.Play(HAPTIC_ID)   첫 펄스를 즉시 울리고 남은 펄스·간격을 잰다
+CGameManager.Update가 매 프레임   CHaptic_Manager.Tick(dt)를 불러 남은 펄스를 흘려보낸다
+```
+
+**코루틴을 쓰지 않는다.** `CStage_Manager`·`CAudio_Manager`처럼 `CGameManager`가 매 프레임
+`Tick(dt)`을 불러 주는 순수 C# 클래스로 두어야 다른 매니저들과 같은 결로 테스트할 수 있다
+(화면 없이 `CProtoTest`에서 `FIRED_COUNT`/`PULSE_REMAIN`으로 펄스가 계획대로 흘러가는지 본다 —
+`Handheld.Vibrate` 자체는 **에디터에서 조용히 아무 일도 안 하므로**(`CSafeArea`가 에디터
+Game 뷰에서 하는 일이 없는 것과 같은 성격, 2-10) 실기기에서만 확인된다).
+
+**진짜 세기 조절(iOS Core Haptics / Android `VibrationEffect`)이 필요해지면 `Trigger_Pulse`
+안쪽만 바꾸면 된다.** 호출부(`Play(HAPTIC_ID)`)는 그대로다 — `CAudio_Manager.Build_Clip`과
+같은 자리다.
+
+`HAPTIC_ID`는 `SOUND_ID`와 같은 사건을 가리키지만 **일부러 따로 둔 열거형**이다 — 소리는
+나는데 햅틱은 없는(또는 그 반대) 조합을 나중에 열어 두기 위해서다. 지금은 정확히 같은 자리에
+같이 걸려 있다(`On_PlayerDamaged` 등, 2-12의 표와 동일).
+
+`CGameConfig`에는 켬/끔(`m_bHapticEnabled`) 하나뿐이다 — 세기 조절 자체가 없으니 볼륨 같은
+값을 만들 게 없다. 옵션창 후보로만 남겨 뒀다(1-6).
 
 
 ---

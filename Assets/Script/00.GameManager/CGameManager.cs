@@ -59,6 +59,8 @@ namespace Client
         private Camera              m_cCamera;
         // 260916_효과음. 스테이지가 아니라 앱 전체 수명이라 스테이지마다 다시 만들지 않는다(2-12).
         private CAudio_Manager      m_cAudioManager = new CAudio_Manager();
+        // 260916_햅틱. 리소스를 안 들고 있어 Release가 필요 없다(2-13).
+        private CHaptic_Manager     m_cHapticManager = new CHaptic_Manager();
 
         private CGameInstance       m_cGameInstance;
         private CStage_Manager      m_cStageManager;
@@ -128,6 +130,7 @@ namespace Client
             m_cGameInstance.Tick();
             m_cStageManager.Tick(Get_LayerDeltaTime(OBJECT_TYPE.DEFAULT));
             Tick_Camera();
+            m_cHapticManager.Tick(Time.deltaTime);
         }
 
         // 260912_카메라는 플레이어를 따라간다. 액터가 움직인 뒤에 따라붙어야 한 프레임 밀리지 않는다.
@@ -154,26 +157,33 @@ namespace Client
                 m_cCamera.orthographicSize *= fZoom;
         }
 
-        // 260916_카메라 흔들림 / 펀치줌 / 효과음. 같은 이벤트를 여러 손맛 시스템이 함께 듣는다 —
-        // 새 원인을 추가할 때도 여기 한 줄, CGameConfig에 값 하나만 늘면 된다(2-10-2, 2-12).
+        // 260916_카메라 흔들림 / 펀치줌 / 효과음 / 햅틱. 같은 이벤트를 여러 손맛 시스템이 함께 듣는다 —
+        // 새 원인을 추가할 때도 여기 한 줄, CGameConfig에 값 하나만 늘면 된다(2-10-2, 2-12, 2-13).
         private void On_PlayerDamaged()
         {
             m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_HIT);
             m_cAudioManager.Play(SOUND_ID.HIT);
+            m_cHapticManager.Play(HAPTIC_ID.HIT);
         }
 
         private void On_PlayerDead()
         {
             m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_DEATH);
             m_cAudioManager.Play(SOUND_ID.DEATH);
+            m_cHapticManager.Play(HAPTIC_ID.DEATH);
         }
 
-        private void On_PlayerEvaded() => m_cAudioManager.Play(SOUND_ID.EVADE);
+        private void On_PlayerEvaded()
+        {
+            m_cAudioManager.Play(SOUND_ID.EVADE);
+            m_cHapticManager.Play(HAPTIC_ID.EVADE);
+        }
 
         private void On_PlayerCaptured(int iCapturedCount)
         {
             m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_CAPTURE);
             m_cAudioManager.Play(SOUND_ID.CAPTURE);
+            m_cHapticManager.Play(HAPTIC_ID.CAPTURE);
         }
 
         public void LateUpdate()
@@ -223,6 +233,7 @@ namespace Client
                 m_cAudioManager.Initialize();
                 m_cAudioManager.Set_Enabled(m_cConfig.SFX_ENABLED);
                 m_cAudioManager.Set_Volume(m_cConfig.SFX_VOLUME);
+                m_cHapticManager.Set_Enabled(m_cConfig.HAPTIC_ENABLED);
 
                 if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local(), m_cEquipTable) == false)
                     return;
@@ -407,6 +418,7 @@ namespace Client
             m_cStageManager.Set_Pause(true);
             (m_cInGameUI as CUI_InGame)?.Set_Interactable(false);
             m_cAudioManager.Play(SOUND_ID.CARD_READY);
+            m_cHapticManager.Play(HAPTIC_ID.CARD_READY);
 
             CUI_CardPickDesc cDesc = new CUI_CardPickDesc
             {
@@ -678,6 +690,7 @@ namespace Client
             // 260916_결과 화면과 같은 기준(m_bLastCleared)으로 고른다 — STAGE_STATE.FAIL이어도
             // 별을 하나 이상 땄으면 화면은 "클리어!"라고 뜨므로 소리도 거기 맞춘다.
             m_cAudioManager.Play(m_bLastCleared == true ? SOUND_ID.STAGE_CLEAR : SOUND_ID.STAGE_FAIL);
+            m_cHapticManager.Play(m_bLastCleared == true ? HAPTIC_ID.STAGE_CLEAR : HAPTIC_ID.STAGE_FAIL);
 
             // 260904_클리어는 드러난 보상을 조금 더 보여준 뒤 결과를 띄운다.
             // 실패는 굳이 끌 이유가 없어 빨리 띄운다.

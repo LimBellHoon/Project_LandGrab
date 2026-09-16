@@ -151,6 +151,20 @@
         STAGE_FAIL,     // 스테이지 실패
     }
 
+    // 260916_햅틱 종류. CHaptic_Manager.Play(HAPTIC_ID)로 재생한다.
+    /// <summary> SOUND_ID와 같은 사건을 가리키지만 따로 둔다 — 소리는 나도 햅틱은 없는(또는 그 반대) 조합을 열어 두기 위해서다(2-13). </summary>
+    public enum HAPTIC_ID
+    {
+        NONE = 0,
+        HIT,
+        DEATH,
+        EVADE,
+        CAPTURE,
+        CARD_READY,
+        STAGE_CLEAR,
+        STAGE_FAIL,
+    }
+
     /// <summary> Addressable 라벨 (Engine.CData_Manager.LoadAssetAsync 인자) </summary>
     public static class CAddressableLabel
     {

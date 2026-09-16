@@ -396,7 +396,8 @@ namespace Client
                     + $"·사망{cConfig.TRAUMA_ON_DEATH:0.##})"
                     + $" / 펀치 {cConfig.CAMERA_PUNCH_ENABLED}(점령{cConfig.PUNCH_ON_CAPTURE:0.##})"
                     + $" / 플래시 {cConfig.SCREEN_FLASH_ENABLED}"
-                    + $" / 효과음 {cConfig.SFX_ENABLED}(볼륨{cConfig.SFX_VOLUME:0.##})");
+                    + $" / 효과음 {cConfig.SFX_ENABLED}(볼륨{cConfig.SFX_VOLUME:0.##})"
+                    + $" / 햅틱 {cConfig.HAPTIC_ENABLED}");
             return 0;
         }
 

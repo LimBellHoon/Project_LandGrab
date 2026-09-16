@@ -61,6 +61,7 @@ namespace Client
             Test_CameraPunch();
             Test_FlashEffect();
             Test_SoundUtility();
+            Test_HapticManager();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -1395,6 +1396,48 @@ namespace Client
             float[] arrSquare = CSound_Utility.Generate_Tone(WAVE_SHAPE.SQUARE, 300f, 300f, 0.05f);
             Check("사각파도 사인파와 같은 규칙으로 길이가 정해진다",
                   arrSquare.Length, Mathf.RoundToInt(0.05f * CSound_Utility.SAMPLE_RATE));
+        }
+
+        // 260916_햅틱 펄스 스케줄링. Handheld.Vibrate 자체는 실기기에서만 확인되므로
+        // "몇 번 울렸는지 · 언제 울렸는지"만 FIRED_COUNT/PULSE_REMAIN으로 본다.
+        private static void Test_HapticManager()
+        {
+            CHaptic_Manager cHaptic = new CHaptic_Manager();
+
+            cHaptic.Play(HAPTIC_ID.HIT);   // 정의상 1펄스, 간격 없음
+            Check("한 번짜리는 즉시 다 울린다", cHaptic.FIRED_COUNT, 1);
+            Check("한 번짜리는 남는 펄스가 없다", cHaptic.PULSE_REMAIN, 0);
+
+            cHaptic.Play(HAPTIC_ID.DEATH);   // 정의상 3펄스, 0.15초 간격
+            Check("첫 펄스는 즉시 울린다", cHaptic.FIRED_COUNT, 2);
+            Check("두 번 더 남았다", cHaptic.PULSE_REMAIN, 2);
+
+            cHaptic.Tick(0.05f);
+            Check("간격이 안 지나면 안 울린다", cHaptic.FIRED_COUNT, 2);
+
+            cHaptic.Tick(0.15f);
+            Check("간격이 지나면 다음 펄스가 울린다", cHaptic.FIRED_COUNT, 3);
+            Check("한 번 남았다", cHaptic.PULSE_REMAIN, 1);
+
+            cHaptic.Tick(0.15f);
+            Check("마지막 펄스까지 울린다", cHaptic.FIRED_COUNT, 4);
+            Check("다 울리면 남는 게 없다", cHaptic.PULSE_REMAIN, 0);
+
+            cHaptic.Tick(1f);
+            Check("다 울린 뒤에는 더 안 울린다", cHaptic.FIRED_COUNT, 4);
+
+            cHaptic.Set_Enabled(false);
+            cHaptic.Play(HAPTIC_ID.STAGE_CLEAR);
+            Check("꺼져 있으면 안 울린다", cHaptic.FIRED_COUNT, 4);
+
+            cHaptic.Set_Enabled(true);
+            cHaptic.Play(HAPTIC_ID.NONE);
+            Check("NONE은 안 울린다", cHaptic.FIRED_COUNT, 4);
+
+            // 이미 도는 패턴 위에 새로 Play하면 새 패턴으로 덮어쓴다(CFlashEffect와 같은 규칙)
+            cHaptic.Play(HAPTIC_ID.CAPTURE);   // 2펄스, 0.10초 간격
+            Check("새 패턴의 첫 펄스가 즉시 울린다", cHaptic.FIRED_COUNT, 5);
+            Check("새 패턴 기준으로 남은 펄스가 잡힌다", cHaptic.PULSE_REMAIN, 1);
         }
 
         private static void Test_Joystick()
