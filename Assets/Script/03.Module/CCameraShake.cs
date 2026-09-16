@@ -20,7 +20,6 @@ namespace Client
     /// </summary>
     public class CCameraShake
     {
-        private const float SHAKE_POWER = 2f;      // 트라우마 → 세기 변환 지수. 키우면 약한 흔들림이 더 묻힌다.
         private const float NOISE_SPEED = 25f;     // 펄린 노이즈를 훑는 빠르기 — 흔들림이 떨리는 속도
 
         private bool  m_bEnabled = true;
@@ -82,7 +81,7 @@ namespace Client
             if (m_fTrauma <= 0f)
                 return Vector2.zero;
 
-            m_fTrauma     = Mathf.Max(0f, m_fTrauma - m_fDecayPerSecond * fDeltaTime);
+            m_fTrauma     = CCameraFeel_Utility.Decay(m_fTrauma, m_fDecayPerSecond, fDeltaTime);
             m_fNoiseTime += fDeltaTime * NOISE_SPEED;
 
             return Calc_Offset(m_fTrauma, m_fNoiseTime, m_fSeedX, m_fSeedY, m_fMaxOffset);
@@ -91,7 +90,7 @@ namespace Client
         // 260916_화면 없이 검증하려고 순수 함수로 뺐다(CCameraFitter.Calc_Size와 같은 이유).
         public static Vector2 Calc_Offset(float fTrauma, float fNoiseTime, float fSeedX, float fSeedY, float fMaxOffset)
         {
-            float fShake = Mathf.Pow(Mathf.Clamp01(fTrauma), SHAKE_POWER);
+            float fShake = CCameraFeel_Utility.Curve(fTrauma);
 
             // 펄린 노이즈로 -1~1을 매끄럽게 오간다. Random.value로 매 프레임 뽑으면
             // 흔들리는 게 아니라 순간이동하는 것처럼 보인다.

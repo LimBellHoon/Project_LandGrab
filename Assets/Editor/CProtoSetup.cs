@@ -154,7 +154,7 @@ namespace Client
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
-                                "m_imgProgress", "m_txtTime", "m_btnPause" });
+                                "m_imgProgress", "m_txtTime", "m_btnPause", "m_imgFlash" });
             iFail += Validate_UIPrefab<CUI_Lobby>(PATH_PREFAB_UI_LOBBY, UI_LOBBY,
                                                  new[] { "m_trContent", "m_txtCoin", "m_txtStar", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_Upgrade>(PATH_PREFAB_UI_UPGRADE, UI_UPGRADE,
@@ -393,7 +393,9 @@ namespace Client
                     + $" / 전체해금 {cConfig.UNLOCK_ALL_STAGE} / 무료 {cConfig.FREE_SPEND}"
                     + $" / 시작코인 {cConfig.START_COIN}"
                     + $" / 흔들림 {cConfig.CAMERA_SHAKE_ENABLED}(피격{cConfig.TRAUMA_ON_HIT:0.##}"
-                    + $"·사망{cConfig.TRAUMA_ON_DEATH:0.##})");
+                    + $"·사망{cConfig.TRAUMA_ON_DEATH:0.##})"
+                    + $" / 펀치 {cConfig.CAMERA_PUNCH_ENABLED}(점령{cConfig.PUNCH_ON_CAPTURE:0.##})"
+                    + $" / 플래시 {cConfig.SCREEN_FLASH_ENABLED}");
             return 0;
         }
 
@@ -1399,6 +1401,15 @@ namespace Client
             Text txtItem = Make_Text(goItemLabel, "아이템", 26, TextAnchor.MiddleCenter);
             txtItem.raycastTarget = false;
 
+            // 260916_화면 플래시 — 맨 마지막 자식이라 조이스틱/버튼 위에 그려진다.
+            // raycastTarget은 반드시 꺼야 한다 — 안 그러면 화면 전체를 덮은 이 이미지가
+            // 그 아래 스킬/아이템/일시정지 버튼의 터치를 전부 가로챈다.
+            GameObject goFlash = Create_UIObject("Img_Flash", goRoot.transform);
+            Stretch_Full(goFlash.GetComponent<RectTransform>());
+            Image imgFlash = goFlash.AddComponent<Image>();
+            imgFlash.color = new Color(1f, 1f, 1f, 0f);
+            imgFlash.raycastTarget = false;
+
             CUI_InGame cUI = goRoot.AddComponent<CUI_InGame>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trJoystickBase").objectReferenceValue   = trBase;
@@ -1412,6 +1423,7 @@ namespace Client
             cSerialized.FindProperty("m_txtSkill").objectReferenceValue         = txtSkill;
             cSerialized.FindProperty("m_btnItem").objectReferenceValue          = cItem;
             cSerialized.FindProperty("m_txtItem").objectReferenceValue          = txtItem;
+            cSerialized.FindProperty("m_imgFlash").objectReferenceValue         = imgFlash;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);

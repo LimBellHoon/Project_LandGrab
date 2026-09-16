@@ -19,6 +19,11 @@ namespace Client
     {
         private const float HANDLE_RATIO = 0.45f;   // 손잡이 지름 / 조이스틱 지름
 
+        // 260916_화면 플래시 색. 피격/회피는 항상 같은 색이라 CGameConfig가 아니라 여기 상수로 둔다
+        // (CEnemy의 기믹별 색과 같은 자리 — 세기·지속시간만 CGameConfig에서 조절한다).
+        private static readonly Color COLOR_FLASH_HIT   = new Color(0.9f, 0.15f, 0.15f);
+        private static readonly Color COLOR_FLASH_EVADE = Color.white;
+
         [SerializeField] private RectTransform  m_trJoystickBase;
         [SerializeField] private RectTransform  m_trJoystickHandle;
         [SerializeField] private Text           m_txtStatus;
@@ -33,6 +38,8 @@ namespace Client
         // 260905_소모품 버튼
         [SerializeField] private Button         m_btnItem;
         [SerializeField] private Text           m_txtItem;
+        // 260916_화면 전체를 덮는 플래시. 맨 위에 그려져야 하므로 계층상 맨 마지막 자식이다.
+        [SerializeField] private Image          m_imgFlash;
 
         private CPlayer         m_cPlayer;
         private CStage_Manager  m_cStage;
@@ -41,6 +48,9 @@ namespace Client
         private Action             m_OnUseItem;
         private Canvas          m_cCanvas;
         private Action          m_OnPause;
+        // 260916_판정(CFlashEffect)과 적용(m_imgFlash)을 나눈다 — CCameraShake와 같은 이유다.
+        private readonly CFlashEffect m_cFlash = new CFlashEffect();
+        private CGameConfig            m_cConfig;
 
         #region Engine.CUI
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -66,7 +76,19 @@ namespace Client
             m_cEquipTable = cDesc.cEquipTable;
             m_OnUseItem   = cDesc.OnUseItem;
             m_OnPause = cDesc.OnPause;
+            m_cConfig = cDesc.cConfig;
             m_cCanvas = GetComponentInParent<Canvas>();
+
+            // 260916_피격/회피 화면 플래시. 풀에서 재사용돼도 이전 판의 리스너가 남지 않도록
+            // 먼저 끊고 다시 건다(스킬/소모품 버튼과 같은 이유).
+            m_cFlash.Clear();
+            if (m_cPlayer != null)
+            {
+                m_cPlayer.OnDamaged -= On_PlayerDamagedFlash;
+                m_cPlayer.OnDamaged += On_PlayerDamagedFlash;
+                m_cPlayer.OnEvade   -= On_PlayerEvadeFlash;
+                m_cPlayer.OnEvade   += On_PlayerEvadeFlash;
+            }
 
             // 260904_일시정지 버튼. 조이스틱이 화면 아래 60%만 잡으므로 위쪽은 버튼 자리다.
             if (m_btnPause != null)
@@ -100,12 +122,21 @@ namespace Client
             m_btnSkill?.onClick.RemoveAllListeners();
             m_btnItem?.onClick.RemoveAllListeners();
 
+            // 260916_CPlayer가 아직 살아있는 채로 이 UI가 먼저 닫힐 수 있다(결과 화면 흐름) —
+            // 여기서도 명시적으로 끊어야 숨겨진 UI가 다음 피격에 반응하는 사고가 안 난다.
+            if (m_cPlayer != null)
+            {
+                m_cPlayer.OnDamaged -= On_PlayerDamagedFlash;
+                m_cPlayer.OnEvade   -= On_PlayerEvadeFlash;
+            }
+
             m_cPlayer = null;
             m_cStage  = null;
             m_cProgress   = null;
             m_cEquipTable = null;
             m_OnUseItem   = null;
             m_OnPause = null;
+            m_cConfig = null;
             base.Hide();
         }
         #endregion Engine.CUI
@@ -117,6 +148,46 @@ namespace Client
             Refresh_Progress();
             Refresh_Skill();
             Refresh_Item();
+            Refresh_Flash();
+        }
+
+        // 260916_피격/회피 화면 플래시
+        private void On_PlayerDamagedFlash()
+        {
+            if (m_cConfig == null || m_cConfig.SCREEN_FLASH_ENABLED == false)
+                return;
+
+            Color cColor = COLOR_FLASH_HIT;
+            cColor.a = m_cConfig.FLASH_HIT_ALPHA;
+            m_cFlash.Add_Flash(cColor, m_cConfig.FLASH_HIT_DURATION);
+        }
+
+        private void On_PlayerEvadeFlash()
+        {
+            if (m_cConfig == null || m_cConfig.SCREEN_FLASH_ENABLED == false)
+                return;
+
+            Color cColor = COLOR_FLASH_EVADE;
+            cColor.a = m_cConfig.FLASH_EVADE_ALPHA;
+            m_cFlash.Add_Flash(cColor, m_cConfig.FLASH_EVADE_DURATION);
+        }
+
+        private void Refresh_Flash()
+        {
+            if (m_imgFlash == null)
+                return;
+
+            m_cFlash.Tick(Time.deltaTime);
+
+            Color cColor = m_cFlash.COLOR;
+            cColor.a *= m_cFlash.ALPHA;
+
+            bool bShow = cColor.a > 0.001f;
+            if (m_imgFlash.gameObject.activeSelf != bShow)
+                m_imgFlash.gameObject.SetActive(bShow);
+
+            if (bShow == true)
+                m_imgFlash.color = cColor;
         }
 
         /// <summary> 일시정지 중에는 조이스틱을 감춘다 (입력도 어차피 멈춰 있다). </summary>

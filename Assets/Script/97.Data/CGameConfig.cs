@@ -65,6 +65,42 @@ namespace Client
         [Range(0f, 1f)]
         [SerializeField] private float m_fTraumaOnDeath = 0.8f;
 
+        [Header("카메라 펀치줌")]
+        [Tooltip("끄면 점령해도 확대되지 않는다.")]
+        [SerializeField] private bool m_bCameraPunchEnabled = true;
+
+        [Tooltip("펀치가 가득 찼을 때 카메라가 확대되어 보이는 비율. 0.06이면 6% 확대.")]
+        [Range(0f, 0.3f)]
+        [SerializeField] private float m_fPunchMaxZoomRatio = 0.06f;
+
+        [Tooltip("펀치가 초당 줄어드는 양. 클수록 빨리 원래 크기로 돌아온다.")]
+        [Range(0.5f, 10f)]
+        [SerializeField] private float m_fPunchDecayPerSecond = 4f;
+
+        [Tooltip("한 번 점령할 때마다 쌓는 펀치 0~1. 점령 칸 수와 상관없이 고정값이다.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fPunchOnCapture = 0.5f;
+
+        [Header("화면 플래시")]
+        [Tooltip("끄면 피격/회피해도 화면이 물들지 않는다.")]
+        [SerializeField] private bool m_bScreenFlashEnabled = true;
+
+        [Tooltip("피격 플래시가 다 사라지기까지 걸리는 시간(초).")]
+        [Range(0.05f, 1f)]
+        [SerializeField] private float m_fFlashHitDuration = 0.25f;
+
+        [Tooltip("피격 플래시의 최대 알파. 화면을 얼마나 덮을지.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fFlashHitAlpha = 0.35f;
+
+        [Tooltip("회피 플래시가 다 사라지기까지 걸리는 시간(초).")]
+        [Range(0.05f, 1f)]
+        [SerializeField] private float m_fFlashEvadeDuration = 0.2f;
+
+        [Tooltip("회피 플래시의 최대 알파.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fFlashEvadeAlpha = 0.25f;
+
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
         [SerializeField] private bool m_bUnlockAllStage;
@@ -87,6 +123,15 @@ namespace Client
         public float SHAKE_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fShakeDecayPerSecond);
         public float TRAUMA_ON_HIT           => Mathf.Clamp01(m_fTraumaOnHit);
         public float TRAUMA_ON_DEATH         => Mathf.Clamp01(m_fTraumaOnDeath);
+        public bool  CAMERA_PUNCH_ENABLED    => m_bCameraPunchEnabled;
+        public float PUNCH_MAX_ZOOM_RATIO    => Mathf.Clamp01(m_fPunchMaxZoomRatio);
+        public float PUNCH_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fPunchDecayPerSecond);
+        public float PUNCH_ON_CAPTURE        => Mathf.Clamp01(m_fPunchOnCapture);
+        public bool  SCREEN_FLASH_ENABLED    => m_bScreenFlashEnabled;
+        public float FLASH_HIT_DURATION      => Mathf.Max(0.01f, m_fFlashHitDuration);
+        public float FLASH_HIT_ALPHA         => Mathf.Clamp01(m_fFlashHitAlpha);
+        public float FLASH_EVADE_DURATION    => Mathf.Max(0.01f, m_fFlashEvadeDuration);
+        public float FLASH_EVADE_ALPHA       => Mathf.Clamp01(m_fFlashEvadeAlpha);
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);

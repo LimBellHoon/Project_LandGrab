@@ -105,7 +105,8 @@ Assets/
     ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame, CUI_Popup (Engine.CUI 상속), CSafeArea
     ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
-    │                       CInputHandler, CVirtualJoystick, CCameraFitter, CCameraShake
+    │                       CInputHandler, CVirtualJoystick, CCameraFitter
+    │                       CCameraShake, CCameraPunch, CFlashEffect, CCameraFeel_Utility
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
     │                       CSkillHandler, CSkillEffect(+_Warp/_Shield/_Dash/_Slow/_Seal)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
@@ -527,6 +528,32 @@ CGameManager.Tick_Camera가 매 프레임 오프셋을 읽어 카메라 Transfor
 
 판정(`CCameraShake`)과 적용(카메라 `Transform`에 더하기)을 나눠서 화면 없이 `CProtoTest`에서
 파형과 감쇠를 검증한다 — `CCameraFitter`와 같은 이유다.
+
+### 2-10-3. 점령 펀치줌 / 피격·회피 화면 플래시 (260916)
+카메라 흔들림과 같은 날 함께 만든 손맛 폴리시 2종이다. 셋 다 같은 모양(0~1이 쌓였다가
+스스로 줄어든다)이라 감쇠·세기 곡선 계산은 `CCameraFeel_Utility`(03.Module) 하나로 합쳤다
+(1-1) — `CCameraShake`도 260916에 이걸 쓰도록 다시 정리했다.
+
+**펀치줌**(`CCameraPunch`)은 점령하는 순간 카메라를 살짝 당겼다가 되돌린다.
+`CPlayer.OnCapture ─▶ CGameManager.On_PlayerCaptured ─▶ Add_Punch(PUNCH_ON_CAPTURE)`.
+`CCameraShake`가 위치를 흔드는 것과 똑같은 자리(`CGameManager.Tick_Camera`)에서
+Fitter가 정한 크기 위에 배율을 곱한다 — 흔들림·줌이 서로의 존재를 몰라도 같은 프레임에
+자연스럽게 겹친다.
+
+**화면 플래시**(`CFlashEffect`)는 피격(빨강) · 회피(하양) 순간 화면 전체를 잠깐 물들인다.
+흔들림·펀치와 달리 **카메라가 아니라 화면(UI)**에 적용되므로 `CGameManager`가 아니라
+`CUI_InGame`이 들고 있다 — 세계는 GameManager, 화면은 UI 클래스가 맡는다는 구분을 그대로
+따른다. `CPlayer.OnDamaged`/`OnEvade`를 `CUI_InGame`이 직접 구독한다(이미 `m_cPlayer`를
+들고 있으므로 GameManager를 거칠 필요가 없다). 색은 `CGameConfig`가 아니라
+`CUI_InGame`의 상수로 둔다 — 어떤 색을 쓸지는 시각 정체성이지 흔들 만큼의 세기 값이
+아니다(`CEnemy`의 기믹별 색과 같은 자리). 겹치면 **나중에 들어온 색이 이긴다** — 섞으면
+무슨 일이 일어났는지 못 읽는다.
+
+렌더 대상 `m_imgFlash`는 프리팹의 **맨 마지막 자식**이라 조이스틱·버튼 위에 그려지지만,
+`raycastTarget`이 꺼져 있어 그 아래 버튼의 터치를 가로채지 않는다.
+
+셋 다 옵션창 후보다(1-6) — `CGameConfig`에 `m_bCameraPunchEnabled` / `m_bScreenFlashEnabled`가
+이미 있고, 꺼지면 즉시 지워진다. 아직 옵션 UI에 올리지는 않았다.
 
 ### 2-11. 플레이어 스킬 — 효과 모듈 (260912)
 스킬은 **기믹과 같은 조합 구조**다(2-6). `CPlayer`가 `CSkillEffect` 모듈을 하나 들고 있고,

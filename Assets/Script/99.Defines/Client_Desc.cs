@@ -231,6 +231,8 @@ namespace Client
         public CProgress_Manager    cProgress   { get; set; }
         public CCSVData_EquipInfo   cEquipTable { get; set; }
         public Action               OnUseItem   { get; set; }
+        // 260916_피격/회피 플래시 세기·지속시간을 읽으려고 넘긴다.
+        public CGameConfig          cConfig     { get; set; }
 
         public override void OnReturn()
         {
@@ -241,6 +243,7 @@ namespace Client
             cEquipTable = null;
             OnUseItem   = null;
             OnPause = null;
+            cConfig = null;
         }
     }
 

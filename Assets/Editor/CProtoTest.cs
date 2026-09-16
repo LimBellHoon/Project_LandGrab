@@ -58,6 +58,8 @@ namespace Client
             Test_LayerBounds();
             Test_Joystick();
             Test_CameraShake();
+            Test_CameraPunch();
+            Test_FlashEffect();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -1295,6 +1297,65 @@ namespace Client
             cShake.Set_Enabled(true);
             cShake.Add_Trauma(0.5f);
             Check("다시 켜면 정상 동작", cShake.TRAUMA > 0f);
+        }
+
+        // 260916_점령 펀치줌. CCameraShake와 같은 감쇠 곡선(CCameraFeel_Utility)을 쓰므로
+        // 스위치/클램프/리셋은 겹치지 않게 간단히만 보고, 줌 배율 자체를 집중해서 본다.
+        private static void Test_CameraPunch()
+        {
+            Check("펀치 0은 배율 1(그대로)",
+                  Mathf.Approximately(CCameraPunch.Calc_ZoomScale(0f, 0.06f), 1f));
+
+            float fFull = CCameraPunch.Calc_ZoomScale(1f, 0.06f);
+            Check("펀치 1은 최대 비율만큼 줄어든다", Mathf.Approximately(fFull, 1f - 0.06f));
+
+            float fHalf = CCameraPunch.Calc_ZoomScale(0.5f, 0.06f);
+            Check("배율은 1과 최소값 사이", fHalf < 1f && fHalf > fFull);
+
+            CCameraPunch cPunch = new CCameraPunch();
+            cPunch.Initialize(0.06f, 2f);
+
+            Check("처음엔 배율 1", cPunch.Tick(0f) == 1f);
+
+            cPunch.Add_Punch(0.6f);
+            cPunch.Add_Punch(0.8f);
+            Check("펀치는 1을 넘지 않는다", cPunch.PUNCH <= 1f + 0.0001f);
+
+            float fZoom = cPunch.Tick(0f);
+            Check("펀치가 쌓이면 확대된다", fZoom < 1f);
+
+            cPunch.Reset();
+            Check("Reset은 즉시 0", cPunch.PUNCH == 0f);
+
+            cPunch.Set_Enabled(false);
+            cPunch.Add_Punch(1f);
+            Check("꺼져 있으면 안 쌓인다", cPunch.PUNCH == 0f);
+        }
+
+        // 260916_피격/회피 화면 플래시. 판정(CFlashEffect)만 본다 — 실제 Image에 칠하는 건
+        // CUI_InGame.Refresh_Flash가 하고, 화면이 있어야 확인된다.
+        private static void Test_FlashEffect()
+        {
+            CFlashEffect cFlash = new CFlashEffect();
+            Check("처음엔 안 보임", cFlash.ALPHA == 0f);
+
+            cFlash.Add_Flash(new Color(1f, 0f, 0f, 0.35f), 0.2f);
+            Check("터지자마자는 최대 세기", Mathf.Approximately(cFlash.ALPHA, 1f));
+            Check("색의 알파가 곧 최대 세기", Mathf.Approximately(cFlash.COLOR.a, 0.35f));
+
+            cFlash.Tick(0.1f);
+            Check("절반 지나면 절반만 남는다", Mathf.Approximately(cFlash.ALPHA, 0.5f));
+
+            cFlash.Tick(0.1f);
+            Check("다 지나면 0", cFlash.ALPHA == 0f);
+
+            // 나중에 들어온 색이 이전 것을 덮어쓴다 — 두 색이 섞이면 무슨 일인지 읽기 어렵다
+            cFlash.Add_Flash(Color.red, 0.2f);
+            cFlash.Add_Flash(Color.white, 0.2f);
+            Check("나중 색이 이긴다", cFlash.COLOR == Color.white);
+
+            cFlash.Clear();
+            Check("Clear는 즉시 0", cFlash.ALPHA == 0f);
         }
 
         private static void Test_Joystick()
