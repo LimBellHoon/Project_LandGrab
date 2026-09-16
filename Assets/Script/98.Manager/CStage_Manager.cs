@@ -41,6 +41,10 @@ namespace Client
         // 몬스터별 공격력이 CSV에 들어오면 이 상수를 그 값으로 대체할 것.
         private const int    DEFAULT_HIT_DAMAGE = 1;
 
+        // 260916_런 스킬(회전탄/몽둥이)이 몬스터에게 주는 피해. 무기별 수치를 낼 CSV가
+        // 아직 없어 위와 같은 이유로 임시 고정값을 쓴다.
+        private const int    PLAYER_ATTACK_DAMAGE = 1;
+
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
         private const float  HOLD_TIME   = 0.9f;     // 드러난 보상을 보여주는 시간
@@ -70,6 +74,8 @@ namespace Client
         private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
         // 260916_런 스킬이 떨어뜨린 것들. 위 두 목록과 같은 자리다.
         private readonly List<CSoul>        m_lstSoul       = new List<CSoul>();
+        // 260916_회전탄 좌표 재사용 버퍼. 매 프레임 새로 만들지 않는다.
+        private readonly List<Vector2>      m_lstOrbitPoint = new List<Vector2>();
 
         private CMapInfo            m_cMapInfo;
         private CCSVData_EnemyInfo  m_cEnemyTable;
@@ -294,6 +300,8 @@ namespace Client
             }
 
             Tick_EnemySlow(fDeltaTime);
+            Tick_Orbit();
+            Tick_Club();
             Tick_Enemy();
             Tick_Projectile();
             Tick_Web();
@@ -772,9 +780,18 @@ namespace Client
 
             // 260904_피격이 확정돼도 루프를 끊지 않는다 — break로 빠지면 뒤쪽 몬스터의 추적 상태가 갱신되지
             // 않아, 플레이어가 안전 지대로 돌아간 뒤에도 한 프레임 더 추적 속도로 달려든다.
-            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            // 260916_회전탄/몽둥이에 죽은 몬스터(bCollect)를 여기서 걷어낸다 — 다음 프레임이면
+            // Engine이 이미 풀로 돌려줘 다른 몬스터 데이터로 바뀌어 있을 수 있다. 뒤에서부터
+            // 지워야 앞쪽 인덱스가 밀리지 않는다.
+            for (int i = m_lstEnemy.Count - 1; i >= 0; --i)
             {
                 CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_DEAD == true)
+                {
+                    m_lstEnemy.RemoveAt(i);
+                    continue;
+                }
+
                 cEnemy.Set_ChaseState(bExposed, vPlayerPos);
 
                 if (bHit == true)
@@ -1010,6 +1027,76 @@ namespace Client
             }
         }
         #endregion 런 스킬 소환물 (IRunSkillHost)
+
+        #region 런 스킬 전투 (회전탄 / 몽둥이)
+        // 260916_둘 다 플레이어가 만드는 판정이지만 적탄/몬스터 목록을 아는 곳이 여기뿐이라
+        // 위 기믹 소환물과 같은 이유로 CStage_Manager가 충돌만 대신 봐 준다.
+        private void Tick_Orbit()
+        {
+            if (m_cPlayer == null || m_cPlayer.Try_Get_OrbitPoints(m_lstOrbitPoint) == false)
+                return;
+
+            float fHitRange = CRunSkillEffect_Orbit.HIT_RADIUS_CELLS * m_cGrid.CELL_SIZE;
+
+            for (int i = 0; i < m_lstOrbitPoint.Count; ++i)
+            {
+                Vector2 vPoint = m_lstOrbitPoint[i];
+
+                for (int p = m_lstProjectile.Count - 1; p >= 0; --p)
+                {
+                    CProjectile cProjectile = m_lstProjectile[p];
+                    if (cProjectile == null || cProjectile.IS_EXPIRED == true)
+                        continue;
+
+                    if (Vector2.Distance(cProjectile.POS, vPoint) <= fHitRange)
+                        cProjectile.Expire();
+                }
+
+                for (int e = 0; e < m_lstEnemy.Count; ++e)
+                {
+                    CEnemy cEnemy = m_lstEnemy[e];
+                    if (cEnemy == null || cEnemy.IS_DEAD == true)
+                        continue;
+
+                    if (Vector2.Distance(cEnemy.POS, vPoint) <= fHitRange)
+                    {
+                        cEnemy.Damage(PLAYER_ATTACK_DAMAGE);
+                        m_cPlayer.On_MonsterHit();
+                    }
+                }
+            }
+        }
+
+        private void Tick_Club()
+        {
+            if (m_cPlayer == null
+                || m_cPlayer.Try_ConsumeClubSwing(out Vector2 vHitPoint, out float fHitRadius) == false)
+                return;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_DEAD == true)
+                    continue;
+
+                if (Vector2.Distance(cEnemy.POS, vHitPoint) > fHitRadius)
+                    continue;
+
+                cEnemy.Damage(PLAYER_ATTACK_DAMAGE);
+                m_cPlayer.On_MonsterHit();
+                if (cEnemy.IS_DEAD == true)
+                    continue;
+
+                Vector2 vKnockDir = cEnemy.POS - vHitPoint;
+                if (vKnockDir.sqrMagnitude <= Mathf.Epsilon)
+                    vKnockDir = UnityEngine.Random.insideUnitCircle;
+
+                cEnemy.Add_Knockback(vKnockDir,
+                                     CRunSkillEffect_Club.KNOCKBACK_DISTANCE_CELLS * m_cGrid.CELL_SIZE,
+                                     CRunSkillEffect_Club.KNOCKBACK_DURATION);
+            }
+        }
+        #endregion 런 스킬 전투 (회전탄 / 몽둥이)
 
         #region 콜백
         private void On_PlayerCapture(int iCapturedCount)

@@ -42,12 +42,20 @@ namespace Client
         private ENEMY_GIMMICK   m_eGimmick;
         private float           m_fHitRange;        // 셀
 
+        // 260916_런 스킬(회전탄/몽둥이)이 몬스터를 죽일 수 있어야 해서 처음 생긴 HP.
+        // EnemyInfo.csv에 아직 공격력/체력 열이 없어 임시 고정값을 쓴다(2-14의 DEFAULT_HIT_DAMAGE와 같은 자리) —
+        // 몬스터별 수치가 CSV에 들어오면 이 상수를 그 값으로 대체할 것.
+        private const int       DEFAULT_HP = 3;
+        private int             m_iHp;
+
         /// <summary> 260912_EnemyInfo.csv의 ID. 웨이브가 넘어갈 때 종류별 수를 셀 때 쓴다. </summary>
         public int              ENEMY_ID        => m_iEnemyID;
         public Vector2Int       CUR_CELL        => m_cMoveHandler.CELL;
         public Vector2          POS             => m_cMoveHandler.POS;
         /// <summary> 플레이어와의 충돌 반경(셀). 월드 거리로 쓰려면 CELL_SIZE를 곱한다. </summary>
         public float            HIT_RANGE       => m_fHitRange;
+        /// <summary> Engine이 bCollect가 선 오브젝트를 알아서 풀로 돌려준다(CProjectile 설명 참고). </summary>
+        public bool             IS_DEAD         => bCollect;
 
         #region Engine.CGameObject
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -78,6 +86,8 @@ namespace Client
 
             m_eGimmick      = cDesc.eGimmick;
             m_fHitRange     = cDesc.fHitRange;
+            m_iHp           = DEFAULT_HP;
+            bCollect        = false;   // 풀에서 재사용되므로 지난 판의 죽음이 남지 않게 내려 둔다
 
             m_cGimmick = CEnemyGimmick.Create(cDesc.eGimmick);
             if (m_cGimmick != null && m_cGimmick.Initialize(this, m_cGrid, cDesc) == false)
@@ -99,7 +109,7 @@ namespace Client
 
         public override void Tick(float fDeltaTime)
         {
-            if (m_cGrid == null)
+            if (m_cGrid == null || bCollect == true)
                 return;
 
             m_cMoveHandler.Tick(fDeltaTime, m_bChase, m_vTargetPos, m_fTurnRate);
@@ -121,6 +131,24 @@ namespace Client
 
         /// <summary> 기믹이 무언가를 소환할 창구를 꽂아 준다. 스테이지가 몬스터를 만든 직후 부른다. </summary>
         public void Set_GimmickHost(IGimmickHost cHost) => m_cGimmick?.Set_Host(cHost);
+
+        // 260916_런 스킬(회전탄/몽둥이)이 때릴 때 부른다. HP가 0이 되면 bCollect가 서서
+        // Engine이 다음 사이클에 알아서 풀로 돌려준다(Projectile/Web/Soul과 같은 자리) —
+        // 여기서 직접 Collect_Object를 부르면 두 번 반납하게 된다.
+        /// <summary> iAmount만큼 HP를 줄인다. 이미 죽었으면 무시한다. </summary>
+        public void Damage(int iAmount)
+        {
+            if (iAmount <= 0 || bCollect == true)
+                return;
+
+            m_iHp = Mathf.Max(0, m_iHp - iAmount);
+            if (m_iHp <= 0)
+                bCollect = true;
+        }
+
+        /// <summary> 몽둥이 등 넉백 효과가 부른다. 잠깐 배회/추적을 멈추고 방향으로 밀려난다. </summary>
+        public void Add_Knockback(Vector2 vDir, float fDistance, float fDuration)
+            => m_cMoveHandler.Add_Knockback(vDir, fDistance, fDuration);
 
         /// <summary> 스테이지 매니저가 매 프레임 갱신한다. </summary>
         // 260912_감속 스킬. 1이면 원래 속도.

@@ -621,8 +621,10 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 
 **액티브/패시브 조합으로 액티브를 각성시키는 조합식**은 아직 설계하지 않았다 — 다음 단계.
 
-지금 있는 8종 중 실제로 코드가 붙은 건 6종이다. 나머지 둘(회전탄/몽둥이)은 **더 큰 새
-시스템(몬스터 HP)이 먼저 필요해서** 의도적으로 미뤘다(아래).
+8종 전부 코드가 붙었다. 마지막 둘(회전탄/몽둥이)은 이 프로젝트에 없던 "몬스터가 전투로
+죽는다"는 개념을 처음 요구해서, 최소한의 HP/넉백 골격(`CEnemy.Damage`/`IS_DEAD`,
+`CEnemyMoveHandler.Add_Knockback`)을 먼저 만들고 그 위에 얹었다 — EnemyInfo.csv의
+기믹/수치 작업(로컬에서 진행 중인 M4 보스 작업)과는 무관한, 순수 전투 배선이다.
 
 | 스킬 | 상태 | 비고 |
 |---|---|---|
@@ -630,10 +632,19 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 | 어디로든 신발 | ✅ | `CMoveHandler`가 다음 셀을 계산하는 자리(`Get_NextCell`)를 한 곳으로 모으고, 거기서 x좌표를 폭으로 랩어라운드한다. `Can_Move`/`Can_Follow`/`Try_StartMove` 세 곳이 각자 다음 칸을 계산하고 있어서, 한 곳만 고치면 판정과 실제 이동 결과가 어긋난다 — 셋 다 이 함수를 쓰게 먼저 정리했다 |
 | 자석 | ✅(값만) | 레벨별 반경을 `CPlayer.PICKUP_RADIUS`에 걸어 두기만 했다. 실제로 무언가를 끌어당기는 대상(영혼)이 아직 없다 |
 | 회피 | ✅ | 기존 `CPlayer.Add_Evasion`(누적 전용 API)에 레벨업 때마다 **직전 레벨과의 차이만** 더한다 — 레벨2를 받았는데 레벨1+레벨2를 둘 다 더하면 두 배가 된다 |
-| 분노조절못해 | ✅(절반) | 달릴 때(`CPlayer.IS_MOVING`)와 맞을 때(`OnDamaged`)는 게이지가 오르지만, **몬스터를 때렸을 때 오르는 쪽은 아직 연결되지 않았다** — 회전탄/몽둥이가 없어 플레이어가 몬스터를 때릴 방법 자체가 없기 때문이다. `CRunSkillEffect_Rage.Add_HitGauge()`를 만들어만 뒀다 |
+| 분노조절못해 | ✅ | 달릴 때(`CPlayer.IS_MOVING`) · 맞을 때(`OnDamaged`) · 몬스터를 때릴 때(`CPlayer.On_MonsterHit`, 회전탄/몽둥이가 명중하면 `CStage_Manager`가 불러 준다) 셋 다 게이지가 오른다 |
 | 영혼 수집가 | ✅ | `CSoul`(신규 픽업 오브젝트, `CWeb`과 같은 자리 — 제자리에 머무르다 수명이 다하면 사라짐)을 `IRunSkillHost.Spawn_Soul()`로 요청하면 `CStage_Manager`가 무작위 미점령 칸에 놓고 수명·습득 판정까지 한곳에서 본다. 습득 범위는 `SOUL_PICKUP_RADIUS_BASE`(기본) + 자석 보너스. 속도 증가는 `CPlayer.Add_CardSpeed`를 그대로 탄다 — "판이 끝날 때까지 유지되는 영구 가산"이 카드 속도가 이미 하는 일과 같아서 필드를 새로 만들지 않았다 |
-| 회전탄 | 🔲 | 몬스터에게 피해를 주려면 **몬스터가 죽을 수 있어야** 하는데, 지금 몬스터에는 HP 개념 자체가 없다(웨이브가 넘어갈 때 회수될 뿐 전투로 죽지 않는다). 이 프로젝트에서 "플레이어가 몬스터를 공격해 죽인다"는 처음 생기는 개념이다 |
-| 몽둥이 | 🔲 | 회전탄과 같은 이유(몬스터 HP) + 넉백(외력으로 밀려나는 상태)이 `CEnemyMoveHandler`에 아직 없다 |
+| 회전탄 | ✅ | `CRunSkillEffect_Orbit`은 플레이어 중심 기준 셀 단위 오프셋(회전각)만 안다 — 월드 좌표 변환은 그리드를 아는 `CPlayer.Try_Get_OrbitPoints`가, 적탄 상쇄·몬스터 피해 판정은 목록을 아는 `CStage_Manager.Tick_Orbit`이 한다. 레벨업마다 탄이 1개씩 는다 |
+| 몽둥이 | ✅ | `CRunSkillEffect_Club`은 "지금 휘두를 차례인가"(자체 쿨타임)와 반경만 안다. 실제 타격점(플레이어 위치 + 바라보는 방향)은 `CPlayer.Try_ConsumeClubSwing`이, 판정·넉백은 `CStage_Manager.Tick_Club`이 한다. 뱀서라이크의 다른 무기와 마찬가지로 버튼 없이 자동 발동한다 — "액티브"는 쿨타임을 가진 효과라는 뜻이지 버튼 여부가 아니다 |
+
+**회전탄/몽둥이를 위해 처음 생긴 것 — 몬스터 HP와 넉백.** 이전까지 몬스터는 전투로
+죽지 않았다(웨이브가 넘어갈 때 회수될 뿐). `CEnemy`에 임시 고정 HP(`DEFAULT_HP=3`,
+CSV 열이 아직 없어 `CStage_Manager.DEFAULT_HIT_DAMAGE`와 같은 자리)와 `Damage(int)`를
+추가했고, 죽으면 Projectile/Web/Soul과 똑같이 **`bCollect`를 세워 Engine이 알아서
+풀로 돌려주게 했다** — 새 회수 경로를 만들지 않았다. `CStage_Manager.Tick_Enemy`가
+매 프레임 죽은 몬스터를 목록에서 먼저 걷어낸다(안 그러면 다음 프레임엔 Engine이 이미
+반납해 다른 몬스터로 바뀌어 있을 수 있다). 넉백은 `CEnemyMoveHandler`에 배회/추적과는
+별개인 짧은 강제 이동 구간을 추가하는 방식으로 얹었다.
 
 **3지선다 UI에 스킬을 섞어 넣는 것도 아직이다.** 지금 있는 `CUI_CardPick`은 `CARD_TYPE`
 전용으로 아이콘·색을 고르게 짜여 있고, 그 프리팹 자체가 `CProtoSetup.Setup_Assets`로

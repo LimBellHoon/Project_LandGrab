@@ -17,10 +17,26 @@ namespace Client
         private Vector2         m_vDir;         // 진행 방향 (정규화)
         private float           m_fSpeed;       // 월드 유닛/초
 
+        // 260916_런 스킬 '몽둥이' 등이 거는 넉백. 지속 중에는 배회/추적을 멈추고 이쪽만 움직인다.
+        private Vector2         m_vKnockbackVelocity;
+        private float           m_fKnockbackTimer;
+
         public Vector2      POS     => m_vPos;
         public Vector2      DIR     => m_vDir;
         public Vector2Int   CELL    => m_cGrid.World_ToCell(m_vPos);
         public float        SPEED   { get { return m_fSpeed; } set { m_fSpeed = Mathf.Max(0f, value); } }
+
+        /// <param name="vDir"> 밀려날 방향(정규화 불필요) </param>
+        /// <param name="fDistance"> 월드 유닛. 지속 시간 동안 이 거리만큼 밀린다 </param>
+        /// <param name="fDuration"> 초 </param>
+        public void Add_Knockback(Vector2 vDir, float fDistance, float fDuration)
+        {
+            if (fDuration <= 0f || vDir.sqrMagnitude <= Mathf.Epsilon)
+                return;
+
+            m_vKnockbackVelocity = vDir.normalized * (fDistance / fDuration);
+            m_fKnockbackTimer    = fDuration;
+        }
 
         public bool Initialize(CTerritoryGrid cGrid, Vector2 vStartPos, Vector2 vStartDir, float fSpeed)
         {
@@ -47,6 +63,13 @@ namespace Client
             if (Escape_IfTrapped() == true)
                 return;
 
+            if (m_fKnockbackTimer > 0f)
+            {
+                m_fKnockbackTimer -= fDeltaTime;
+                Move_WithVelocity(m_vKnockbackVelocity, fDeltaTime);
+                return;
+            }
+
             if (bChase == true)
                 Steer_Toward(vTargetPos, fTurnRate, fDeltaTime);
 
@@ -54,6 +77,20 @@ namespace Client
         }
 
         #region private
+        // 260916_넉백 전용 — 벽에 튕기지 않고 그냥 멈춘다(반사하면 밀려나는 느낌이 아니라 튕겨 나가 보인다).
+        private void Move_WithVelocity(Vector2 vVelocity, float fDeltaTime)
+        {
+            Vector2 vNext = m_vPos + vVelocity * fDeltaTime;
+
+            if (Is_Blocked(new Vector2(vNext.x, m_vPos.y)) == true)
+                vNext.x = m_vPos.x;
+
+            if (Is_Blocked(new Vector2(m_vPos.x, vNext.y)) == true)
+                vNext.y = m_vPos.y;
+
+            m_vPos = vNext;
+        }
+
         private void Steer_Toward(Vector2 vTargetPos, float fTurnRate, float fDeltaTime)
         {
             Vector2 vToTarget = vTargetPos - m_vPos;

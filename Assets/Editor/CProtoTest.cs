@@ -39,6 +39,7 @@ namespace Client
             Test_BoundaryOnlyMove();
             Test_LineFollow();
             Test_Enemy();
+            Test_EnemyCombat();
             Test_Player();
             Test_ShapeMask();
             Test_DirtyCell();
@@ -56,6 +57,7 @@ namespace Client
             Test_SkillTable();
             Test_RunSkillTable();
             Test_RunSkill();
+            Test_OrbitAndClub();
             Test_BattleConsumable();
             Test_CoverResolution();
             Test_LayerBounds();
@@ -313,6 +315,88 @@ namespace Client
             Check("테두리에서 가장 가까운 미점령 칸을 찾음",
                   cGrid.Try_Find_NearestCell(new Vector2Int(0, 0), CELL_STATE.EMPTY, 4, out Vector2Int vNear)
                   && cGrid.Get_Cell(vNear) == CELL_STATE.EMPTY);
+
+            // ⑦ 260916_넉백 — 지속 시간 동안은 추적 방향을 무시하고 지정한 방향/거리로 밀린다
+            CEnemyMoveHandler cKnockMove = new CEnemyMoveHandler();
+            cKnockMove.Initialize(cGrid, new Vector2(10.5f, 10.5f), Vector2.right, 1f);
+            cKnockMove.Add_Knockback(Vector2.up, 2f, 1f);   // 1초 동안 위로 2 유닛
+            // 추적 목표를 오른쪽 아래로 줘도 넉백 중에는 무시해야 한다.
+            cKnockMove.Tick(0.5f, true, new Vector2(15.5f, 5.5f), 1f);
+            Check("넉백 중에는 추적을 무시하고 지정 방향으로 밀린다", cKnockMove.POS.y > 11.4f);
+        }
+
+        // 260916_런 스킬(회전탄/몽둥이)의 순수 로직 — CPlayer/그리드 없이도 검증 가능한 부분만
+        private static void Test_OrbitAndClub()
+        {
+            CCSVData_RunSkillInfo cTable = Load_RunSkillTable();
+            if (cTable == null)
+            {
+                Check("RunSkillInfo.csv 로드(Test_OrbitAndClub)", false);
+                return;
+            }
+
+            CRunSkillInfo cOrbitInfo = cTable.Find_ByType(RUN_SKILL_TYPE.ORBIT);
+            CRunSkillEffect_Orbit cOrbit = new CRunSkillEffect_Orbit();
+            cOrbit.On_LevelChanged(cOrbitInfo, 1);
+
+            List<Vector2> lstOffset = new List<Vector2>();
+            Check("회전탄 1레벨은 1개", cOrbit.Try_Get_OrbitOffsets(lstOffset) == true && lstOffset.Count == 1);
+
+            cOrbit.On_LevelChanged(cOrbitInfo, 2);
+            Check("회전탄 2레벨은 2개", cOrbit.Try_Get_OrbitOffsets(lstOffset) == true && lstOffset.Count == 2);
+
+            Vector2 vBefore = lstOffset[0];
+            cOrbit.Tick(1f);
+            cOrbit.Try_Get_OrbitOffsets(lstOffset);
+            Check("시간이 지나면 회전한다", Vector2.Distance(vBefore, lstOffset[0]) > 0.01f);
+
+            CRunSkillInfo cClubInfo = cTable.Find_ByType(RUN_SKILL_TYPE.CLUB);
+            CRunSkillEffect_Club cClub = new CRunSkillEffect_Club();
+            cClub.On_LevelChanged(cClubInfo, 1);
+
+            Check("몽둥이는 처음엔 바로 휘두른다", cClub.Consume_Swing(out float fRadius1) == true);
+            Check("쿨타임 동안은 다시 못 휘두른다", cClub.Consume_Swing(out float _) == false);
+
+            cClub.Tick(10f);   // 쿨타임을 훨씬 넘게 흘려보낸다
+            Check("쿨타임이 지나면 다시 휘두른다", cClub.Consume_Swing(out float fRadius2) == true);
+            Check("레벨이 같으면 반경도 같다", Mathf.Approximately(fRadius1, fRadius2));
+            Check("판정 반경은 0보다 크다", fRadius1 > 0f);
+        }
+
+        // 260916_런 스킬로 몬스터를 죽이는 최소 골격 — HP/사망(bCollect)
+        private static void Test_EnemyCombat()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            GameObject goEnemy = new GameObject("Test_CombatEnemy");
+            CEnemy cEnemy = goEnemy.AddComponent<CEnemy>();
+            cEnemy.Initialize(new CEnemyDesc
+            {
+                eObjectType     = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName   = "Prefab_Enemy",
+                cGrid           = cGrid,
+                vStartCell      = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir       = Vector2.right,
+                iEnemyID        = 999,
+                eGimmick        = ENEMY_GIMMICK.NONE,
+                fSpeed          = 1f,
+                fChaseSpeed     = 1f,
+                fTurnRate       = 1f,
+                fHitRange       = 0.5f,
+            });
+
+            Check("생성 직후에는 안 죽었다", cEnemy.IS_DEAD == false);
+
+            cEnemy.Damage(1);
+            cEnemy.Damage(1);
+            Check("HP가 남아 있으면 안 죽는다", cEnemy.IS_DEAD == false);
+
+            cEnemy.Damage(1);
+            Check("HP가 다 떨어지면 죽는다(bCollect)", cEnemy.IS_DEAD == true);
+
+            cEnemy.Damage(1);
+            Check("죽은 뒤에는 다시 피해를 받지 않는다", cEnemy.IS_DEAD == true);
+
+            Object.DestroyImmediate(goEnemy);
         }
 
         // 260916_목숨 개수(-1 고정) → HP 풀(가변 피해량) 전환 검증
