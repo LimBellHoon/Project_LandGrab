@@ -44,6 +44,7 @@ namespace Client
         private float   m_fHitStopTimer;
         private float   m_fScaleRate = 1f;  // 특성(SCALE_OVER_TIME)이 곱하는 크기
         private int     m_iDurability;
+        private int     m_iHitCount;        // 260917_새로 맞힌 횟수. 플레이어 탄이 몬스터를 때렸는지 스테이지가 센다(분노 게이지)
         private bool    m_bExpired;
 
         // 지금 닿아 있는 대상. 이번 프레임 판정과 비교해 들어옴 / 머무름 / 나감을 가린다.
@@ -66,6 +67,7 @@ namespace Client
         public float            LIFE_TIME       => m_cInfo.fLifeTime;
         public float            SCALE           => m_cInfo.fScale * m_fScaleRate;
         public int              DURABILITY      => m_iDurability;
+        public int              HIT_COUNT       => m_iHitCount;
         public bool             IS_EXPIRED      => m_bExpired;
         public bool             IS_HIT_STOP     => m_fHitStopTimer > 0f;
         public int              TRAIT_COUNT     => m_lstTrait.Count;
@@ -97,6 +99,7 @@ namespace Client
             m_fHitStopTimer = 0f;
             m_fScaleRate    = 1f;
             m_iDurability   = cInfo.iDurability == 0 ? 1 : cInfo.iDurability;
+            m_iHitCount     = 0;
             m_bExpired      = false;
             m_hsContact.Clear();
 
@@ -288,6 +291,8 @@ namespace Client
         #region 닿음
         private void On_Enter(IImpactTarget cTarget)
         {
+            ++m_iHitCount;
+
             if (m_cInfo.iDamage > 0)
                 cTarget.Take_Damage(m_cInfo.iDamage);
 

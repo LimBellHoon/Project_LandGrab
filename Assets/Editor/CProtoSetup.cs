@@ -38,7 +38,7 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
@@ -46,6 +46,7 @@ namespace Client
             typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo),
             typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
             typeof(CCSVData_RunSkillInfo), typeof(CCSVData_ProjectileInfo), typeof(CCSVData_ImpactInfo),
+            typeof(CCSVData_AwakenInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -93,6 +94,7 @@ namespace Client
         {
             "Tex_RunSkill_MOONWALK", "Tex_RunSkill_EDGE_WRAP", "Tex_RunSkill_SOUL_COLLECTOR", "Tex_RunSkill_RAGE",
             "Tex_RunSkill_MAGNET", "Tex_RunSkill_EVASION", "Tex_RunSkill_ORBIT", "Tex_RunSkill_CLUB",
+            "Tex_RunSkill_MAGIC_BOLT", "Tex_RunSkill_LASER_BEAM", "Tex_RunSkill_BOOMERANG", "Tex_RunSkill_BOUNCE_SHOT",
         };
         private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
@@ -760,6 +762,25 @@ namespace Client
                     float fDotA = Mathf.Sqrt((fU - 0.36f) * (fU - 0.36f) + (fV - 0.36f) * (fV - 0.36f));
                     float fDotB = Mathf.Sqrt((fU + 0.36f) * (fU + 0.36f) + (fV + 0.36f) * (fV + 0.36f));
                     return bRing || fDotA < 0.17f || fDotB < 0.17f || fDist < 0.14f;
+                }
+
+                // 260917_투사체 무기 넷
+                case 8:     // 마법탄 — 마름모 별(가운데가 빈 사방 별)
+                    return fAbsU + fAbsV < 0.72f && (fAbsU < 0.12f || fAbsV < 0.12f || fAbsU + fAbsV < 0.3f);
+
+                case 9:     // 레이저 — 왼쪽 원점에서 오른쪽으로 뻗는 굵은 빔
+                    return (fAbsV < 0.13f && fU > -0.45f && fU < 0.78f)
+                        || Mathf.Sqrt((fU + 0.55f) * (fU + 0.55f) + fV * fV) < 0.25f;
+
+                case 10:    // 부메랑 — 꺾인 ㄱ자 두 날
+                    return (fV > -0.1f && fV < 0.12f && fU > -0.7f && fU < 0.35f)
+                        || (fU > 0.13f && fU < 0.35f && fV > -0.7f && fV < 0.12f);
+
+                case 11:    // 튕기는 탄 — 지그재그 궤적과 끝의 탄
+                {
+                    float fZig = Mathf.Abs(Mathf.Repeat(fU * 1.6f + 1.6f, 1f) - 0.5f) * 0.9f - 0.2f;
+                    bool bTrail = fU < 0.35f && fU > -0.75f && Mathf.Abs(fV - fZig) < 0.1f;
+                    return bTrail || Mathf.Sqrt((fU - 0.52f) * (fU - 0.52f) + (fV - 0.25f) * (fV - 0.25f)) < 0.2f;
                 }
 
                 default:    // 몽둥이 — 대각선 자루와 굵은 머리

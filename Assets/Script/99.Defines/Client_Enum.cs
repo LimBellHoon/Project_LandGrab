@@ -89,6 +89,7 @@
     {
         CARD,           // CardInfo.csv — 보호막 · 회복 · 가속 · 회피 · 둔화
         RUN_SKILL,      // RunSkillInfo.csv — 새로 얻거나 레벨업
+        AWAKEN,         // AwakenInfo.csv — 만렙 액티브 + 짝 패시브 → 각성 (Docs/Design_RunSkill_Awaken.md)
     }
 
     // 260912_점령률을 넘길 때마다 셋 중 하나를 고르는 카드
@@ -226,6 +227,13 @@
         EVASION,        // 회피 — 회피율 증가
         ORBIT,          // 회전탄 — 주위를 도는 투사체, 적탄 상쇄 + 몬스터 피해
         CLUB,           // 몽둥이 — 바라보는 방향으로 휘둘러 넉백
+
+        // 260917_투사체 무기 — 일정 시간마다 저절로 쏜다(뱀서라이크). 효과는 전부 CRunSkillEffect_Weapon 하나이고
+        // 무엇을 어떻게 쏠지는 RunSkillInfo.csv의 탄 ID · 쿨 · 발사 패턴 · 조준 열이 정한다.
+        MAGIC_BOLT,     // 마법탄 — 가장 가까운 몬스터에게 유도탄 연발
+        LASER_BEAM,     // 레이저 — 체력이 가장 많은 몬스터 쪽으로 레이저
+        BOOMERANG,      // 부메랑 — 몬스터가 몰린 쪽으로 던졌다 돌아온다
+        BOUNCE_SHOT,    // 튕기는 탄 — 사방으로 뿌리고 맵 끝에서 튕긴다
     }
 
     /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>

@@ -12,12 +12,16 @@ namespace Client
         public PICK_KIND        eKind;
         public CCardInfo        cCard;
         public CRunSkillInfo    cRunSkill;
+        public CAwakenInfo      cAwaken;        // 260917_각성. cRunSkill에는 그 액티브를 넣어 둔다(아이콘 · 이름 표시)
         /// <summary> 런 스킬을 고르면 오를 레벨. 1이면 새로 얻는다 </summary>
         public int              iNextLevel;
 
-        public string   NAME    => eKind == PICK_KIND.CARD ? cCard.strName : cRunSkill.strName;
-        public string   DESC    => eKind == PICK_KIND.CARD ? cCard.strDesc : cRunSkill.strDesc;
-        public int      WEIGHT  => eKind == PICK_KIND.CARD ? cCard.iWeight : cRunSkill.iWeight;
+        public string   NAME    => eKind == PICK_KIND.CARD ? cCard.strName
+                                 : eKind == PICK_KIND.AWAKEN ? cAwaken.strName : cRunSkill.strName;
+        public string   DESC    => eKind == PICK_KIND.CARD ? cCard.strDesc
+                                 : eKind == PICK_KIND.AWAKEN ? cAwaken.strDesc : cRunSkill.strDesc;
+        public int      WEIGHT  => eKind == PICK_KIND.CARD ? cCard.iWeight
+                                 : eKind == PICK_KIND.AWAKEN ? cAwaken.iWeight : cRunSkill.iWeight;
         public bool     IS_NEW  => eKind == PICK_KIND.RUN_SKILL && iNextLevel <= 1;
 
         public static CPickOption From_Card(CCardInfo cInfo)
@@ -25,6 +29,9 @@ namespace Client
 
         public static CPickOption From_RunSkill(CRunSkillInfo cInfo, int iNextLevel)
             => new CPickOption { eKind = PICK_KIND.RUN_SKILL, cRunSkill = cInfo, iNextLevel = iNextLevel };
+
+        public static CPickOption From_Awaken(CAwakenInfo cInfo, CRunSkillInfo cActive)
+            => new CPickOption { eKind = PICK_KIND.AWAKEN, cAwaken = cInfo, cRunSkill = cActive };
     }
 
     // 260917_카드와 런 스킬을 한 풀에 넣고 가중치로 뽑는다 (Docs/Design_RunSkill_Awaken.md 3장 '3지선다 풀')
@@ -34,9 +41,12 @@ namespace Client
         /// <param name="cRunSkillTable"> 없으면 카드만 </param>
         /// <param name="fnGetLevel"> 그 런 스킬을 지금 몇 레벨 들고 있는지 (안 가졌으면 0) </param>
         /// <param name="fnIsMapCleared"> 런 스킬 해금 조건 </param>
+        /// <param name="cAwakenTable"> 260917_없으면 각성 후보가 없다 </param>
+        /// <param name="fnIsAwakened"> 그 액티브가 이미 각성했는가 </param>
         public static List<CPickOption> Pick(CCSVData_CardInfo cCardTable, CCSVData_RunSkillInfo cRunSkillTable,
                                              Func<RUN_SKILL_TYPE, int> fnGetLevel, Func<int, bool> fnIsMapCleared,
-                                             int iCount)
+                                             int iCount, CCSVData_AwakenInfo cAwakenTable = null,
+                                             Func<RUN_SKILL_TYPE, bool> fnIsAwakened = null)
         {
             List<CPickOption> lstCandidate = new List<CPickOption>();
 
@@ -54,6 +64,14 @@ namespace Client
                     int iLevel = fnGetLevel != null ? fnGetLevel(lstSkill[i].eType) : 0;
                     lstCandidate.Add(CPickOption.From_RunSkill(lstSkill[i], iLevel + 1));
                 }
+            }
+
+            // 260917_각성 — 만렙 액티브 + 짝 패시브. 가중치는 표에서 높게 잡아 두었다(놓치면 아쉬운 선택이라)
+            if (cAwakenTable != null && cRunSkillTable != null)
+            {
+                List<CAwakenInfo> lstAwaken = cAwakenTable.Collect_Candidates(cRunSkillTable, fnGetLevel, fnIsAwakened);
+                for (int i = 0; i < lstAwaken.Count; ++i)
+                    lstCandidate.Add(CPickOption.From_Awaken(lstAwaken[i], cRunSkillTable.Find_ByType(lstAwaken[i].eActiveType)));
             }
 
             return CWeightedPick_Utility.Pick(lstCandidate, cOption => cOption.WEIGHT, iCount);

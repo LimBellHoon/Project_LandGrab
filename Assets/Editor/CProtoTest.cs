@@ -60,6 +60,7 @@ namespace Client
             Test_SkillTable();
             Test_RunSkillTable();
             Test_RunSkill();
+            Test_WeaponAndAwaken();
             Test_OrbitAndClub();
             Test_BattleConsumable();
             Test_CoverResolution();
@@ -1063,6 +1064,7 @@ namespace Client
                 RUN_SKILL_TYPE.MOONWALK, RUN_SKILL_TYPE.EVASION, RUN_SKILL_TYPE.MAGNET,
                 RUN_SKILL_TYPE.EDGE_WRAP, RUN_SKILL_TYPE.RAGE, RUN_SKILL_TYPE.SOUL_COLLECTOR,
                 RUN_SKILL_TYPE.ORBIT, RUN_SKILL_TYPE.CLUB,
+                RUN_SKILL_TYPE.MAGIC_BOLT, RUN_SKILL_TYPE.LASER_BEAM, RUN_SKILL_TYPE.BOOMERANG, RUN_SKILL_TYPE.BOUNCE_SHOT,
             };
 
             for (int i = 0; i < arrType.Length; ++i)
@@ -1088,9 +1090,9 @@ namespace Client
             }
             Check("맵을 하나도 안 깼으면 해금 스킬은 안 나온다", bAnyGated == false);
 
-            // 해금되면 나온다 — 모든 맵을 깼다고 치면 8종 전부가 후보다
-            List<CRunSkillInfo> lstAll = cTable.Pick_Random(8, eType => 0, iMapID => true);
-            Check("전부 해금되면 8종 다 후보", lstAll.Count, 8);
+            // 해금되면 나온다 — 모든 맵을 깼다고 치면 전부가 후보다 (260917_투사체 무기 4종이 늘어 12종)
+            List<CRunSkillInfo> lstAll = cTable.Pick_Random(12, eType => 0, iMapID => true);
+            Check("전부 해금되면 12종 다 후보", lstAll.Count, 12);
 
             // 이미 만렙이면 후보에서 빠진다
             List<CRunSkillInfo> lstMaxed = cTable.Pick_Random(8,
@@ -1191,6 +1193,214 @@ namespace Client
             Object.DestroyImmediate(goPlayer);
         }
 
+
+        // 260917_투사체 무기(뱀서라이크 자동 발사) · 각성 — 쿨마다 쏘는지, 대상이 없으면 기다리는지, 각성이 무엇을 바꾸는지
+        private static void Test_WeaponAndAwaken()
+        {
+            CCSVData_RunSkillInfo cSkillTable = Load_RunSkillTable();
+            CCSVData_AwakenInfo cAwakenTable = Load_CsvTable<CCSVData_AwakenInfo>("AwakenInfo");
+            if (cSkillTable == null || cAwakenTable == null)
+            {
+                Check("RunSkillInfo / AwakenInfo 로드(Test_WeaponAndAwaken)", false);
+                return;
+            }
+
+            Check("각성 표 — 6줄", cAwakenTable.COUNT, 6);
+
+            // ---- 발사기: 연발 · 회전 링
+            List<Vector2> lstShot = new List<Vector2>();
+            CProjectileFirer cFirer = new CProjectileFirer();
+            cFirer.Setup(FIRE_PATTERN.BURST, 3, 0f, 0.1f, vDir => lstShot.Add(vDir));
+            cFirer.Fire(Vector2.right);
+            Check("연발 — 첫 발은 바로", lstShot.Count, 1);
+            Check("연발 — 남은 발이 있다", cFirer.IS_BURSTING == true);
+            cFirer.Tick(0.05f, Vector2.right);
+            Check("연발 — 간격 전에는 안 나간다", lstShot.Count, 1);
+            cFirer.Tick(0.06f, Vector2.right);
+            cFirer.Tick(0.11f, Vector2.right);
+            Check("연발 — 간격마다 한 발씩 세 발", lstShot.Count, 3);
+            Check("연발 — 다 쏘면 끝", cFirer.IS_BURSTING == false);
+
+            lstShot.Clear();
+            cFirer.Setup(FIRE_PATTERN.SPIN, 4, 30f, 0f, vDir => lstShot.Add(vDir));
+            cFirer.Fire(Vector2.up);
+            cFirer.Fire(Vector2.up);
+            Check("회전 링 — 한 번에 네 발씩", lstShot.Count, 8);
+            Check("회전 링 — 두 번째는 30도 돌아가 있다",
+                  Mathf.Abs(Vector2.SignedAngle(lstShot[0], lstShot[4]) - 30f) < 0.01f);
+
+            // ---- 플레이어
+            CTerritoryGrid cGrid = Make_Grid();
+            GameObject goPlayer = new GameObject("Test_WeaponPlayer");
+            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            CPlayerDesc cDesc = new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
+                fMoveSpeed    = STEP_SPEED,
+                iMaxHp        = 3,
+                fEvasion      = 1f,     // 반격의 몽둥이 — 맞으면 반드시 회피하게
+            };
+            cPlayer.Initialize(cDesc);
+
+            CFakeRunSkillHost cHost = new CFakeRunSkillHost();
+            cPlayer.Set_RunSkillHost(cHost);
+
+            // ---- 마법탄: 대상이 없으면 쿨을 찬 채 기다린다
+            CRunSkillInfo cBoltInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.MAGIC_BOLT);
+            Check("마법탄은 무기다", cBoltInfo != null && cBoltInfo.IS_WEAPON == true);
+            cPlayer.Add_RunSkill(cBoltInfo);
+            CRunSkillEffect_Weapon cBolt = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.MAGIC_BOLT) as CRunSkillEffect_Weapon;
+            Check("마법탄은 무기 모듈이 붙는다", cBolt != null);
+            if (cBolt == null)
+            {
+                Object.DestroyImmediate(goPlayer);
+                return;
+            }
+
+            cBolt.Tick(5f);
+            Check("몬스터가 없으면 쏘지 않는다", cHost.lstShotID.Count, 0);
+
+            cHost.lstEnemy.Add(new CFakeImpactTarget(cPlayer.POS + new Vector2(3f, 0f), 0.3f));
+            cBolt.Tick(0.01f);
+            Check("몬스터가 들어오면 곧바로 쏜다 (쿨이 차 있었다)", cHost.lstShotID.Count, 1);
+            Check("마법탄은 유도탄(4)", cHost.lstShotID.Count > 0 ? cHost.lstShotID[0] : -1, 4);
+            Check("대상 쪽으로 쏜다", cHost.lstShotDir.Count > 0 && cHost.lstShotDir[0].x > 0.9f);
+
+            cBolt.Tick(0.5f);
+            Check("쿨 동안은 다시 안 쏜다", cHost.lstShotID.Count, 1);
+
+            // 레벨이 오르면 연발 수가 는다
+            cPlayer.Add_RunSkill(cBoltInfo);
+            cPlayer.Add_RunSkill(cBoltInfo);
+            Check("마법탄 3레벨 — 3연발", cBolt.COUNT, 3);
+            cBolt.Tick(2f);                 // 쿨이 빠진다
+            cBolt.Tick(0.01f);              // 첫 발
+            cBolt.Tick(0.2f);
+            cBolt.Tick(0.2f);
+            Check("쿨이 돌면 3연발", cHost.lstShotID.Count, 4);
+
+            // ---- 튕기는 탄: 링은 한 번에 다 나간다
+            cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.BOUNCE_SHOT));
+            CRunSkillEffect_Weapon cBounce = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.BOUNCE_SHOT) as CRunSkillEffect_Weapon;
+            int iBefore = cHost.lstShotID.Count;
+            cBounce?.Tick(0.01f);
+            Check("튕기는 탄 1레벨 — 한 번에 3발", cHost.lstShotID.Count - iBefore, 3);
+
+            // ---- 각성: 만렙 + 짝 패시브가 있어야 후보다
+            System.Func<RUN_SKILL_TYPE, int> fnLevel = eType => cPlayer.RUN_SKILL.Get_Level(eType);
+            System.Func<RUN_SKILL_TYPE, bool> fnAwakened = eType => cPlayer.RUN_SKILL.Is_Awakened(eType);
+            CAwakenInfo cBlackHole = cAwakenTable.Get_Info(3);
+
+            Check("각성 — 만렙 전에는 후보가 아니다",
+                  cAwakenTable.Collect_Candidates(cSkillTable, fnLevel, fnAwakened).Contains(cBlackHole) == false);
+            cPlayer.Add_RunSkill(cBoltInfo);
+            cPlayer.Add_RunSkill(cBoltInfo);
+            Check("각성 — 만렙이어도 짝 패시브(자석)가 없으면 아니다",
+                  cAwakenTable.Collect_Candidates(cSkillTable, fnLevel, fnAwakened).Contains(cBlackHole) == false);
+            cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.MAGNET));
+            Check("각성 — 만렙 + 자석이면 후보",
+                  cAwakenTable.Collect_Candidates(cSkillTable, fnLevel, fnAwakened).Contains(cBlackHole) == true);
+
+            // 3지선다에도 금색 각성으로 나온다
+            CPickOption cAwakenOption = null;
+            for (int n = 0; n < 300 && cAwakenOption == null; ++n)
+            {
+                List<CPickOption> lstPick = CPickOption_Utility.Pick(null, cSkillTable, fnLevel, iMapID => true, 3,
+                                                                     cAwakenTable, fnAwakened);
+                for (int i = 0; i < lstPick.Count; ++i)
+                {
+                    if (lstPick[i].eKind == PICK_KIND.AWAKEN)
+                        cAwakenOption = lstPick[i];
+                }
+            }
+            Check("각성 — 3지선다에 나온다", cAwakenOption != null);
+            Check("각성 — 제목", cAwakenOption != null ? CUI_CardPick.Get_Title(cAwakenOption) : "", "각성  블랙홀탄");
+
+            float fCoolBefore = cBolt.COOL;
+            Check("각성 — 걸린다", cPlayer.Awaken_RunSkill(cBlackHole) == true);
+            Check("각성 — 탄이 블랙홀탄(16)으로 바뀐다", cBolt.PROJECTILE_ID, 16);
+            Check("각성 — 쿨이 줄어든다(0.8배)", Mathf.Approximately(cBolt.COOL, fCoolBefore * 0.8f));
+            Check("각성 — 같은 액티브는 두 번 각성하지 않는다", cPlayer.Awaken_RunSkill(cBlackHole) == false);
+            Check("각성 — 한 번 하면 후보에서 빠진다",
+                  cAwakenTable.Collect_Candidates(cSkillTable, fnLevel, fnAwakened).Contains(cBlackHole) == false);
+            Check("각성 — 슬롯(레벨)은 그대로", cPlayer.RUN_SKILL.Get_Level(RUN_SKILL_TYPE.MAGIC_BOLT), cBoltInfo.iMaxLevel);
+
+            // ---- 십자 레이저: 발 수를 덮어쓴다
+            CRunSkillInfo cLaserInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.LASER_BEAM);
+            for (int i = 0; i < cLaserInfo.iMaxLevel; ++i)
+                cPlayer.Add_RunSkill(cLaserInfo);
+            cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.EDGE_WRAP));
+            CRunSkillEffect_Weapon cLaser = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.LASER_BEAM) as CRunSkillEffect_Weapon;
+            Check("레이저 만렙 — 5줄기", cLaser != null ? cLaser.COUNT : -1, 5);
+            cPlayer.Awaken_RunSkill(cAwakenTable.Get_Info(4));
+            Check("십자 레이저 — 4방향으로 덮어쓴다", cLaser != null ? cLaser.COUNT : -1, 4);
+
+            // ---- 광란의 칼바람: 회전탄 + 분노
+            CRunSkillInfo cOrbitInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.ORBIT);
+            for (int i = 0; i < cOrbitInfo.iMaxLevel; ++i)
+                cPlayer.Add_RunSkill(cOrbitInfo);
+            cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.RAGE));
+            CRunSkillEffect_Orbit cOrbit = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.ORBIT) as CRunSkillEffect_Orbit;
+            int iOrbitBase = cOrbit != null ? cOrbit.COUNT : -1;
+            cPlayer.Awaken_RunSkill(cAwakenTable.Get_Info(1));
+            Check("광란의 칼바람 — 하나 는다", cOrbit != null ? cOrbit.COUNT : -1, iOrbitBase + 1);
+            Check("분노 전에는 피버가 아니다", cPlayer.IS_FEVER == false);
+            for (int i = 0; i < 4; ++i)
+                cPlayer.On_MonsterHit();    // 한 번에 0.25씩 — 네 번이면 가득 찬다
+            Check("분노가 터지면 피버", cPlayer.IS_FEVER == true);
+            Check("피버 동안 회전탄이 두 배", cOrbit != null ? cOrbit.COUNT : -1, (iOrbitBase + 1) * 2);
+
+            // ---- 반격의 몽둥이: 몽둥이 + 회피
+            CRunSkillInfo cClubInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.CLUB);
+            for (int i = 0; i < cClubInfo.iMaxLevel; ++i)
+                cPlayer.Add_RunSkill(cClubInfo);
+            cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.EVASION));
+            CRunSkillEffect_Club cClub = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.CLUB) as CRunSkillEffect_Club;
+            float fRadiusBefore = cClub != null ? cClub.RADIUS_CELLS : 0f;
+            cPlayer.Awaken_RunSkill(cAwakenTable.Get_Info(2));
+            Check("반격의 몽둥이 — 범위 1.3배", cClub != null && Mathf.Approximately(cClub.RADIUS_CELLS, fRadiusBefore * 1.3f));
+            Check("반격의 몽둥이 — 한 번 휘두르면", cClub != null && cClub.Consume_Swing(out float _) == true);
+            Check("반격의 몽둥이 — 쿨이 돈다", cClub != null && cClub.IS_READY == false);
+            cPlayer.Damage(1);              // 회피 확률 1 — 반드시 회피한다
+            Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
+
+            // ---- 판이 끝나면 각성도 사라진다
+            cPlayer.Initialize(cDesc);
+            Check("재초기화하면 각성도 사라진다", cPlayer.RUN_SKILL.Is_Awakened(RUN_SKILL_TYPE.MAGIC_BOLT) == false);
+
+            // ---- 플레이어 탄이 맞힌 수 (분노 게이지를 스테이지가 센다)
+            CProjectileCore cCore = Make_Core(new CFakeProjectileHost(), new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 },
+                new Vector2(5f, 5f), Vector2.up);
+            cCore.Update_Contact(new List<IImpactTarget>
+            {
+                new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f), new CFakeImpactTarget(new Vector2(5.2f, 5f), 0.1f),
+            }, 0.1f);
+            Check("탄이 새로 맞힌 수", cCore.HIT_COUNT, 2);
+
+            Object.DestroyImmediate(goPlayer);
+        }
+
+        private class CFakeRunSkillHost : IRunSkillHost
+        {
+            public readonly List<CFakeImpactTarget> lstEnemy   = new List<CFakeImpactTarget>();
+            public readonly List<int>               lstShotID  = new List<int>();
+            public readonly List<Vector2>           lstShotDir = new List<Vector2>();
+
+            public void Spawn_Soul() { }
+
+            public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
+                => CTargetFinder_Utility.Find(lstEnemy, vFrom, eFind);
+
+            public void Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
+            {
+                lstShotID.Add(iProjectileID);
+                lstShotDir.Add(vDir.normalized);
+            }
+        }
 
         // 260917_비헤이비어 트리 — 이식해 온 뼈대가 원본과 같은 규칙으로 도는지
         private static void Test_BehaviorTree()

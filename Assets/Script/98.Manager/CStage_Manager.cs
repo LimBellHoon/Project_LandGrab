@@ -473,6 +473,10 @@ namespace Client
             if (cOption.eKind == PICK_KIND.CARD)
                 return Apply_Card(cOption.cCard);
 
+            // 260917_각성 — 그 액티브가 그 자리에서 바뀐다
+            if (cOption.eKind == PICK_KIND.AWAKEN)
+                return m_cPlayer != null && m_cPlayer.Awaken_RunSkill(cOption.cAwaken);
+
             if (m_cPlayer == null || cOption.cRunSkill == null)
                 return false;
 
@@ -965,8 +969,16 @@ namespace Client
                 }
 
                 CProjectileCore cCore = cProjectile.CORE;
+                int iHitBefore = cCore.HIT_COUNT;
                 cCore.Update_Contact(cCore.SIDE == PROJECTILE_SIDE.ENEMY_SHOT ? m_lstPlayerTarget : m_lstEnemyTarget,
                                      fDeltaTime);
+
+                // 260917_플레이어 탄이 몬스터를 때렸다 — 회전탄 · 몽둥이와 같이 분노 게이지를 올린다(2-11-1).
+                if (cCore.SIDE == PROJECTILE_SIDE.PLAYER_SHOT && m_cPlayer != null)
+                {
+                    for (int h = iHitBefore; h < cCore.HIT_COUNT; ++h)
+                        m_cPlayer.On_MonsterHit();
+                }
 
                 if (cCore.IS_EXPIRED == true)
                     cProjectile.Expire();
@@ -1005,8 +1017,7 @@ namespace Client
                 return;     // 쏠 대상이 생기면 바로 나가게 타이머를 그대로 둔다
 
             m_fDevAutoFireTimer = m_fDevAutoFireCool;
-            Spawn_Projectile(m_iDevAutoFireID, m_cPlayer.POS, cTarget.POS - m_cPlayer.POS,
-                             PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer);
+            Spawn_PlayerShot(m_iDevAutoFireID, m_cPlayer.POS, cTarget.POS - m_cPlayer.POS);
         }
 
         private void Tick_Web()
@@ -1157,6 +1168,13 @@ namespace Client
             if (cSoul != null)
                 m_lstSoul.Add(cSoul);
         }
+
+        // 260917_투사체 무기(CRunSkillEffect_Weapon)
+        public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
+            => CTargetFinder_Utility.Find(m_lstEnemy, vFrom, eFind);
+
+        public void Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
+            => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer);
 
         private void Tick_Soul()
         {

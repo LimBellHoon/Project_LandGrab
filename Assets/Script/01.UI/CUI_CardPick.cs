@@ -104,6 +104,10 @@ namespace Client
             if (cOption.eKind == PICK_KIND.CARD)
                 return cOption.NAME;
 
+            // 260917_각성은 어느 스킬이 바뀌는지가 먼저 읽혀야 한다
+            if (cOption.eKind == PICK_KIND.AWAKEN)
+                return $"각성  {cOption.NAME}";
+
             if (cOption.IS_NEW == true)
                 return $"{cOption.NAME}  NEW";
 
@@ -114,9 +118,14 @@ namespace Client
         // 카드 다섯 색과 겹치지 않게 골랐다(카드는 종류마다 색이 따로 있다).
         private static readonly Color TINT_RUN_ACTIVE  = new Color(1.00f, 0.50f, 0.20f);
         private static readonly Color TINT_RUN_PASSIVE = new Color(0.30f, 0.95f, 0.90f);
+        // 260917_각성은 금색 — 언제 떠도 놓치면 아쉬운 선택이라 일반 픽과 한눈에 달라 보여야 한다(문서 3장)
+        private static readonly Color TINT_AWAKEN      = new Color(1.00f, 0.84f, 0.25f);
 
         private static Color Get_Tint(CPickOption cOption)
         {
+            if (cOption.eKind == PICK_KIND.AWAKEN)
+                return TINT_AWAKEN;
+
             if (cOption.eKind == PICK_KIND.RUN_SKILL)
                 return cOption.cRunSkill.IS_PASSIVE == true ? TINT_RUN_PASSIVE : TINT_RUN_ACTIVE;
 
@@ -141,9 +150,11 @@ namespace Client
         private Sprite Get_Icon(CPickOption cOption)
         {
             // NONE이 0번이라 한 칸 당긴다. 표에 종류를 더하면 배열에도 같은 순서로 넣어야 한다.
-            return cOption.eKind == PICK_KIND.CARD
-                 ? Get_ArrayItem(m_arrIcon, (int)cOption.cCard.eType - 1)
-                 : Get_ArrayItem(m_arrRunSkillIcon, (int)cOption.cRunSkill.eType - 1);
+            // 각성은 바뀌는 액티브의 아이콘을 금색으로 쓴다
+            if (cOption.eKind == PICK_KIND.CARD)
+                return Get_ArrayItem(m_arrIcon, (int)cOption.cCard.eType - 1);
+
+            return cOption.cRunSkill != null ? Get_ArrayItem(m_arrRunSkillIcon, (int)cOption.cRunSkill.eType - 1) : null;
         }
 
         private static Sprite Get_ArrayItem(Sprite[] arrSprite, int iIndex)

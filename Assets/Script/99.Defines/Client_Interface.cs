@@ -47,6 +47,13 @@ namespace Client
     {
         /// <summary> 무작위 미점령 칸에 영혼 하나를 떨어뜨린다. </summary>
         void Spawn_Soul();
+
+        // 260917_투사체 무기(CRunSkillEffect_Weapon). 몬스터 목록과 탄 풀은 스테이지가 들고 있다.
+        /// <summary> 조준할 몬스터. 살아 있는 몬스터가 없으면 null. </summary>
+        IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind);
+
+        /// <summary> 플레이어 탄을 쏜다. 쏜 쪽은 플레이어다(부메랑이 돌아오고 궤도탄이 따라온다). </summary>
+        void Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir);
     }
 
 

@@ -307,12 +307,10 @@ namespace Client
 
             int iLevel = m_cRunSkillHandler.Add_Or_LevelUp(cInfo);
 
-            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+            CRunSkillEffect cOwned = Find_RunSkillEffect(cInfo.eType);
+            if (cOwned != null)
             {
-                if (m_lstRunSkillEffect[i].TYPE != cInfo.eType)
-                    continue;
-
-                m_lstRunSkillEffect[i].On_LevelChanged(cInfo, iLevel);
+                cOwned.On_LevelChanged(cInfo, iLevel);
                 return;
             }
 
@@ -324,6 +322,42 @@ namespace Client
             cEffect.Set_Host(m_cRunSkillHost);
             cEffect.On_LevelChanged(cInfo, iLevel);
             m_lstRunSkillEffect.Add(cEffect);
+        }
+
+        // 260917_런 스킬 각성 — 3지선다에서 고른 각성을 그 액티브에 건다. 슬롯을 새로 먹지 않는다.
+        /// <returns> 그 액티브를 들고 있지 않거나 이미 각성했으면 false </returns>
+        public bool Awaken_RunSkill(CAwakenInfo cInfo)
+        {
+            if (cInfo == null || m_cRunSkillHandler.Awaken(cInfo.eActiveType) == false)
+                return false;
+
+            CRunSkillEffect cEffect = Find_RunSkillEffect(cInfo.eActiveType);
+            cEffect?.On_Awaken(cInfo);
+            return true;
+        }
+
+        public CRunSkillEffect Find_RunSkillEffect(RUN_SKILL_TYPE eType)
+        {
+            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+            {
+                if (m_lstRunSkillEffect[i].TYPE == eType)
+                    return m_lstRunSkillEffect[i];
+            }
+            return null;
+        }
+
+        /// <summary> 260917_분노가 터져 있는가. 효과끼리 서로를 몰라도 이 값 하나로 겹친다(광란의 칼바람). </summary>
+        public bool IS_FEVER
+        {
+            get
+            {
+                for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
+                {
+                    if (m_lstRunSkillEffect[i].IS_FEVER == true)
+                        return true;
+                }
+                return false;
+            }
         }
 
         /// <summary> 영혼 수집가가 맵 위에 영혼을 놓을 창구. 스테이지가 꽂아 준다. </summary>

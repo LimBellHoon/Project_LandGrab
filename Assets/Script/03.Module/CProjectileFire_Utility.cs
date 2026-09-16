@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 using UnityEngine;
 
@@ -66,6 +67,85 @@ namespace Client
             float fCos = Mathf.Cos(fRad);
             float fSin = Mathf.Sin(fRad);
             return new Vector2(vDir.x * fCos - vDir.y * fSin, vDir.x * fSin + vDir.y * fCos);
+        }
+    }
+
+    // 260917_발사 패턴을 실제로 굴리는 쪽 — 포수(CEnemyGimmick_Projectile)와 플레이어 무기(CRunSkillEffect_Weapon)가 같이 쓴다
+    /// <summary>
+    /// 한 번 쏘라고 하면 패턴대로 방향을 뽑아 fnSpawn을 부른다. 연발(BURST)은 남은 발을 들고 Tick마다 흘려보내고,
+    /// 회전 링(SPIN)은 쏠 때마다 각도를 누적한다. 둘 다 '쏘는 쪽의 상태'라 표(탄)에 두지 않고 여기 둔다.
+    /// </summary>
+    public class CProjectileFirer
+    {
+        private const float DEFAULT_BURST_INTERVAL = 0.12f;
+
+        private readonly List<Vector2> m_lstDir = new List<Vector2>();
+
+        private FIRE_PATTERN    m_ePattern;
+        private int             m_iCount = 1;
+        private float           m_fAngle;
+        private float           m_fInterval = DEFAULT_BURST_INTERVAL;
+        private Action<Vector2> m_fnSpawn;
+
+        private float m_fSpinOffset;
+        private int   m_iBurstRemain;
+        private float m_fBurstTimer;
+
+        /// <summary> 연발이 아직 남았다 — 끝나기 전에 새로 쏘지 않는다. </summary>
+        public bool IS_BURSTING => m_iBurstRemain > 0;
+        public int  COUNT       => m_iCount;
+
+        /// <param name="fnSpawn"> 방향 하나마다 불린다. 한 번만 넘겨 두어 매 발사마다 대리자를 새로 만들지 않는다 </param>
+        public void Setup(FIRE_PATTERN ePattern, int iCount, float fAngle, float fInterval, Action<Vector2> fnSpawn)
+        {
+            m_ePattern  = ePattern;
+            m_iCount    = Mathf.Max(1, iCount);
+            m_fAngle    = fAngle;
+            m_fInterval = fInterval > 0f ? fInterval : DEFAULT_BURST_INTERVAL;
+            m_fnSpawn   = fnSpawn;
+        }
+
+        public void Reset()
+        {
+            m_fSpinOffset  = 0f;
+            m_iBurstRemain = 0;
+            m_fBurstTimer  = 0f;
+        }
+
+        public void Fire(Vector2 vAim)
+        {
+            if (m_fnSpawn == null)
+                return;
+
+            if (m_ePattern == FIRE_PATTERN.BURST)
+            {
+                m_iBurstRemain = m_iCount;
+                m_fBurstTimer  = 0f;
+                Tick(0f, vAim);
+                return;
+            }
+
+            CProjectileFire_Utility.Get_Directions(m_ePattern, vAim, m_iCount, m_fAngle, m_fSpinOffset, m_lstDir);
+            for (int i = 0; i < m_lstDir.Count; ++i)
+                m_fnSpawn(m_lstDir[i]);
+
+            if (m_ePattern == FIRE_PATTERN.SPIN)
+                m_fSpinOffset = Mathf.Repeat(m_fSpinOffset + m_fAngle, 360f);
+        }
+
+        // 연발은 쏘는 순간마다 다시 조준한다 — 한 방향에 몰아 쏘면 한 번 비키는 것으로 다 피해진다.
+        public void Tick(float fDeltaTime, Vector2 vAim)
+        {
+            if (m_iBurstRemain <= 0 || m_fnSpawn == null)
+                return;
+
+            m_fBurstTimer -= fDeltaTime;
+            if (m_fBurstTimer > 0f)
+                return;
+
+            m_fBurstTimer = m_fInterval;
+            --m_iBurstRemain;
+            m_fnSpawn(vAim.sqrMagnitude > Mathf.Epsilon ? vAim.normalized : Vector2.up);
         }
     }
 

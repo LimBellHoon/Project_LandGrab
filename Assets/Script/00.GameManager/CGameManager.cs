@@ -74,6 +74,7 @@ namespace Client
         private CCSVData_CardInfo   m_cCardTable;       // 260912_카드 표
         private CCSVData_ProjectileInfo m_cProjectileTable; // 260917_탄 표
         private CCSVData_RunSkillInfo   m_cRunSkillTable;   // 260917_런 스킬 표 — 3지선다에 카드와 섞는다
+        private CCSVData_AwakenInfo     m_cAwakenTable;     // 260917_각성 표 — 없으면 각성 후보가 안 나온다
         private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
@@ -301,6 +302,7 @@ namespace Client
             m_cCardTable  = m_cGameInstance.Get_CSVData(CCSVData_CardInfo.CSV_KEY) as CCSVData_CardInfo;
             // 260917_런 스킬 표가 없으면 3지선다에 카드만 나온다.
             m_cRunSkillTable   = m_cGameInstance.Get_CSVData(CCSVData_RunSkillInfo.CSV_KEY) as CCSVData_RunSkillInfo;
+            m_cAwakenTable     = m_cGameInstance.Get_CSVData(CCSVData_AwakenInfo.CSV_KEY) as CCSVData_AwakenInfo;
             // 260917_탄 표가 없으면 포수가 쏘지 않을 뿐 나머지는 그대로 돈다.
             m_cProjectileTable = m_cGameInstance.Get_CSVData(CCSVData_ProjectileInfo.CSV_KEY) as CCSVData_ProjectileInfo;
             m_cImpactTable     = m_cGameInstance.Get_CSVData(CCSVData_ImpactInfo.CSV_KEY) as CCSVData_ImpactInfo;
@@ -430,7 +432,9 @@ namespace Client
                 m_cCardTable, m_cRunSkillTable,
                 eType => cRunSkill != null ? cRunSkill.Get_Level(eType) : 0,
                 m_cProgressManager.Is_Cleared,
-                CARD_PICK_COUNT);
+                CARD_PICK_COUNT,
+                m_cAwakenTable,
+                eType => cRunSkill != null && cRunSkill.Is_Awakened(eType));
             if (lstOption.Count == 0)
                 return;
 

@@ -150,6 +150,8 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | `CardInfo.csv` | `CCSVData_CardInfo` | 점령률 보상 카드 (3지선다) |
 | `ProjectileInfo.csv` | `CCSVData_ProjectileInfo` | 탄 종류 — 모양 · 이동 · 특성 · 수치 (2-15) |
 | `ImpactInfo.csv` | `CCSVData_ImpactInfo` | 맞은 대상에게 남는 효과 (2-15) |
+| `RunSkillInfo.csv` | `CCSVData_RunSkillInfo` | 런 스킬 — 해금 · 레벨 · 투사체 무기 열 (2-11-1, 2-11-2) |
+| `AwakenInfo.csv` | `CCSVData_AwakenInfo` | 런 스킬 각성 — 액티브 + 짝 패시브 (2-11-2) |
 
 > 표를 추가하면 `CProtoSetup`의 **`ARR_CSV`와 `ARR_CSV_TYPE` 두 곳 모두**에 넣을 것.
 > 한쪽만 넣으면 검증이 배열 밖을 짚어 예외로 죽는다(260912에 가드를 넣어 이제는 이름을 대고 멈춘다).
@@ -512,7 +514,7 @@ CStage_Manager.Apply_Pick   카드면 Apply_Card, 런 스킬이면 CPlayer.Add_R
 색은 분류로 가른다 — **액티브 주황, 패시브 청록**. 아이콘(`Tex_RunSkill_<RUN_SKILL_TYPE>`)은 흰색으로 구워 이 색을 곱한다.
 **런 스킬 종류를 더하면 `CProtoSetup.ARR_RUN_SKILL_ICON`과 `Is_RunSkillInk`에 `RUN_SKILL_TYPE` 순서대로 넣을 것.**
 
-각성(같은 문서 규칙 3~5)은 아직 없다 — 후보 종류가 하나 더 느는 자리가 `CPickOption`이다.
+260917_각성도 같은 자리에 금색으로 섞여 나온다(2-11-2).
 
 카드는 **색과 아이콘이 먼저 읽히게** 만든다. 글자만으로는 순간적으로 고르기 어렵다.
 종류마다 아이콘(`Tex_Card_<CARD_TYPE>`)과 색이 정해져 있고, 테두리 발광도 같은 색으로 칠한다.
@@ -677,6 +679,58 @@ CSV 열이 아직 없어 `CStage_Manager.DEFAULT_HIT_DAMAGE`와 같은 자리)�
 > 260917_3지선다 UI 일반화는 끝났다(2-10-1 `CPickOption`). 프리팹은 여전히 `Setup_Assets` 산출물이라(3-1)
 > 클라우드 세션에서는 화면을 확인할 수 없다 — UI를 바꿨으면 로컬에서 Setup Assets 후 Play로 볼 것.
 
+### 2-11-2. 투사체 무기 · 각성 (260917)
+
+#### 투사체 무기 — 일정 시간마다 저절로 쏜다
+뱀서라이크 무기처럼 버튼 없이 쿨마다 쏜다. 2-15의 탄 표를 그대로 쓰고, **효과 모듈은 `CRunSkillEffect_Weapon` 하나**다 —
+무기가 늘어도 `RUN_SKILL_TYPE`에 이름 하나, `RunSkillInfo.csv`에 줄 하나면 된다.
+
+| 무기 | 탄 | 쿨 | 패턴 | 조준 | 레벨 수치 |
+|---|---|---|---|---|---|
+| 마법탄 `MAGIC_BOLT` | 4 유도탄 | 1.4 | BURST | 가장 가까운 적 | 연발 수 |
+| 레이저 `LASER_BEAM` | 3 레이저 | 3.5 | SPREAD 40° | 체력이 가장 많은 적 | 줄기 수 |
+| 부메랑 `BOOMERANG` | 6 부메랑 | 2.2 | SPREAD 30° | 가장 몰린 곳 | 발 수 |
+| 튕기는 탄 `BOUNCE_SHOT` | 2 튕기는 탄 | 2.5 | RING | — | 발 수(1레벨 3발) |
+
+- `RunSkillInfo.csv`에 `iProjectileID` · `fCool` · `eFirePattern` · `fFireAngle` · `eTargetFind` 열이 붙었다. **탄 ID가 0이면 무기가 아니다**
+- **몬스터가 없으면 쏘지 않고 쿨을 찬 채로 기다린다.** 허공에 쏘면 몬스터가 들어오는 순간 쿨이 돌고 있어 억울하다
+- 연발 · 회전 링의 상태는 `CProjectileFirer`가 든다 — **포수(`CEnemyGimmick_Projectile`)와 같은 클래스**다(1-1)
+- 탄 생성과 조준 대상 찾기는 `IRunSkillHost.Spawn_PlayerShot` / `Find_Enemy`로 스테이지에 맡긴다
+- 플레이어 탄이 몬스터를 새로 맞히면(`CProjectileCore.HIT_COUNT`) 회전탄 · 몽둥이와 같이 **분노 게이지가 오른다**
+- 마법탄만 처음부터 해금(`iUnlockMapID` 0), 나머지 셋은 1번 맵을 깨야 나온다
+- 개발용 자동 발사 스위치(2-15)도 같은 `Spawn_PlayerShot`을 지난다
+
+#### 각성 — 만렙 액티브 + 짝 패시브 (Docs/Design_RunSkill_Awaken.md 규칙 3~5)
+`AwakenInfo.csv` 한 줄이 각성 하나다. 액티브가 **만렙**이고 짝 패시브를 `iPassiveLevel` 이상 들고 있으면
+3지선다에 **금색 "각성" 후보**로 나온다(`PICK_KIND.AWAKEN`). 자동으로 바뀌지 않는다 — 골라야 한다.
+
+```
+CCSVData_AwakenInfo.Collect_Candidates   만렙(RunSkillInfo의 iMaxLevel) · 짝 패시브 · 아직 안 함 · 가중치
+CPickOption_Utility.Pick                 카드 · 런 스킬과 한 풀에서 뽑는다 (가중치 30으로 높게)
+CStage_Manager.Apply_Pick → CPlayer.Awaken_RunSkill → CRunSkillHandler.Awaken + CRunSkillEffect.On_Awaken
+```
+
+- **액티브 요구 레벨 열은 없다** — '만렙'과 같은 숫자를 두 곳에 적게 된다
+- **각성해도 슬롯 · 레벨은 그대로다.** 그 액티브가 그 자리에서 바뀐다. 액티브 하나는 한 번만 각성한다
+- **새 스킬 클래스를 만들지 않는다.** 각성은 그 스킬의 강화된 형태라 같은 효과 모듈이 `m_cAwaken`을 보고 분기한다
+- 판이 끝나면 각성도 레벨과 함께 사라진다(`CRunSkillHandler.Clear`)
+
+| 각성 | 액티브 + 패시브 | 바뀌는 것 |
+|---|---|---|
+| 광란의 칼바람 | 회전탄 + 분노 | 탄 +1, **분노가 터진 동안** 수 · 회전 속도 2배 (`CPlayer.IS_FEVER`) |
+| 반격의 몽둥이 | 몽둥이 + 회피 | 범위 1.3배, **회피하는 순간 쿨이 비워진다** (`CPlayer.OnEvade`) |
+| 블랙홀탄 | 마법탄 + 자석 | 탄 16(관통 + 끌어당김), 쿨 0.8배 |
+| 십자 레이저 | 레이저 + 신발 | 탄 17(몸에 붙는 레이저), SPIN 4방향 |
+| 영혼 낫 | 부메랑 + 영혼 수집가 | 탄 18(큰 낫 + 넉백 + 도트), +1 |
+| 끝없는 튕김 | 튕기는 탄 + 월보 | 탄 19(11번 튕김), SPIN, +2 |
+
+**투사체 무기의 각성은 표만으로 만든다** — `iProjectileID` · `eFirePattern`을 덮어쓰고 `strParam`으로 수를 조율한다
+(`COUNT_BONUS` `COUNT_OVERRIDE` `COOL_RATE` `FIRE_ANGLE`). 새 각성탄은 `ProjectileInfo.csv`에 줄만 늘리면 된다.
+회전탄 · 몽둥이처럼 동작이 바뀌는 각성만 코드가 필요하다(`FEVER_COUNT_RATE` `FEVER_SPEED_RATE` / `RADIUS_RATE` `COOL_RATE`).
+
+**아직 안 만든 문서 후보**: 땅고르기 몽둥이(몽둥이 + 월보 — 때린 자리를 점령지로). 칸을 바깥에서 점령시키는 길이
+`CTerritoryGrid`에 없어 규칙 단일 진입점(2-3)을 건드려야 한다 — 따로 설계할 것.
+
 ### 2-12. 효과음 — 절차적 플레이스홀더 (260916)
 효과음 파일이 하나도 없다. `Engine.dll`을 직접 열어 확인해 보니(1-4) **Engine에는 애초에
 오디오용 홀더가 없다** — `CTextureDataHolder`/`CPrefabDataHolder`는 있어도 오디오는 없다.
@@ -838,17 +892,17 @@ GYM처럼 코루틴을 걸지 않는다 — 풀로 돌아간 몬스터에게 코
 - 폭발 탄 ID가 201로 박혀 있었다 → `ImpactInfo.csv`의 `iRefID`
 
 #### 개발용 스위치 (`GameConfig.asset`, 1-6)
-플레이어 탄을 쏘는 스킬이 아직 없고 포수는 일반탄만 쏘므로, 나머지 탄은 **이 스위치 없이는 화면에서 볼 수 없다.**
+포수는 일반탄만 쏘고 플레이어 무기(2-11-2)는 4종만 쓰므로, 나머지 탄은 **이 스위치 없이는 화면에서 보기 어렵다.**
 
 | 항목 | 뜻 |
 |---|---|
-| `m_iDevAutoFireProjectileID` | 0이 아니면 플레이어가 그 탄을 가장 가까운 몬스터에게 저절로 쏜다 |
+| `m_iDevAutoFireProjectileID` | 0이 아니면 플레이어가 그 탄을 가장 가까운 몬스터에게 저절로 쏜다 (정식 무기는 2-11-2) |
 | `m_fDevAutoFireCool` | 위 자동 발사 간격 |
 | `m_iDevEnemyShotID` | 0이 아니면 포수가 표 대신 그 탄을 쏜다 |
 
 #### 옮기지 않은 것
 - GYM 몬스터의 이동 종류 — `MonsterInfo.csv`에 주석으로만 있고 코드는 추적 하나뿐이었다
-- 플레이어 스킬이 탄을 쏘는 연결 — 어떤 스킬로 쏠지는 기획이 정할 일이라 스위치만 두었다
+- ~~플레이어 스킬이 탄을 쏘는 연결~~ → 260917_투사체 무기로 붙였다(2-11-2)
 
 ### 2-16. 비헤이비어 트리 — Portfolio_SoloLeveling 이식 (260917)
 `03.Module/CNode.cs`(Selector · Sequence · Condition · Action · Wait)와 `CBlackboard.cs`(`CBehaviorTreeHandler` 포함).

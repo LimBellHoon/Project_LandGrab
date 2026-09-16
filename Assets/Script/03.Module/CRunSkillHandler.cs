@@ -16,6 +16,8 @@ namespace Client
         public const int SLOT_PER_CATEGORY = 5;
 
         private readonly Dictionary<RUN_SKILL_TYPE, int> m_dicLevel = new Dictionary<RUN_SKILL_TYPE, int>();
+        // 260917_각성한 액티브. 액티브 하나는 한 번만 각성한다 — 판마다 Clear로 함께 비운다.
+        private readonly HashSet<RUN_SKILL_TYPE> m_hsAwakened = new HashSet<RUN_SKILL_TYPE>();
 
         public IReadOnlyDictionary<RUN_SKILL_TYPE, int> ALL => m_dicLevel;
 
@@ -23,6 +25,17 @@ namespace Client
             => m_dicLevel.TryGetValue(eType, out int iLevel) ? iLevel : 0;
 
         public bool Has(RUN_SKILL_TYPE eType) => Get_Level(eType) > 0;
+
+        public bool Is_Awakened(RUN_SKILL_TYPE eType) => m_hsAwakened.Contains(eType);
+
+        /// <returns> 들고 있지 않거나 이미 각성했으면 false </returns>
+        public bool Awaken(RUN_SKILL_TYPE eType)
+        {
+            if (Has(eType) == false)
+                return false;
+
+            return m_hsAwakened.Add(eType);
+        }
 
         /// <summary> 새로 얻으면 1레벨, 이미 있으면 다음 레벨로 — 만렙이면 더 오르지 않는다. </summary>
         /// <returns> 적용된 이후 레벨. </returns>
@@ -36,6 +49,10 @@ namespace Client
             return iNext;
         }
 
-        public void Clear() => m_dicLevel.Clear();
+        public void Clear()
+        {
+            m_dicLevel.Clear();
+            m_hsAwakened.Clear();
+        }
     }
 }

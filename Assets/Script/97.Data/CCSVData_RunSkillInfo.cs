@@ -28,6 +28,15 @@ namespace Client
         public float            fValuePerLevel;
         public int              iWeight;    // 3지선다 가중치. 0이면 안 나온다
 
+        // 260917_투사체 무기만 쓴다(CRunSkillEffect_Weapon). 레벨 수치(Get_Value)는 한 번에 쏘는 발 수다.
+        public int              iProjectileID;  // ProjectileInfo.csv
+        public float            fCool;          // 발사 주기(초)
+        public FIRE_PATTERN     eFirePattern;
+        public float            fFireAngle;     // SPREAD 부채꼴 전체 각도 / SPIN 한 번에 돌아가는 각도
+        public TARGET_FIND      eTargetFind;    // 누구를 노리나
+
+        public bool IS_WEAPON => iProjectileID > 0;
+
         public bool IS_PASSIVE => eCategory == SKILL_CATEGORY.PASSIVE;
 
         /// <summary> 그 레벨에서의 수치. 레벨 1이 fValueBase, 레벨이 오를 때마다 fValuePerLevel씩 붙는다. </summary>
@@ -141,6 +150,11 @@ namespace Client
                 fValueBase      = CCSV_Utility.To_Float(arrField, 7),
                 fValuePerLevel  = CCSV_Utility.To_Float(arrField, 8),
                 iWeight         = CCSV_Utility.To_Int(arrField, 9, 10),
+                iProjectileID   = CCSV_Utility.To_Int(arrField, 10),
+                fCool           = CCSV_Utility.To_Float(arrField, 11, 1f),
+                eFirePattern    = CCSV_Utility.To_Enum(arrField, 12, FIRE_PATTERN.SINGLE),
+                fFireAngle      = CCSV_Utility.To_Float(arrField, 13),
+                eTargetFind     = CCSV_Utility.To_Enum(arrField, 14, TARGET_FIND.NEAREST),
             };
 
             if (cInfo.iSkillID <= 0 || cInfo.eType == RUN_SKILL_TYPE.NONE)

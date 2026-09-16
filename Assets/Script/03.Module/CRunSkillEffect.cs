@@ -16,6 +16,13 @@ namespace Client
     {
         protected CPlayer m_cOwner;
         protected int      m_iLevel;
+        // 260917_각성. null이면 각성 전이다.
+        protected CAwakenInfo m_cAwaken;
+
+        public bool IS_AWAKENED => m_cAwaken != null;
+
+        /// <summary> 260917_지금 분노가 터져 있는가. 분노조절못해만 true를 낸다(광란의 칼바람이 읽는다). </summary>
+        public virtual bool IS_FEVER => false;
 
         /// <summary> 260916_CPlayer가 이미 들고 있는 효과인지 찾을 때 쓴다(런타임 타입 비교 대신). </summary>
         public RUN_SKILL_TYPE TYPE { get; private set; }
@@ -35,6 +42,12 @@ namespace Client
                 case RUN_SKILL_TYPE.ORBIT:     cEffect = new CRunSkillEffect_Orbit();     break;
                 case RUN_SKILL_TYPE.CLUB:      cEffect = new CRunSkillEffect_Club();      break;
 
+                // 260917_투사체 무기는 전부 같은 모듈이다 — 무엇을 쏠지는 표가 정한다.
+                case RUN_SKILL_TYPE.MAGIC_BOLT:
+                case RUN_SKILL_TYPE.LASER_BEAM:
+                case RUN_SKILL_TYPE.BOOMERANG:
+                case RUN_SKILL_TYPE.BOUNCE_SHOT: cEffect = new CRunSkillEffect_Weapon(); break;
+
                 default: return null;
             }
 
@@ -49,6 +62,10 @@ namespace Client
 
         /// <summary> 레벨이 바뀔 때(1레벨 최초 획득 포함) 불린다. </summary>
         public virtual void On_LevelChanged(CRunSkillInfo cInfo, int iLevel) => m_iLevel = iLevel;
+
+        // 260917_각성 — 새 스킬이 아니라 그 스킬의 강화된 형태라 같은 모듈 안에서 분기한다(문서 3장).
+        /// <summary> 각성할 때 한 번 불린다. 레벨 수치를 다시 계산해야 하는 효과는 여기서 다시 건다. </summary>
+        public virtual void On_Awaken(CAwakenInfo cInfo) => m_cAwaken = cInfo;
 
         public virtual void Tick(float fDeltaTime) { }
 
@@ -150,6 +167,9 @@ namespace Client
 
         private float m_fGaugeRateScale = 1f;
         private float m_fGauge;
+        private float m_fFeverTimer;    // 260917_피버가 남은 시간 — 광란의 칼바람이 읽는다
+
+        public override bool IS_FEVER => m_fFeverTimer > 0f;
 
         public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
         {
@@ -163,6 +183,9 @@ namespace Client
 
         public override void Tick(float fDeltaTime)
         {
+            if (m_fFeverTimer > 0f)
+                m_fFeverTimer -= fDeltaTime;
+
             if (m_cOwner.IS_MOVING == true)
                 Add_Gauge(GAUGE_PER_SECOND_MOVING * m_fGaugeRateScale * fDeltaTime);
         }
@@ -178,6 +201,7 @@ namespace Client
                 return;
 
             m_fGauge = 0f;
+            m_fFeverTimer = FEVER_DURATION;
             m_cOwner.Add_SkillSpeed(FEVER_SPEED_BONUS, FEVER_DURATION);
         }
 
@@ -246,26 +270,50 @@ namespace Client
         private float m_fAngle;
         private int   m_iCount;
 
+        private int   m_iBaseCount;     // 260917_레벨이 정한 수. 각성 보너스와 피버 배율은 매번 따로 곱한다
+
         public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
         {
             base.On_LevelChanged(cInfo, iLevel);
-            m_iCount = Mathf.RoundToInt(cInfo.Get_Value(iLevel));
+            m_iBaseCount = Mathf.RoundToInt(cInfo.Get_Value(iLevel));
         }
+
+        // 260917_광란의 칼바람(회전탄 + 분노). 분노가 터져 있는 동안만 수와 속도가 불어난다 —
+        // 두 스킬이 서로를 모른 채 CPlayer.IS_FEVER 하나로만 겹친다(2-10-2의 흔들림/펀치와 같은 결).
+        public int COUNT
+        {
+            get
+            {
+                if (m_iBaseCount <= 0)
+                    return 0;
+
+                if (IS_AWAKENED == false)
+                    return m_iBaseCount;
+
+                int iCount = m_iBaseCount + Mathf.RoundToInt(m_cAwaken.Get_Param("COUNT_BONUS", 0f));
+                return Is_Frenzy() == true
+                     ? Mathf.RoundToInt(iCount * m_cAwaken.Get_Param("FEVER_COUNT_RATE", 1f)) : iCount;
+            }
+        }
+
+        private bool Is_Frenzy() => IS_AWAKENED == true && m_cOwner != null && m_cOwner.IS_FEVER == true;
 
         public override void Tick(float fDeltaTime)
         {
-            m_fAngle = (m_fAngle + ANGULAR_SPEED_DEG * fDeltaTime) % 360f;
+            float fSpeed = ANGULAR_SPEED_DEG * (Is_Frenzy() == true ? m_cAwaken.Get_Param("FEVER_SPEED_RATE", 1f) : 1f);
+            m_fAngle = (m_fAngle + fSpeed * fDeltaTime) % 360f;
         }
 
         public override bool Try_Get_OrbitOffsets(List<Vector2> lstOffsetCells)
         {
             lstOffsetCells.Clear();
-            if (m_iCount <= 0)
+            int iCount = COUNT;
+            if (iCount <= 0)
                 return false;
 
-            float fStepDeg = 360f / m_iCount;
+            float fStepDeg = 360f / iCount;
 
-            for (int i = 0; i < m_iCount; ++i)
+            for (int i = 0; i < iCount; ++i)
             {
                 float fRad = (m_fAngle + fStepDeg * i) * Mathf.Deg2Rad;
                 lstOffsetCells.Add(new Vector2(Mathf.Cos(fRad), Mathf.Sin(fRad)) * ORBIT_RADIUS_CELLS);
@@ -300,6 +348,20 @@ namespace Client
             m_fRadiusCells = cInfo.Get_Value(iLevel);
         }
 
+        // 260917_반격의 몽둥이(몽둥이 + 회피). 회피하는 순간 쿨을 비워 다음 프레임에 곧바로 휘두르게 한다.
+        public override void On_Awaken(CAwakenInfo cInfo)
+        {
+            base.On_Awaken(cInfo);
+
+            if (m_cOwner != null)
+                m_cOwner.OnEvade += On_OwnerEvade;
+        }
+
+        public float RADIUS_CELLS => m_fRadiusCells * (IS_AWAKENED == true ? m_cAwaken.Get_Param("RADIUS_RATE", 1f) : 1f);
+        public bool  IS_READY     => m_fSwingTimer <= 0f;
+
+        private void On_OwnerEvade() => m_fSwingTimer = 0f;
+
         public override void Tick(float fDeltaTime)
         {
             if (m_fSwingTimer > 0f)
@@ -308,13 +370,114 @@ namespace Client
 
         public override bool Consume_Swing(out float fRadiusCells)
         {
-            fRadiusCells = m_fRadiusCells;
+            fRadiusCells = RADIUS_CELLS;
 
             if (m_fSwingTimer > 0f)
                 return false;
 
-            m_fSwingTimer = SWING_INTERVAL;
+            m_fSwingTimer = SWING_INTERVAL * (IS_AWAKENED == true ? m_cAwaken.Get_Param("COOL_RATE", 1f) : 1f);
             return true;
         }
+
+        public override void Release()
+        {
+            if (m_cOwner != null)
+                m_cOwner.OnEvade -= On_OwnerEvade;
+        }
+    }
+
+    // 260917_투사체 무기 — 일정 시간마다 저절로 쏜다(뱀서라이크). 마법탄 · 레이저 · 부메랑 · 튕기는 탄이 전부 이 모듈이다.
+    /// <summary>
+    /// 무엇을(iProjectileID) · 얼마마다(fCool) · 어떤 모양으로(eFirePattern) · 누구에게(eTargetFind)는 RunSkillInfo.csv가,
+    /// 레벨은 한 번에 쏘는 발 수를 정한다. 각성하면 AwakenInfo.csv가 탄 · 패턴 · 수 · 쿨을 덮어쓴다.
+    ///
+    /// 몬스터가 하나도 없으면 쏘지 않고 쿨을 찬 채로 기다린다 — 허공에 쏘면 몬스터가 들어오는 순간 쿨이 돌고 있어 억울하다.
+    /// 판정 · 탄 생성은 스테이지가 한다(IRunSkillHost) — 몬스터 목록과 탄 풀이 거기 있다.
+    /// </summary>
+    public class CRunSkillEffect_Weapon : CRunSkillEffect
+    {
+        private readonly CProjectileFirer m_cFirer = new CProjectileFirer();
+
+        private IRunSkillHost   m_cHost;
+        private CRunSkillInfo   m_cInfo;
+        private IImpactTarget   m_cTarget;
+        private float           m_fCoolTimer;
+
+        public int      PROJECTILE_ID   => IS_AWAKENED == true && m_cAwaken.iProjectileID > 0 ? m_cAwaken.iProjectileID
+                                         : m_cInfo != null ? m_cInfo.iProjectileID : 0;
+        public float    COOL            => m_cInfo == null ? 0f
+                                         : m_cInfo.fCool * (IS_AWAKENED == true ? m_cAwaken.Get_Param("COOL_RATE", 1f) : 1f);
+        public int      COUNT           => m_cFirer.COUNT;
+        public float    COOL_REMAIN     => m_fCoolTimer;
+
+        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+            m_cInfo = cInfo;
+            Refresh_Firer();
+        }
+
+        public override void On_Awaken(CAwakenInfo cInfo)
+        {
+            base.On_Awaken(cInfo);
+            Refresh_Firer();
+        }
+
+        private void Refresh_Firer()
+        {
+            if (m_cInfo == null)
+                return;
+
+            int iCount = Mathf.RoundToInt(m_cInfo.Get_Value(m_iLevel));
+            FIRE_PATTERN ePattern = m_cInfo.eFirePattern;
+            float fAngle = m_cInfo.fFireAngle;
+
+            if (IS_AWAKENED == true)
+            {
+                iCount += Mathf.RoundToInt(m_cAwaken.Get_Param("COUNT_BONUS", 0f));
+                iCount  = Mathf.RoundToInt(m_cAwaken.Get_Param("COUNT_OVERRIDE", iCount));
+                fAngle  = m_cAwaken.Get_Param("FIRE_ANGLE", fAngle);
+                if (m_cAwaken.bOverridePattern == true)
+                    ePattern = m_cAwaken.eFirePattern;
+            }
+
+            m_cFirer.Setup(ePattern, iCount, fAngle, 0f, Spawn_Shot);
+        }
+
+        public override void Tick(float fDeltaTime)
+        {
+            if (m_cHost == null || m_cInfo == null || m_cOwner == null)
+                return;
+
+            Vector2 vFrom = m_cOwner.POS;
+
+            // 연발 중에는 처음 노린 대상을 계속 노린다. 죽었으면 새로 찾는다.
+            if (m_cFirer.IS_BURSTING == true)
+            {
+                if (m_cTarget == null || m_cTarget.IS_ALIVE == false)
+                    m_cTarget = m_cHost.Find_Enemy(vFrom, m_cInfo.eTargetFind);
+
+                if (m_cTarget != null)
+                    m_cFirer.Tick(fDeltaTime, m_cTarget.POS - vFrom);
+                return;
+            }
+
+            if (m_fCoolTimer > 0f)
+            {
+                m_fCoolTimer -= fDeltaTime;
+                return;
+            }
+
+            m_cTarget = m_cHost.Find_Enemy(vFrom, m_cInfo.eTargetFind);
+            if (m_cTarget == null)
+                return;     // 쏠 대상이 없다 — 쿨을 찬 채로 기다린다
+
+            m_fCoolTimer = COOL;
+            m_cFirer.Fire(m_cTarget.POS - vFrom);
+        }
+
+        private void Spawn_Shot(Vector2 vDir) => m_cHost?.Spawn_PlayerShot(PROJECTILE_ID, m_cOwner.POS, vDir);
     }
 }
