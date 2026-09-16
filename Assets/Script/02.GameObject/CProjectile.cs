@@ -5,31 +5,33 @@ using Engine;
 namespace Client
 {
     // 260904_투사체 — 포수 몬스터가 쏘는 탄
+    // 260917_Project_GYM 구조 이식 — 규칙은 CProjectileCore가 전부 들고, 여기는 풀 수명과 그리기만 한다
     /// <summary>
-    /// 쏜 방향으로 직진만 한다. 점령지·맵 밖에 닿거나, 사거리를 다 쓰거나, 수명이 다하면 사라진다.
-    /// 플레이어와의 충돌 판정은 여기서 하지 않는다 — 몬스터와 마찬가지로 CStage_Manager가 한곳에서 본다.
+    /// 모양 · 이동 · 특성 조합은 ProjectileInfo.csv 한 줄이 정한다. 프리팹은 이것 하나다(2-6 원칙).
+    /// 충돌 판정은 여기서 하지 않는다 — 누가 맞을 수 있는지는 스테이지가 알고 있다(CStage_Manager.Tick_Projectile).
     /// </summary>
     public class CProjectile : CGameObject
     {
+        // 260917_쏜 쪽을 색으로 가른다. 적탄은 몬스터(포수)색, 플레이어 탄은 차가운 색.
+        private static readonly Color COLOR_ENEMY_SHOT  = new Color(1f, 0.45f, 0.2f);
+        private static readonly Color COLOR_PLAYER_SHOT = new Color(0.35f, 0.9f, 1f);
+
+        // 레이저 · 충격파는 사각형으로 그린다. 스프라이트를 따로 굽지 않고 흰 텍스처로 한 번 만들어 돌려쓴다.
+        private static Sprite s_spRect;
+
         [SerializeField] private SpriteRenderer m_srBody;
 
-        private CTerritoryGrid  m_cGrid;
-        private Vector2         m_vPos;
-        private Vector2         m_vDir;
-        private float           m_fSpeed;           // 월드 유닛/초
-        private float           m_fLifeTime;
-        private float           m_fMaxDistance;     // 월드 유닛
-        private float           m_fTravelled;
-        private float           m_fHitRange;        // 셀
+        private readonly CProjectileCore m_cCore = new CProjectileCore();
+        private Sprite m_spCircle;      // 프리팹에 들어 있던 원 스프라이트
 
-        public Vector2  POS         => m_vPos;
-        /// <summary> 플레이어와의 충돌 반경(셀). </summary>
-        public float    HIT_RANGE   => m_fHitRange;
+        public CProjectileCore  CORE        => m_cCore;
+        public Vector2          POS         => m_cCore.POS;
+        public PROJECTILE_SIDE  SIDE        => m_cCore.SIDE;
         /// <summary>
         /// 260904_Engine은 bCollect가 선 오브젝트를 레이어 Tick 뒤에 알아서 풀로 돌려준다.
         /// 따로 만료 플래그를 두면 같은 일을 두 번 하는 셈이라 프레임워크 것을 그대로 쓴다.
         /// </summary>
-        public bool     IS_EXPIRED  => bCollect;
+        public bool             IS_EXPIRED  => bCollect;
 
         #region Engine.CGameObject
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -42,71 +44,85 @@ namespace Client
                 return false;
             }
 
-            m_cGrid = cDesc.cGrid;
-            if (m_cGrid == null)
+            bCollect = false;   // 풀에서 재사용되므로 반드시 내려 둔다
+
+            if (m_cCore.Initialize(cDesc.cInfo, cDesc.lstImpact, cDesc.cHost, cDesc.fCellSize,
+                                   cDesc.vStartPos, cDesc.vDir, cDesc.eSide, cDesc.cOwner) == false)
             {
-                Debug.LogError("[CProjectile] Grid가 null 입니다.");
+                bCollect = true;
                 return false;
             }
 
-            m_vPos          = cDesc.vStartPos;
-            m_vDir          = cDesc.vDir.sqrMagnitude > 0f ? cDesc.vDir.normalized : Vector2.up;
-            m_fSpeed        = cDesc.fSpeed * m_cGrid.CELL_SIZE;
-            m_fLifeTime     = cDesc.fLifeTime;
-            m_fMaxDistance  = cDesc.fMaxRange > 0f ? cDesc.fMaxRange * m_cGrid.CELL_SIZE : 0f;
-            m_fHitRange     = cDesc.fHitRange;
-            m_fTravelled    = 0f;
-            bCollect        = false;    // 풀에서 재사용되므로 반드시 내려 둔다
+            if (m_srBody != null && m_spCircle == null)
+                m_spCircle = m_srBody.sprite;
 
-            transform.position   = m_vPos;
-            transform.localScale = Vector3.one * m_cGrid.CELL_SIZE * 0.9f;
+            Refresh_View();
             return true;
         }
 
         public override void Tick(float fDeltaTime)
         {
-            if (m_cGrid == null || bCollect == true)
+            if (bCollect == true)
                 return;
 
-            m_fLifeTime -= fDeltaTime;
-            if (m_fLifeTime <= 0f)
+            m_cCore.Tick(fDeltaTime);
+
+            if (m_cCore.IS_EXPIRED == true)
             {
-                Expire();
+                bCollect = true;
                 return;
             }
 
-            float fStep = m_fSpeed * fDeltaTime;
-            Vector2 vNext = m_vPos + m_vDir * fStep;
-
-            // 점령지와 맵 밖이 벽이다. 그리드 바깥은 World_ToCell이 테두리로 clamp하는데
-            // 테두리는 점령지라 자동으로 걸린다.
-            CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vNext));
-            if (eState == CELL_STATE.OWNED || eState == CELL_STATE.BLOCK)
-            {
-                Expire();
-                return;
-            }
-
-            m_vPos = vNext;
-            m_fTravelled += fStep;
-
-            if (m_fMaxDistance > 0f && m_fTravelled >= m_fMaxDistance)
-            {
-                Expire();
-                return;
-            }
-
-            transform.position = m_vPos;
+            Refresh_View();
         }
 
         public override void Hide()
         {
-            m_cGrid = null;
+            m_cCore.Expire();   // 닿아 있던 대상의 속박 · 감속을 풀어 준다
             base.Hide();
         }
         #endregion Engine.CGameObject
 
         /// <summary> 플레이어에게 맞았을 때처럼 밖에서 끝내야 할 때 부른다. </summary>
-        public void Expire() => bCollect = true;
+        public void Expire()
+        {
+            m_cCore.Expire();
+            bCollect = true;
+        }
+
+        // 모양이 낸 값을 그대로 옮긴다. 스프라이트는 1 월드 유닛 크기다(CProtoSetup.Create_ActorPrefab).
+        private void Refresh_View()
+        {
+            CProjectileShape cShape = m_cCore.SHAPE;
+            if (cShape == null)
+                return;
+
+            transform.position   = cShape.VIEW_CENTER;
+            transform.rotation   = Quaternion.Euler(0f, 0f, cShape.VIEW_ANGLE);
+            transform.localScale = new Vector3(cShape.VIEW_SIZE.x, cShape.VIEW_SIZE.y, 1f);
+
+            if (m_srBody == null)
+                return;
+
+            Sprite spWant = cShape.IS_RECT == true ? Get_RectSprite() : m_spCircle;
+            if (spWant != null && m_srBody.sprite != spWant)
+                m_srBody.sprite = spWant;
+
+            Color cColor = m_cCore.SIDE == PROJECTILE_SIDE.PLAYER_SHOT ? COLOR_PLAYER_SHOT : COLOR_ENEMY_SHOT;
+            cColor.a = cShape.VIEW_ALPHA;
+            m_srBody.color = cColor;
+        }
+
+        private static Sprite Get_RectSprite()
+        {
+            if (s_spRect == null)
+            {
+                Texture2D texWhite = Texture2D.whiteTexture;
+                s_spRect = Sprite.Create(texWhite, new Rect(0f, 0f, texWhite.width, texWhite.height),
+                                         new Vector2(0.5f, 0.5f), texWhite.width);
+            }
+
+            return s_spRect;
+        }
     }
 }

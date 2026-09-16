@@ -124,6 +124,21 @@ namespace Client
         [Min(0)]
         [SerializeField] private int m_iStartCoin;
 
+        // 260917_투사체(Project_GYM 이식) 확인용. 플레이어 탄을 쏘는 스킬이 아직 없고,
+        // 포수는 일반탄 하나만 쏘므로 나머지 14종은 이 스위치 없이는 화면에서 볼 길이 없다.
+        [Header("디버그 — 투사체")]
+        [Tooltip("0이 아니면 플레이어가 이 ProjectileInfo ID의 탄을 가장 가까운 몬스터에게 저절로 쏜다.")]
+        [Min(0)]
+        [SerializeField] private int m_iDevAutoFireProjectileID;
+
+        [Tooltip("위 자동 발사의 간격(초).")]
+        [Range(0.05f, 5f)]
+        [SerializeField] private float m_fDevAutoFireCool = 0.8f;
+
+        [Tooltip("0이 아니면 포수(PROJECTILE 기믹 몬스터)가 표에 적힌 탄 대신 이 ProjectileInfo ID의 탄을 쏜다.")]
+        [Min(0)]
+        [SerializeField] private int m_iDevEnemyShotID;
+
         public float PLAYER_SPEED_SCALE => Mathf.Max(0.01f, m_fPlayerSpeedScale);
         public float UI_RESERVE_TOP     => Mathf.Clamp(m_fUIReserveTop, 0f, 0.4f);
         public float UI_RESERVE_BOTTOM  => Mathf.Clamp(m_fUIReserveBottom, 0f, 0.5f);
@@ -150,6 +165,9 @@ namespace Client
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);
+        public int   DEV_AUTO_FIRE_ID   => Mathf.Max(0, m_iDevAutoFireProjectileID);
+        public float DEV_AUTO_FIRE_COOL => Mathf.Max(0.05f, m_fDevAutoFireCool);
+        public int   DEV_ENEMY_SHOT_ID  => Mathf.Max(0, m_iDevEnemyShotID);
 
         /// <summary>
         /// 에셋이 없어도 게임은 돌아야 하므로 기본값 인스턴스를 만들어 돌려준다.

@@ -25,7 +25,13 @@ namespace Client
         public float            fGimmickValue;      // 주 수치 (탄속 / 속도배율 / 소환 마리수)
         public float            fGimmickRange;      // 사거리 (셀)
         public float            fGimmickDuration;   // 지속 시간 (초)
-        public int              iGimmickRefID;      // 참조할 몬스터 ID (SPAWN의 소환 대상)
+        public int              iGimmickRefID;      // 참조할 ID (SPAWN의 소환 몬스터 / PROJECTILE의 탄)
+
+        // 260917_몇 발을 어떤 모양으로 뿌리는가 (GYM CBulletFactory). 탄 자체가 아니라 쏘는 쪽의 성질이다.
+        public FIRE_PATTERN     eFirePattern;
+        public int              iFireCount;         // SPREAD · RING · SPIN의 발 수 / BURST의 연발 수
+        public float            fFireAngle;         // SPREAD 부채꼴 전체 각도 / SPIN 한 번에 돌아가는 각도 (도)
+        public float            fFireInterval;      // BURST 연발 간격 (초)
     }
 
     /// <summary>
@@ -76,6 +82,10 @@ namespace Client
                 fGimmickRange   = CCSV_Utility.To_Float(arrField, 10),
                 fGimmickDuration= CCSV_Utility.To_Float(arrField, 11),
                 iGimmickRefID   = CCSV_Utility.To_Int(arrField, 12),
+                eFirePattern    = CCSV_Utility.To_Enum(arrField, 13, FIRE_PATTERN.SINGLE),
+                iFireCount      = CCSV_Utility.To_Int(arrField, 14, 1),
+                fFireAngle      = CCSV_Utility.To_Float(arrField, 15),
+                fFireInterval   = CCSV_Utility.To_Float(arrField, 16, 0.12f),
             };
 
             if (cInfo.iEnemyID <= 0)

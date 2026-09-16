@@ -101,6 +101,31 @@ namespace Client
             return lstValue;
         }
 
+        // 260917_모듈마다 뜻이 다른 조율값을 이름으로 적는다 — "LASER_WIDTH:1.5|GROW_SCALE:3".
+        // 위치로 읽으면(GYM의 커스텀 변수 열) 특성을 하나 빼거나 순서를 바꿀 때 값이 엉뚱한 곳으로 밀린다.
+        /// <summary> "A:1|B:2.5" → {A:1, B:2.5}. 형식이 틀린 항목은 경고만 남기고 건너뛴다. </summary>
+        public static Dictionary<string, float> To_ParamMap(string[] arrField, int iIndex)
+        {
+            Dictionary<string, float> dicParam = new Dictionary<string, float>();
+
+            List<string> lstToken = To_List(arrField, iIndex);
+            for (int i = 0; i < lstToken.Count; ++i)
+            {
+                string[] arrPair = lstToken[i].Split(':');
+                if (arrPair.Length != 2
+                    || float.TryParse(arrPair[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture,
+                                      out float fValue) == false)
+                {
+                    Debug.LogWarning($"[CCSV_Utility] '{lstToken[i]}'는 KEY:VALUE 형식이 아니다. 건너뛴다.");
+                    continue;
+                }
+
+                dicParam[arrPair[0].Trim().ToUpperInvariant()] = fValue;
+            }
+
+            return dicParam;
+        }
+
         /// <summary> "0.6|0.65|0.7" → [0.6, 0.65, 0.7] </summary>
         public static List<float> To_FloatList(string[] arrField, int iIndex, char chSplit = SPLIT_LIST)
         {

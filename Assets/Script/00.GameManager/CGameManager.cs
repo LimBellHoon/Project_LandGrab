@@ -72,6 +72,8 @@ namespace Client
         private CCSVData_SkillInfo  m_cSkillTable;      // 260905_스킬 표
         private CCSVData_EquipInfo  m_cEquipTable;      // 260905_장비 표
         private CCSVData_CardInfo   m_cCardTable;       // 260912_카드 표
+        private CCSVData_ProjectileInfo m_cProjectileTable; // 260917_탄 표
+        private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cInGameUI;
@@ -296,6 +298,14 @@ namespace Client
             m_cEquipTable = m_cGameInstance.Get_CSVData(CCSVData_EquipInfo.CSV_KEY) as CCSVData_EquipInfo;
             // 260912_카드 표가 없으면 카드만 안 나오고 나머지는 그대로 돈다.
             m_cCardTable  = m_cGameInstance.Get_CSVData(CCSVData_CardInfo.CSV_KEY) as CCSVData_CardInfo;
+            // 260917_탄 표가 없으면 포수가 쏘지 않을 뿐 나머지는 그대로 돈다.
+            m_cProjectileTable = m_cGameInstance.Get_CSVData(CCSVData_ProjectileInfo.CSV_KEY) as CCSVData_ProjectileInfo;
+            m_cImpactTable     = m_cGameInstance.Get_CSVData(CCSVData_ImpactInfo.CSV_KEY) as CCSVData_ImpactInfo;
+            if (m_cProjectileTable == null)
+            {
+                Debug.LogWarning("[CGameManager] ProjectileInfo.csv를 읽지 못해 탄 없이 진행합니다. "
+                               + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+            }
 
             m_cUpgradeTable = m_cGameInstance.Get_CSVData(CCSVData_UpgradeInfo.CSV_KEY) as CCSVData_UpgradeInfo;
             if (m_cUpgradeTable == null)
@@ -578,6 +588,11 @@ namespace Client
             CSkillInfo cSkill = Get_EquippedSkill();
             m_cStageManager.Set_PlayerSkill(cSkill,
                 cSkill != null ? m_cProgressManager.Get_SkillLevel(cSkill.eType) : 0);
+
+            // 260917_탄 표와 개발용 투사체 스위치
+            m_cStageManager.Set_ProjectileSetting(m_cProjectileTable, m_cImpactTable,
+                                                  m_cConfig.DEV_AUTO_FIRE_ID, m_cConfig.DEV_AUTO_FIRE_COOL,
+                                                  m_cConfig.DEV_ENEMY_SHOT_ID);
 
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
             // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.

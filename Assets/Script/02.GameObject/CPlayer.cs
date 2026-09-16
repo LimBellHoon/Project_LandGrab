@@ -12,7 +12,7 @@ namespace Client
     /// Engine.CGameObject를 상속해 오브젝트 풀/레이어 Tick에 그대로 올라탄다.
     /// 규칙 판정은 '셀에 도착한 순간'에만 수행한다 (CMoveHandler.Tick의 반환값).
     /// </summary>
-    public class CPlayer : CGameObject
+    public class CPlayer : CGameObject, IImpactTarget
     {
         private const float INVINCIBLE_TIME  = 1.2f;    // 피격 후 무적 시간
         private const float EVADE_GRACE_TIME = 0.4f;    // 260905_회피 성공 후 빠져나갈 틈
@@ -27,6 +27,8 @@ namespace Client
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
         // 260905_액티브 스킬. 쿨타임은 핸들러가, 실제 효과는 CSkillEffect가 맡는다.
         private readonly CSkillHandler m_cSkillHandler = new CSkillHandler();
+        // 260917_적탄에 맞아 걸린 기절 · 감속 · 도트 · 번쩍임 (몬스터와 같은 모듈)
+        private readonly CImpactHandler m_cImpact      = new CImpactHandler();
 
         [SerializeField] private SpriteRenderer m_srBody;
 
@@ -61,10 +63,26 @@ namespace Client
         private float           m_fSkillSpeedTimer;
         // 260912_카드로 얹은 속도. 판이 끝날 때까지 유지되므로 타이머가 없다.
         private float           m_fCardSpeedScale = 1f;
+        // 260917_번쩍임에서 돌아올 원래 몸 색. 풀에서 재사용돼도 처음 한 번만 읽는다.
+        private Color           m_cBodyColor;
+        private bool            m_bBodyColorSaved;
 
         public int          HP              => m_iHp;
         public int          MAX_HP          => m_iMaxHp;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
+
+        #region IImpactTarget
+        public Vector2          POS             => m_cGrid != null ? (Vector2)m_cMoveHandler.WORLD_POS : (Vector2)transform.position;
+        // 260917_탄의 판정 반경만으로 맞는다 — 예전 적탄 판정(탄 반경 안에 플레이어 중심)과 같다.
+        public float            HIT_RADIUS      => 0f;
+        public bool             IS_ALIVE        => m_cGrid != null && m_iHp > 0;
+        public CImpactHandler   IMPACT          => m_cImpact;
+
+        public void Take_Damage(int iAmount) => Damage(iAmount);
+
+        /// <summary> 플레이어는 칸을 따라 움직이므로 밀리지 않는다. 밀면 선이 끊겨 점령 규칙이 깨진다(2-3). </summary>
+        public void Push(Vector2 vDir, float fDistance, float fDuration) { }
+        #endregion IImpactTarget
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
         /// <summary> 260905_보호막을 들고 있는가. UI가 표시에 쓴다. </summary>
         public bool         HAS_SHIELD      => m_bShield;
@@ -119,6 +137,7 @@ namespace Client
             m_fSkillSpeedScale = 1f;
             m_fSkillSpeedTimer = 0f;
             m_fCardSpeedScale  = 1f;
+            m_cImpact.Clear();
 
             // 260916_런 스킬은 판마다 완전히 초기화된다(뱀서라이크 — 스테이지를 나가면 사라진다).
             Clear_RunSkill();
@@ -155,6 +174,22 @@ namespace Client
             m_cSkillHandler.Tick(fDeltaTime);
             Tick_RunSkill(fDeltaTime);
 
+            // 260917_적탄 효과. 도트는 매 초 한 번씩 들어온다.
+            Damage(m_cImpact.Tick(fDeltaTime));
+            if (m_cGrid == null || m_iHp <= 0)
+                return;
+
+            Apply_Speed();
+            Refresh_WhiteOut();
+
+            // 기절 중에는 입력도 이동도 멈춘다. 입력을 버려야 풀리는 순간 눌러 둔 방향으로 튀어 나가지 않는다.
+            if (m_cImpact.IS_STUNNED == true)
+            {
+                m_cInputHandler.Clear();
+                transform.position = m_cMoveHandler.WORLD_POS;
+                return;
+            }
+
             m_cInputHandler.Tick();
 
             if (m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out Vector2Int vArrivedCell) == true)
@@ -175,6 +210,7 @@ namespace Client
             OnDamaged       = null;
             GetEnemyCells   = null;
             m_cGrid         = null;
+            m_cImpact.Clear();
 
             base.Hide();
         }
@@ -405,7 +441,26 @@ namespace Client
 
         private void Apply_Speed()
         {
-            m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale * m_fCardSpeedScale;
+            // 260917_탄 감속이 네 번째 갈래다. 스테이지가 넣는 환경 배율(거미줄)에 덮어써지지 않게 따로 곱한다.
+            m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale * m_fCardSpeedScale
+                                 * m_cImpact.SPEED_SCALE;
+        }
+
+        // 260917_번쩍임(WHITE_OUT). 몸 색을 잠깐 밝힌다 — 무적 깜빡임은 알파만 쓰므로 서로 부딪히지 않는다.
+        private void Refresh_WhiteOut()
+        {
+            if (m_srBody == null)
+                return;
+
+            if (m_bBodyColorSaved == false)
+            {
+                m_cBodyColor      = m_srBody.color;
+                m_bBodyColorSaved = true;
+            }
+
+            Color cWant = m_cImpact.IS_WHITE_OUT == true ? Color.white : m_cBodyColor;
+            cWant.a = m_srBody.color.a;
+            m_srBody.color = cWant;
         }
 
         // 260904_웨이브가 넘어가면 판을 새로 깔기 때문에 플레이어도 새 시작 칸으로 옮겨야 한다.

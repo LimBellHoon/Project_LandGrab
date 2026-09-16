@@ -54,6 +54,7 @@ namespace Client
             Test_CameraFollow();
             Test_CardPick();
             Test_BehaviorTree();
+            Test_Projectile();
             Test_SafeArea();
             Test_SkillTable();
             Test_RunSkillTable();
@@ -1286,6 +1287,444 @@ namespace Client
         }
 
         // 260912_카드 3지선다 — 표가 읽히고, 서로 다른 카드가 뽑히고, 효과가 걸리는지
+        // 260917_투사체 (Project_GYM BulletLogic 이식) — 모양 · 이동 · 특성 · 효과 · 발사 패턴 · 조준을 화면 없이 본다
+        private static void Test_Projectile()
+        {
+            // ---- 표
+            CCSVData_ProjectileInfo cTable = Load_CsvTable<CCSVData_ProjectileInfo>("ProjectileInfo");
+            CCSVData_ImpactInfo cImpactTable = Load_CsvTable<CCSVData_ImpactInfo>("ImpactInfo");
+            Check("ProjectileInfo.csv 로드", cTable != null && cTable.COUNT >= 15);
+            Check("ImpactInfo.csv 로드", cImpactTable != null && cImpactTable.Get_Info(3) != null);
+            if (cTable == null || cImpactTable == null)
+                return;
+
+            CProjectileInfo cLaserRow = cTable.Get_Info(3);
+            Check("레이저 행 — 모양 LASER", cLaserRow != null && cLaserRow.eShape == PROJECTILE_SHAPE.LASER);
+            Check("레이저 행 — 조율값을 이름으로 읽는다",
+                  cLaserRow != null && Mathf.Approximately(cLaserRow.Get_Param("LASER_TELEGRAPH", 0f), 0.8f));
+            Check("튕기는 탄 행 — REBOUND 특성", cTable.Get_Info(2) != null && cTable.Get_Info(2).Has_Trait(PROJECTILE_TRAIT.REBOUND));
+            Check("무작위 특성탄 행 — 특성 4개", cTable.Get_Info(15) != null ? cTable.Get_Info(15).lstTrait.Count : -1, 4);
+            Check("폭발 효과는 폭발 탄(8)을 가리킨다", cImpactTable.Get_Info(3).iRefID, 8);
+            Check("닿아 있는 동안 효과는 fTime -1", cImpactTable.Get_Info(5).IS_WHILE_CONTACT == true);
+
+            // 표의 모든 탄이 초기화되고 1초를 돌아도 예외가 없어야 한다
+            bool bAllRun = true;
+            for (int i = 0; i < cTable.ALL.Count; ++i)
+            {
+                CFakeProjectileHost cAnyHost = new CFakeProjectileHost();
+                CFakeImpactTarget cAnyOwner = new CFakeImpactTarget(Vector2.zero, 0.5f);
+                CProjectileCore cAny = new CProjectileCore();
+                if (cAny.Initialize(cTable.ALL[i], null, cAnyHost, 1f, Vector2.zero, Vector2.right,
+                                    PROJECTILE_SIDE.ENEMY_SHOT, cAnyOwner) == false)
+                {
+                    bAllRun = false;
+                    continue;
+                }
+
+                for (int f = 0; f < 60; ++f)
+                {
+                    cAny.Tick(1f / 60f);
+                    cAny.Update_Contact(new List<IImpactTarget> { new CFakeImpactTarget(new Vector2(3f, 0f), 0.5f) }, 1f / 60f);
+                }
+            }
+            Check("표의 탄 전부 1초 동안 돈다", bAllRun);
+
+            CFakeProjectileHost cHost = new CFakeProjectileHost();
+
+            // ---- 직진 · 사거리
+            CProjectileCore cStraight = Make_Core(cHost, new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.STRAIGHT, fSpeed = 2f, fLifeTime = 10f, fMaxRange = 3f, fHitRange = 0.5f,
+              fScale = 1f, iDamage = 1, iDurability = 1 }, Vector2.zero, Vector2.right);
+            cStraight.Tick(1f);
+            Check("직진 — 1초에 2칸", Mathf.Approximately(cStraight.POS.x, 2f));
+            cStraight.Tick(1f);
+            Check("직진 — 사거리 3칸을 넘으면 사라진다", cStraight.IS_EXPIRED == true);
+
+            // ---- 벽: 튕기지 않는 탄은 사라지고, REBOUND는 튕기며 내구도를 쓴다
+            CProjectileCore cDie = Make_Core(cHost, new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.STRAIGHT, fSpeed = 2f, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f,
+              iDurability = 1 }, new Vector2(9f, 5f), Vector2.right);
+            cDie.Tick(1f);
+            Check("벽 — 튕기지 않는 탄은 사라진다", cDie.IS_EXPIRED == true);
+
+            CProjectileInfo cReboundInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.STRAIGHT, fSpeed = 2f, fLifeTime = 100f, fHitRange = 0.5f, fScale = 1f,
+              iDurability = 3 };
+            cReboundInfo.lstTrait.Add(PROJECTILE_TRAIT.REBOUND);
+            CProjectileCore cRebound = Make_Core(cHost, cReboundInfo, new Vector2(9f, 5f), new Vector2(1f, 1f));
+            cRebound.Tick(1f);
+            Check("튕김 — 오른쪽 벽이면 x만 뒤집힌다", cRebound.DIR.x < 0f && cRebound.DIR.y > 0f);
+            Check("튕김 — 내구도 1 소모", cRebound.DURABILITY, 2);
+            Check("튕김 — 벽 안으로 들어가지 않는다", cHost.Is_Wall(cRebound.POS, PROJECTILE_SIDE.ENEMY_SHOT) == false);
+            for (int i = 0; i < 40 && cRebound.IS_EXPIRED == false; ++i)
+                cRebound.Tick(1f);
+            Check("튕김 — 내구도를 다 쓰면 사라진다", cRebound.IS_EXPIRED == true);
+
+            CFakeProjectileHost cShieldHost = new CFakeProjectileHost { vOwnedFrom = new Vector2(6f, 0f) };
+            Check("벽 — 적탄에게 점령지는 벽이다", cShieldHost.Is_Wall(new Vector2(7f, 5f), PROJECTILE_SIDE.ENEMY_SHOT) == true);
+            Check("벽 — 플레이어 탄은 점령지를 지나간다", cShieldHost.Is_Wall(new Vector2(7f, 5f), PROJECTILE_SIDE.PLAYER_SHOT) == false);
+
+            // ---- 피해 · 내구도: 한 번 닿으면 한 번만 맞는다
+            CFakeImpactTarget cA = new CFakeImpactTarget(new Vector2(2f, 5f), 0.2f);
+            CFakeImpactTarget cB = new CFakeImpactTarget(new Vector2(2f, 5f), 0.2f);
+            List<IImpactTarget> lstAB = new List<IImpactTarget> { cA, cB };
+            CProjectileCore cPoint = Make_Core(cHost, new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDamage = 1, iDurability = 1 },
+                new Vector2(2f, 5f), Vector2.right);
+            cPoint.Update_Contact(lstAB, 0.1f);
+            Check("내구도 1 — 겹친 둘 중 하나만 맞는다", cA.iDamage + cB.iDamage, 1);
+            Check("내구도 1 — 맞히면 사라진다", cPoint.IS_EXPIRED == true);
+
+            CFakeImpactTarget cPierce = new CFakeImpactTarget(new Vector2(2f, 5f), 0.2f);
+            List<IImpactTarget> lstPierce = new List<IImpactTarget> { cPierce };
+            CProjectileCore cInfinite = Make_Core(cHost, new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDamage = 1, iDurability = -1 },
+                new Vector2(2f, 5f), Vector2.right);
+            cInfinite.Update_Contact(lstPierce, 0.1f);
+            cInfinite.Update_Contact(lstPierce, 0.1f);
+            cInfinite.Update_Contact(lstPierce, 0.1f);
+            Check("닿아 있는 동안 피해는 한 번 (GYM은 특성마다 다시 넣었다)", cPierce.iDamage, 1);
+            cInfinite.Update_Contact(new List<IImpactTarget>(), 0.1f);
+            cInfinite.Update_Contact(lstPierce, 0.1f);
+            Check("떨어졌다 다시 닿으면 또 맞는다", cPierce.iDamage, 2);
+
+            // ---- 레이저: 예고 중엔 안 맞고 켜져야 맞는다
+            CProjectileInfo cLaserInfo = new CProjectileInfo
+            { eShape = PROJECTILE_SHAPE.LASER, eMove = PROJECTILE_MOVE.NONE, fLifeTime = 2f, fMaxRange = 30f,
+              fHitRange = 0.5f, fScale = 1f, iDamage = 1, iDurability = -1 };
+            cLaserInfo.dicParam["LASER_TELEGRAPH"] = 0.5f;
+            cLaserInfo.dicParam["LASER_THICKEN"]   = 0.2f;
+            cLaserInfo.dicParam["LASER_FADE"]      = 0.3f;
+            cLaserInfo.dicParam["LASER_WIDTH"]     = 1f;
+            CProjectileCore cLaser = Make_Core(cHost, cLaserInfo, new Vector2(1f, 5f), Vector2.right);
+            CProjectileShape_Laser cLaserShape = cLaser.SHAPE as CProjectileShape_Laser;
+            CFakeImpactTarget cOnBeam = new CFakeImpactTarget(new Vector2(6f, 5.3f), 0.1f);
+            List<IImpactTarget> lstBeam = new List<IImpactTarget> { cOnBeam };
+
+            cLaser.Tick(0.1f);
+            cLaser.Update_Contact(lstBeam, 0.1f);
+            Check("레이저 — 예고 단계", cLaserShape != null && cLaserShape.CUR_PHASE == CProjectileShape_Laser.PHASE.TELEGRAPH);
+            Check("레이저 — 예고 중엔 안 맞는다", cOnBeam.iDamage, 0);
+            Check("레이저 — 벽(맵 끝)에서 잘린다", cLaserShape != null && cLaserShape.LENGTH <= 9.01f);
+
+            cLaser.Tick(0.7f);
+            cLaser.Update_Contact(lstBeam, 0.1f);
+            Check("레이저 — 켜짐 단계", cLaserShape != null && cLaserShape.CUR_PHASE == CProjectileShape_Laser.PHASE.ACTIVE);
+            Check("레이저 — 켜지면 맞는다", cOnBeam.iDamage, 1);
+
+            CFakeImpactTarget cOffBeam = new CFakeImpactTarget(new Vector2(6f, 7f), 0.1f);
+            cLaser.Update_Contact(new List<IImpactTarget> { cOffBeam }, 0.1f);
+            Check("레이저 — 굵기 밖은 안 맞는다", cOffBeam.iDamage, 0);
+
+            // ---- 충격파: 시간에 따라 옆으로 뻗는다
+            CProjectileInfo cSweepInfo = new CProjectileInfo
+            { eShape = PROJECTILE_SHAPE.SWEEP, eMove = PROJECTILE_MOVE.NONE, fLifeTime = 2f, fHitRange = 0.5f,
+              fScale = 1f, iDamage = 1, iDurability = -1 };
+            CProjectileCore cSweep = Make_Core(cHost, cSweepInfo, new Vector2(5f, 5f), Vector2.right);
+            CFakeImpactTarget cFar = new CFakeImpactTarget(new Vector2(9f, 5f), 0.1f);
+            cSweep.Tick(0.1f);
+            cSweep.Update_Contact(new List<IImpactTarget> { cFar }, 0.1f);
+            Check("충격파 — 막 퍼질 땐 먼 곳에 안 닿는다", cFar.iDamage, 0);
+            cSweep.Tick(0.95f);
+            cSweep.Update_Contact(new List<IImpactTarget> { cFar }, 0.1f);
+            Check("충격파 — 맵 끝까지 뻗으면 닿는다", cFar.iDamage, 1);
+
+            // ---- 폭발: 커지는 동안만 새로 맞는다
+            CProjectileInfo cBlastInfo = new CProjectileInfo
+            { eShape = PROJECTILE_SHAPE.BLAST, eMove = PROJECTILE_MOVE.NONE, fLifeTime = 1f, fHitRange = 0.5f,
+              fScale = 1f, iDamage = 1, iDurability = -1 };
+            cBlastInfo.dicParam["BLAST_GROW"]  = 0.3f;
+            cBlastInfo.dicParam["BLAST_SCALE"] = 4f;
+            CProjectileCore cBlast = Make_Core(cHost, cBlastInfo, new Vector2(5f, 5f), Vector2.right);
+            CFakeImpactTarget cRing = new CFakeImpactTarget(new Vector2(6.5f, 5f), 0.1f);
+            cBlast.Tick(0.29f);
+            cBlast.Update_Contact(new List<IImpactTarget> { cRing }, 0.1f);
+            Check("폭발 — 커지는 동안 반경 안이면 맞는다", cRing.iDamage, 1);
+            CFakeImpactTarget cLate = new CFakeImpactTarget(new Vector2(5.5f, 5f), 0.1f);
+            cBlast.Tick(0.2f);
+            cBlast.Update_Contact(new List<IImpactTarget> { cLate }, 0.1f);
+            Check("폭발 — 다 커진 뒤에 들어오면 안 맞는다", cLate.iDamage, 0);
+
+            // ---- 이동
+            CFakeImpactTarget cTraceTarget = new CFakeImpactTarget(new Vector2(5f, 9f), 0.1f);
+            CFakeProjectileHost cTraceHost = new CFakeProjectileHost { cTarget = cTraceTarget };
+            CProjectileInfo cTraceInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.TRACE, fSpeed = 1f, fLifeTime = 10f, fHitRange = 0.1f, fScale = 1f, iDurability = 1 };
+            cTraceInfo.dicParam["TRACE_TURN"] = 1f;
+            CProjectileCore cTrace = Make_Core(cTraceHost, cTraceInfo, new Vector2(5f, 1f), Vector2.right);
+            cTrace.Tick(0.5f);
+            float fTurned = Vector2.Angle(Vector2.right, cTrace.DIR);
+            Check("추적 — 대상 쪽으로 휜다", fTurned > 20f);
+            Check("추적 — 한 번에 꺾지 않는다(초당 1라디안)", fTurned < 30f);
+
+            CFakeImpactTarget cBoomerOwner = new CFakeImpactTarget(new Vector2(2f, 5f), 0.5f);
+            CProjectileInfo cBoomerInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.BOOMERANG, fSpeed = 4f, fLifeTime = 10f, fHitRange = 0.3f, fScale = 1f, iDurability = -1 };
+            cBoomerInfo.dicParam["BOOMERANG_OUT"]  = 0.5f;
+            cBoomerInfo.dicParam["BOOMERANG_STAY"] = 0.2f;
+            CProjectileCore cBoomer = new CProjectileCore();
+            cBoomer.Initialize(cBoomerInfo, null, cHost, 1f, cBoomerOwner.POS, Vector2.right, PROJECTILE_SIDE.ENEMY_SHOT, cBoomerOwner);
+            for (int i = 0; i < 5; ++i) cBoomer.Tick(0.1f);
+            float fOut = cBoomer.POS.x;
+            Check("부메랑 — 나간다", fOut > 3.5f);
+            cBoomer.Tick(0.1f);
+            Check("부메랑 — 잠깐 멈춘다", Mathf.Approximately(cBoomer.POS.x, fOut));
+            for (int i = 0; i < 30 && cBoomer.IS_EXPIRED == false; ++i) cBoomer.Tick(0.1f);
+            Check("부메랑 — 쏜 쪽으로 돌아와 끝난다", cBoomer.IS_EXPIRED == true);
+
+            CFakeImpactTarget cOrbitOwner = new CFakeImpactTarget(new Vector2(5f, 5f), 0.5f);
+            CProjectileInfo cOrbitInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.ORBIT, fLifeTime = 10f, fHitRange = 0.3f, fScale = 1f, iDurability = -1 };
+            cOrbitInfo.dicParam["ORBIT_RADIUS"] = 2f;
+            cOrbitInfo.dicParam["ORBIT_SPEED"]  = 90f;
+            CProjectileCore cOrbit = new CProjectileCore();
+            cOrbit.Initialize(cOrbitInfo, null, cHost, 1f, cOrbitOwner.POS, Vector2.right, PROJECTILE_SIDE.ENEMY_SHOT, cOrbitOwner);
+            cOrbit.Tick(1f);
+            Check("궤도 — 반경 2칸을 유지한다", Mathf.Abs(Vector2.Distance(cOrbit.POS, cOrbitOwner.POS) - 2f) < 0.01f);
+            Check("궤도 — 1초에 90도 돈다", Vector2.Distance(cOrbit.POS, new Vector2(5f, 7f)) < 0.01f);
+            cOrbitOwner.vPos = new Vector2(6f, 5f);
+            cOrbit.Tick(0.001f);
+            Check("궤도 — 쏜 쪽을 따라간다", Mathf.Abs(Vector2.Distance(cOrbit.POS, cOrbitOwner.POS) - 2f) < 0.01f);
+            cOrbitOwner.bAlive = false;
+            cOrbit.Tick(0.1f);
+            Check("궤도 — 쏜 쪽이 죽으면 사라진다", cOrbit.IS_EXPIRED == true);
+
+            CProjectileInfo cSpiralInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.SPIRAL, fLifeTime = 10f, fHitRange = 0.3f, fScale = 1f, iDurability = 1 };
+            cSpiralInfo.dicParam["SPIRAL_ROTATE"] = 1f;
+            cSpiralInfo.dicParam["SPIRAL_EXPAND"] = 1f;
+            CProjectileCore cSpiral = Make_Core(cHost, cSpiralInfo, new Vector2(5f, 5f), Vector2.right);
+            cSpiral.Tick(1f);
+            float fR1 = Vector2.Distance(cSpiral.POS, cSpiral.START_POS);
+            cSpiral.Tick(1f);
+            float fR2 = Vector2.Distance(cSpiral.POS, cSpiral.START_POS);
+            Check("나선 — 돌면서 반경이 커진다", fR1 > 0.9f && fR2 > fR1 + 0.9f);
+
+            // ---- 특성
+            CProjectileInfo cStunInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 };
+            cStunInfo.lstTrait.Add(PROJECTILE_TRAIT.ENTER_STUN);
+            cStunInfo.dicParam["STUN_TIME"] = 0.5f;
+            CFakeImpactTarget cStunned = new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f);
+            Make_Core(cHost, cStunInfo, new Vector2(5f, 5f), Vector2.right)
+                .Update_Contact(new List<IImpactTarget> { cStunned }, 0.1f);
+            Check("기절 — 닿으면 기절", cStunned.IMPACT.IS_STUNNED == true);
+            cStunned.IMPACT.Tick(0.6f);
+            Check("기절 — 시간이 지나면 풀린다", cStunned.IMPACT.IS_STUNNED == false);
+
+            CProjectileInfo cStopInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 };
+            cStopInfo.lstTrait.Add(PROJECTILE_TRAIT.STAY_STOP);
+            cStopInfo.lstTrait.Add(PROJECTILE_TRAIT.STAY_STUN);
+            cStopInfo.dicParam["STOP_SLOW"] = 0.4f;
+            CProjectileCore cStop = Make_Core(cHost, cStopInfo, new Vector2(5f, 5f), Vector2.right);
+            CFakeImpactTarget cSlowed = new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f);
+            List<IImpactTarget> lstSlowed = new List<IImpactTarget> { cSlowed };
+            cStop.Update_Contact(lstSlowed, 0.1f);
+            cSlowed.IMPACT.Tick(5f);
+            Check("장판 — 닿아 있는 동안은 시간이 지나도 느리다", Mathf.Approximately(cSlowed.IMPACT.SPEED_SCALE, 0.4f));
+            Check("속박 — 닿아 있는 동안 기절", cSlowed.IMPACT.IS_STUNNED == true);
+            cStop.Update_Contact(new List<IImpactTarget>(), 0.1f);
+            Check("장판 — 떨어지면 풀린다", Mathf.Approximately(cSlowed.IMPACT.SPEED_SCALE, 1f) && cSlowed.IMPACT.IS_STUNNED == false);
+            cStop.Update_Contact(lstSlowed, 0.1f);
+            cStop.Expire();
+            Check("탄이 사라지면 속박도 풀린다 (GYM은 굳은 채로 남았다)", cSlowed.IMPACT.COUNT, 0);
+
+            CProjectileInfo cKnockInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.STRAIGHT, fSpeed = 1f, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 };
+            cKnockInfo.lstTrait.Add(PROJECTILE_TRAIT.KNOCKBACK_PUSH);
+            cKnockInfo.lstTrait.Add(PROJECTILE_TRAIT.HIT_STOP);
+            cKnockInfo.dicParam["KNOCKBACK_DISTANCE"] = 3f;
+            cKnockInfo.dicParam["HITSTOP_TIME"]       = 0.2f;
+            CProjectileCore cKnock = Make_Core(cHost, cKnockInfo, new Vector2(5f, 5f), Vector2.up);
+            CFakeImpactTarget cPushed = new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f);
+            cKnock.Update_Contact(new List<IImpactTarget> { cPushed }, 0.1f);
+            Check("넉백 — 진행 방향으로 3칸", cPushed.vLastPush.y > 0.9f && Mathf.Approximately(cPushed.fLastPushDistance, 3f));
+            Vector2 vStopPos = cKnock.POS;
+            cKnock.Tick(0.1f);
+            Check("타격 정지 — 탄이 잠깐 멈춘다", cKnock.IS_HIT_STOP == true && cKnock.POS == vStopPos);
+
+            CProjectileInfo cGravityInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 3f, fScale = 1f, iDurability = -1 };
+            cGravityInfo.lstTrait.Add(PROJECTILE_TRAIT.GRAVITY_PULL);
+            CProjectileCore cGravity = Make_Core(cHost, cGravityInfo, new Vector2(5f, 5f), Vector2.up);
+            CFakeImpactTarget cPulled = new CFakeImpactTarget(new Vector2(7f, 5f), 0.1f);
+            List<IImpactTarget> lstPulled = new List<IImpactTarget> { cPulled };
+            cGravity.Update_Contact(lstPulled, 0.1f);
+            Check("인력 — 닿는 순간엔 당기지 않는다", cPulled.iPushCount, 0);
+            cGravity.Update_Contact(lstPulled, 0.1f);
+            Check("인력 — 닿아 있으면 탄 쪽으로 당긴다", cPulled.iPushCount == 1 && cPulled.vLastPush.x < -0.9f);
+
+            CProjectileInfo cGrowInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 };
+            cGrowInfo.lstTrait.Add(PROJECTILE_TRAIT.SCALE_OVER_TIME);
+            cGrowInfo.dicParam["GROW_SCALE"] = 3f;
+            cGrowInfo.dicParam["GROW_TIME"]  = 2f;
+            CProjectileCore cGrow = Make_Core(cHost, cGrowInfo, new Vector2(5f, 5f), Vector2.up);
+            cGrow.Tick(1f);
+            Check("커지는 탄 — 수명과 상관없이 GROW_TIME 기준 (GYM은 수명 5초 가정)", Mathf.Abs(cGrow.SCALE - 2f) < 0.01f);
+            Check("커지는 탄 — 판정도 커진다", cGrow.SHAPE.Is_Overlap(new Vector2(5.9f, 5f), 0f) == true);
+
+            CProjectileInfo cRandomInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 };
+            cRandomInfo.lstTrait.Add(PROJECTILE_TRAIT.RANDOM);
+            cRandomInfo.lstTrait.Add(PROJECTILE_TRAIT.ENTER_STUN);
+            cRandomInfo.lstTrait.Add(PROJECTILE_TRAIT.STAY_STOP);
+            cRandomInfo.lstTrait.Add(PROJECTILE_TRAIT.HIT_STOP);
+            Check("무작위 — 셋 중 하나만 남긴다", Make_Core(cHost, cRandomInfo, Vector2.one, Vector2.up).TRAIT_COUNT, 1);
+
+            // ---- 효과 (ImpactInfo)
+            CFakeImpactTarget cDotted = new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f);
+            CImpactInfo cDot = new CImpactInfo { iImpactID = 99, eType = IMPACT_TYPE.DOT, fTime = 3f, fValue = 1f };
+            cDotted.IMPACT.Apply(cDot, cDotted, Vector2.zero, 1f, cHost, PROJECTILE_SIDE.ENEMY_SHOT);
+            int iDot = 0;
+            for (int i = 0; i < 40; ++i)
+                iDot += cDotted.IMPACT.Tick(0.1f);
+            Check("도트 — 3초 동안 초마다 1 = 3", iDot, 3);
+
+            CImpactInfo cSlowA = new CImpactInfo { iImpactID = 97, eType = IMPACT_TYPE.SLOW, fTime = 2f, fValue = 0.7f };
+            CImpactInfo cSlowB = new CImpactInfo { iImpactID = 98, eType = IMPACT_TYPE.SLOW, fTime = 1f, fValue = 0.4f };
+            cDotted.IMPACT.Apply(cSlowA, cDotted, Vector2.zero, 1f, cHost, PROJECTILE_SIDE.ENEMY_SHOT);
+            cDotted.IMPACT.Apply(cSlowB, cDotted, Vector2.zero, 1f, cHost, PROJECTILE_SIDE.ENEMY_SHOT);
+            Check("감속 겹침 — 가장 센 것", Mathf.Approximately(cDotted.IMPACT.SPEED_SCALE, 0.4f));
+            cDotted.IMPACT.Tick(1.1f);
+            Check("감속 겹침 — 짧은 게 풀리면 남은 것", Mathf.Approximately(cDotted.IMPACT.SPEED_SCALE, 0.7f));
+
+            CImpactInfo cStunA = new CImpactInfo { iImpactID = 95, eType = IMPACT_TYPE.STUN, fTime = 1f };
+            CImpactInfo cStunB = new CImpactInfo { iImpactID = 96, eType = IMPACT_TYPE.STUN, fTime = 3f };
+            CFakeImpactTarget cDouble = new CFakeImpactTarget(Vector2.zero, 0.1f);
+            cDouble.IMPACT.Apply(cStunA, cDouble, Vector2.zero, 1f, cHost, PROJECTILE_SIDE.ENEMY_SHOT);
+            cDouble.IMPACT.Apply(cStunB, cDouble, Vector2.zero, 1f, cHost, PROJECTILE_SIDE.ENEMY_SHOT);
+            cDouble.IMPACT.Tick(1.5f);
+            Check("기절 겹침 — 하나가 풀려도 남은 게 있으면 계속 (GYM은 풀렸다)", cDouble.IMPACT.IS_STUNNED == true);
+
+            CFakeImpactTarget cExploded = new CFakeImpactTarget(new Vector2(4f, 4f), 0.1f);
+            cExploded.IMPACT.Apply(cImpactTable.Get_Info(3), cExploded, Vector2.zero, 1f, cHost, PROJECTILE_SIDE.PLAYER_SHOT);
+            Check("폭발 효과 — 맞은 자리에 참조 탄을 부른다",
+                  cHost.iLastSpawnID == 8 && cHost.vLastSpawnPos == new Vector2(4f, 4f)
+                  && cHost.eLastSpawnSide == PROJECTILE_SIDE.PLAYER_SHOT);
+
+            CFakeImpactTarget cKnocked = new CFakeImpactTarget(new Vector2(4f, 4f), 0.1f);
+            cKnocked.IMPACT.Apply(cImpactTable.Get_Info(6), cKnocked, new Vector2(3f, 4f), 0.5f, cHost, PROJECTILE_SIDE.ENEMY_SHOT);
+            Check("넉백 효과 — 탄에서 먼 쪽으로, 셀을 월드로 바꿔서",
+                  cKnocked.vLastPush.x > 0.9f && Mathf.Approximately(cKnocked.fLastPushDistance, 1f));
+
+            CProjectileInfo cContactInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.NONE, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f, iDurability = -1 };
+            CProjectileCore cContact = new CProjectileCore();
+            cContact.Initialize(cContactInfo, new List<CImpactInfo> { cImpactTable.Get_Info(5) }, cHost, 1f,
+                                new Vector2(5f, 5f), Vector2.up, PROJECTILE_SIDE.ENEMY_SHOT, null);
+            CFakeImpactTarget cInField = new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f);
+            cContact.Update_Contact(new List<IImpactTarget> { cInField }, 0.1f);
+            cInField.IMPACT.Tick(10f);
+            Check("충돌 중 감속 — 닿아 있으면 유지", cInField.IMPACT.SPEED_SCALE < 1f);
+            cContact.Update_Contact(new List<IImpactTarget>(), 0.1f);
+            Check("충돌 중 감속 — 떨어지면 풀린다", Mathf.Approximately(cInField.IMPACT.SPEED_SCALE, 1f));
+
+            // ---- 발사 패턴
+            List<Vector2> lstDir = new List<Vector2>();
+            CProjectileFire_Utility.Get_Directions(FIRE_PATTERN.SPREAD, Vector2.up, 5, 60f, 0f, lstDir);
+            Check("부채꼴 — 5발", lstDir.Count, 5);
+            Check("부채꼴 — 가운데가 조준 방향", Vector2.Angle(lstDir[2], Vector2.up) < 0.01f);
+            Check("부채꼴 — 양 끝이 ±30도", Mathf.Abs(Vector2.Angle(lstDir[0], lstDir[4]) - 60f) < 0.01f);
+            CProjectileFire_Utility.Get_Directions(FIRE_PATTERN.RING, Vector2.up, 8, 0f, 0f, lstDir);
+            Check("링 — 8발이 45도 간격", lstDir.Count == 8 && Mathf.Abs(Vector2.Angle(lstDir[0], lstDir[1]) - 45f) < 0.01f);
+            CProjectileFire_Utility.Get_Directions(FIRE_PATTERN.SPIN, Vector2.up, 4, 0f, 30f, lstDir);
+            Check("회전 링 — 누적 각도만큼 돌아가 있다", Mathf.Abs(Vector2.SignedAngle(Vector2.right, lstDir[0]) - 30f) < 0.01f);
+            CProjectileFire_Utility.Get_Directions(FIRE_PATTERN.BURST, Vector2.left, 5, 0f, 0f, lstDir);
+            Check("연발 — 한 번에 한 발", lstDir.Count, 1);
+
+            // ---- 조준 대상
+            List<CFakeImpactTarget> lstFind = new List<CFakeImpactTarget>
+            {
+                new CFakeImpactTarget(new Vector2(1f, 0f), 0.1f) { iHp = 1 },
+                new CFakeImpactTarget(new Vector2(9f, 0f), 0.1f) { iHp = 5 },
+                new CFakeImpactTarget(new Vector2(5f, 5f), 0.1f) { iHp = 2 },
+                new CFakeImpactTarget(new Vector2(5.5f, 5f), 0.1f) { iHp = 2 },
+                new CFakeImpactTarget(new Vector2(5f, 5.5f), 0.1f) { iHp = 2 },
+            };
+            Check("조준 — 가장 가까운 적",
+                  CTargetFinder_Utility.Find(lstFind, Vector2.zero, TARGET_FIND.NEAREST) == lstFind[0]);
+            Check("조준 — 체력이 가장 많은 적",
+                  CTargetFinder_Utility.Find(lstFind, Vector2.zero, TARGET_FIND.HIGHEST_HP) == lstFind[1]);
+            IImpactTarget cCrowd = CTargetFinder_Utility.Find(lstFind, Vector2.zero, TARGET_FIND.CROWDED, 1f);
+            Check("조준 — 몰려 있는 곳", cCrowd == lstFind[2] || cCrowd == lstFind[3] || cCrowd == lstFind[4]);
+            lstFind[0].bAlive = false;
+            Check("조준 — 죽은 적은 고르지 않는다",
+                  CTargetFinder_Utility.Find(lstFind, Vector2.zero, TARGET_FIND.NEAREST) != lstFind[0]);
+        }
+
+        private static CProjectileCore Make_Core(IProjectileHost cHost, CProjectileInfo cInfo, Vector2 vPos, Vector2 vDir)
+        {
+            CProjectileCore cCore = new CProjectileCore();
+            cCore.Initialize(cInfo, null, cHost, 1f, vPos, vDir, PROJECTILE_SIDE.ENEMY_SHOT, null);
+            return cCore;
+        }
+
+        /// <summary> 0~10 크기 맵. vOwnedFrom.x가 0보다 크면 그 x부터 오른쪽이 점령지다. </summary>
+        private class CFakeProjectileHost : IProjectileHost
+        {
+            public Vector2          vOwnedFrom;
+            public IImpactTarget    cTarget;
+            public int              iLastSpawnID;
+            public Vector2          vLastSpawnPos;
+            public PROJECTILE_SIDE  eLastSpawnSide;
+
+            public Rect WORLD_BOUNDS => new Rect(0f, 0f, 10f, 10f);
+
+            public bool Is_Wall(Vector2 vWorldPos, PROJECTILE_SIDE eSide)
+            {
+                if (WORLD_BOUNDS.Contains(vWorldPos) == false)
+                    return true;
+
+                return eSide == PROJECTILE_SIDE.ENEMY_SHOT && vOwnedFrom.x > 0f && vWorldPos.x >= vOwnedFrom.x;
+            }
+
+            public void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide)
+            {
+                iLastSpawnID   = iProjectileID;
+                vLastSpawnPos  = vPos;
+                eLastSpawnSide = eSide;
+            }
+
+            public IImpactTarget Find_Target(Vector2 vFrom, PROJECTILE_SIDE eSide) => cTarget;
+        }
+
+        private class CFakeImpactTarget : IImpactTarget
+        {
+            private readonly CImpactHandler m_cImpact = new CImpactHandler();
+            private readonly float m_fRadius;
+
+            public Vector2  vPos;
+            public bool     bAlive = true;
+            public int      iHp = 3;
+            public int      iDamage;
+            public int      iPushCount;
+            public Vector2  vLastPush;
+            public float    fLastPushDistance;
+
+            public CFakeImpactTarget(Vector2 vStart, float fRadius)
+            {
+                vPos      = vStart;
+                m_fRadius = fRadius;
+            }
+
+            public Vector2          POS         => vPos;
+            public float            HIT_RADIUS  => m_fRadius;
+            public bool             IS_ALIVE    => bAlive;
+            public int              HP          => iHp;
+            public CImpactHandler   IMPACT      => m_cImpact;
+
+            public void Take_Damage(int iAmount) => iDamage += iAmount;
+
+            public void Push(Vector2 vDir, float fDistance, float fDuration)
+            {
+                ++iPushCount;
+                vLastPush         = vDir;
+                fLastPushDistance = fDistance;
+            }
+        }
+
         private static void Test_CardPick()
         {
             CCSVData_CardInfo cTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");

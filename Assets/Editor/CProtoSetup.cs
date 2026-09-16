@@ -38,14 +38,14 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
         {
             typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo),
             typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
-            typeof(CCSVData_RunSkillInfo),
+            typeof(CCSVData_RunSkillInfo), typeof(CCSVData_ProjectileInfo), typeof(CCSVData_ImpactInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -518,7 +518,8 @@ namespace Client
             Create_CardTextures();
 
             // 260904_기믹 소환물. 탄은 작고 밝게, 거미줄은 성기게 비치도록 반투명하게.
-            Write_Png(PATH_TEX_PROJECTILE, Make_CircleTexture(32, new Color(1f, 0.55f, 0.2f)));
+            // 260917_흰색으로 굽는다. 적탄 · 플레이어 탄 색은 CProjectile이 런타임에 칠한다.
+            Write_Png(PATH_TEX_PROJECTILE, Make_CircleTexture(32, Color.white));
             Import_AsSprite(PATH_TEX_PROJECTILE, 32);
 
             Write_Png(PATH_TEX_WEB, Make_WebTexture(64));

@@ -1,4 +1,4 @@
-# Project_LandGrab
+﻿# Project_LandGrab
 
 2D 땅따먹기(Qix / 볼피드형) 모바일 게임. Unity **6000.3.8f1** / 2D URP.
 서버 비용이 들지 않는 구조가 전제이며, 뒤에 깔린 보상 이미지(카드=스킨)를 점령해서 드러내는 것이 핵심 재미.
@@ -148,6 +148,8 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | `EnemyInfo.csv` | `CCSVData_EnemyInfo` | 몬스터 종류별 기믹·속도·충돌반경 |
 | `MapInfo.csv` | `CCSVData_MapInfo` | 맵 크기·플레이어 속도·모양 마스크·이미지 스택·웨이브 구성·카드 지급 지점 |
 | `CardInfo.csv` | `CCSVData_CardInfo` | 점령률 보상 카드 (3지선다) |
+| `ProjectileInfo.csv` | `CCSVData_ProjectileInfo` | 탄 종류 — 모양 · 이동 · 특성 · 수치 (2-15) |
+| `ImpactInfo.csv` | `CCSVData_ImpactInfo` | 맞은 대상에게 남는 효과 (2-15) |
 
 > 표를 추가하면 `CProtoSetup`의 **`ARR_CSV`와 `ARR_CSV_TYPE` 두 곳 모두**에 넣을 것.
 > 한쪽만 넣으면 검증이 배열 밖을 짚어 예외로 죽는다(260912에 가드를 넣어 이제는 이름을 대고 멈춘다).
@@ -276,7 +278,7 @@ CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
 | 기믹 | Cool | Value | Range | Duration | RefID |
 |---|---|---|---|---|---|
 | `WEB` | 설치주기 | 플레이어 속도배율 | — | 거미줄 지속 | — |
-| `PROJECTILE` | 발사주기 | 탄속(셀/초) | 사거리(셀) | 탄 수명 | — |
+| `PROJECTILE` | 발사주기 | — | 쏘기 시작하는 거리(셀) | — | `ProjectileInfo.csv` 탄 ID |
 | `SPAWN` | 소환주기 | 소환 마리수 | — | — | 소환할 몬스터 ID |
 
 - 투사체·거미줄은 `OBJECT_TYPE.ENEMY_EFFECT` 레이어에 올라간다.
@@ -284,6 +286,9 @@ CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
 - 거미줄만 플레이어가 안전 지대에 있어도 계속 깔린다. 나머지는 플레이어가 나와 있을 때만 발동한다.
 - `SPAWN`의 `RefID`가 다시 `SPAWN` 몬스터를 가리키면 무한히 늘어나므로
   `CStage_Manager.MAX_ENEMY`(32)로 총량을 막는다.
+- 260917_`PROJECTILE`의 탄속 · 수명 · 사거리는 **탄 표(2-15)로 옮겼다.** 몇 발을 어떻게 뿌릴지는
+  `EnemyInfo.csv`의 `eFirePattern` · `iFireCount` · `fFireAngle` · `fFireInterval`이 정한다 —
+  탄 자체가 아니라 쏘는 쪽의 성질이기 때문이다.
 
 ### 2-6-1. 입력 — 키보드 + 가상 조이스틱 (260904)
 `CInputHandler`가 입력을 4방향 하나로 정리해 내보낸다. 어디서 왔는지는 바깥이 몰라도 된다.
@@ -738,6 +743,8 @@ CPlayer.Heal(iAmount)      MAX_HP를 넘지 않게 회복한다 (전엔 상한�
 CPlayer.OnHpChanged        옛 OnLifeChanged와 같은 자리 — 이름만 HP에 맞췄다
 ```
 
+> 260917_**탄 피해는 이제 `ProjectileInfo.csv`의 `iDamage`를 쓴다**(2-15). 아래는 몬스터 접촉 기준으로 읽을 것.
+
 **이번에 몬스터/탄의 공격력까지 CSV로 뺀 것은 아니다.** `EnemyInfo.csv`·`ProjectileInfo.csv`에
 아직 공격력 열이 없어서, 몬스터 접촉과 탄 피격 둘 다 `CStage_Manager.DEFAULT_HIT_DAMAGE`(1)라는
 임시 고정값을 넘긴다 — 지금까지의 밸런스(목숨 1개 = 피해 1)와 정확히 같은 결과가 나오도록 맞춘
@@ -751,6 +758,84 @@ CPlayer.OnHpChanged        옛 OnLifeChanged와 같은 자리 — 이름만 HP�
 개수'가 아니라 '시작/최대 체력'이기 때문이다. `UpgradeInfo.csv`/`EquipInfo.csv`의 `HP` 스탯은
 여전히 같은 자리(`Get_TotalStat(..., STAT_TYPE.HP, ...)`)에서 `CStage_Manager.Set_PlayerUpgrade`의
 `iBonusHp`로 들어가 `iMaxHp`에 더해진다 — 강화/장비가 최종 수치를 만드는 흐름 자체는 그대로다.
+
+### 2-15. 투사체 — Project_GYM BulletLogic 이식 (260917)
+GYM의 탄 구조(이동 ScriptableObject + 특성 ScriptableObject + 모양별 하위 클래스 + 피격 효과)를 옮겼다.
+**프리팹은 `Prefab_Projectile` 하나, 탄 종류는 `ProjectileInfo.csv` 한 줄**이다(2-6과 같은 원칙).
+
+```
+CProjectile (풀 · 그리기) ── CProjectileCore (규칙 전부, 화면 없이 테스트)
+                              ├─ CProjectileShape   POINT 원 / LASER 예고선→빔 / SWEEP 맵 끝까지 뻗는 띠 / BLAST 커지는 원
+                              ├─ CProjectileMove    NONE / STRAIGHT / TRACE / SPIRAL / BOOMERANG / ORBIT / SYNC
+                              └─ CProjectileTrait×N REBOUND / GRAVITY_* / KNOCKBACK_* / ENTER_STUN / STAY_STUN /
+                                                    HIT_STOP / SCALE_OVER_TIME / STAY_STOP / WHITE_OUT (+RANDOM)
+맞은 대상 ── CImpactHandler   기절 · 감속 · 도트 · 번쩍임 타이머 (ImpactInfo.csv: STUN SLOW DOT KNOCKBACK EXPLODE)
+```
+
+| 파일 | 내용 |
+|---|---|
+| `ProjectileInfo.csv` | 모양 · 이동 · 특성(`\|`) · 탄속 · 수명 · 사거리 · 판정반경 · 크기 · 피해 · 내구 · 효과 ID(`\|`) · 조율값 |
+| `ImpactInfo.csv` | 효과 종류 · 시간(`-1`이면 닿아 있는 동안) · 수치 · 참조(폭발이 부를 탄 ID) |
+
+**조율값(`strParam`)은 `KEY:VALUE|KEY:VALUE`로 이름을 붙여 적는다**(`CCSV_Utility.To_ParamMap`).
+GYM은 위치로 읽어 특성 하나를 빼면 값이 엉뚱한 특성으로 밀렸다. 키 목록:
+`LASER_TELEGRAPH` `LASER_THICKEN` `LASER_FADE` `LASER_WIDTH` / `SWEEP_TIME` / `BLAST_GROW` `BLAST_SCALE` /
+`TRACE_TURN` / `SPIRAL_ROTATE` `SPIRAL_EXPAND` / `BOOMERANG_OUT` `BOOMERANG_STAY` / `ORBIT_RADIUS` `ORBIT_SPEED` /
+`GRAVITY_POWER` / `KNOCKBACK_DISTANCE` `KNOCKBACK_TIME` / `STUN_TIME` / `HITSTOP_TIME` / `GROW_SCALE` `GROW_TIME` /
+`STOP_SLOW` / `WHITE_TIME`. 없는 키는 기본값을 쓴다.
+
+#### 닿음은 본체가 한 번만 가린다
+스테이지가 매 프레임 '맞을 수 있는 대상'을 넘기면(`Update_Contact`) 본체가 **닿기 시작 · 닿아 있음 · 떨어짐**을 가린다.
+**피해 · 효과 · 내구도 소모는 닿기 시작할 때 본체가 한 번** 넣고, 특성은 자기 동작만 한다.
+GYM은 특성마다 피해를 다시 넣어 특성을 겹치면 피해도 겹쳤다.
+
+- 적탄은 플레이어를, 플레이어 탄은 몬스터를 맞힌다(`PROJECTILE_SIDE`). 둘 다 `IImpactTarget`으로 받는다
+- **적탄은 플레이어가 나와 있고 무적이 아닐 때만** 맞힌다 — 몬스터 충돌과 같은 규칙(2-6)
+- 탄이 사라지면 닿아 있던 대상 전부에 떨어짐을 알린다. 안 그러면 속박 · 장판 감속이 영영 안 풀린다
+- 레이저는 켜져 있는 동안, 폭발은 커지는 동안에만 **새로** 맞는다. 이미 닿아 있던 대상은 모양만 보고 붙잡아 둔다
+
+#### 벽 — 화면 끝이 아니라 맵 끝과 점령지
+GYM의 '화면에 맞고 튕기는' 탄은 여기서 **맵 끝**에서 튕긴다. **적탄에게는 점령지도 벽**이다 —
+땅을 먹은 만큼 막아 주는 것이 이 게임의 규칙이라, 튕기는 탄도 레이저도 점령지 가장자리에서 멈춘다.
+플레이어 탄은 점령지 위를 지나간다. 판정은 `CStage_Manager.Is_Wall` 한곳이다.
+
+#### 효과는 타이머다
+`CImpactHandler`가 대상마다 효과를 들고 결과만 낸다(`IS_STUNNED` · `SPEED_SCALE` · `IS_WHITE_OUT`).
+GYM처럼 코루틴을 걸지 않는다 — 풀로 돌아간 몬스터에게 코루틴이 계속 돌았다.
+- 같은 출처를 다시 맞으면 새로 걸지 않고 **긴 쪽으로** 늘린다
+- 기절이 둘 겹쳤다가 하나만 풀려도 **남은 게 있으면 계속 기절**이다(GYM은 풀렸다)
+- 감속은 겹치면 가장 센 것. 속도는 기존 갈래(환경 × 스킬 × 카드)에 **따로 곱한다**(2-11)
+- **플레이어는 밀리지 않는다**(`Push`가 비어 있다). 칸을 따라 움직이므로 밀면 선이 끊겨 점령 규칙이 깨진다
+- 도트는 시간이 아니라 **횟수**로 끝낸다 — 3초짜리가 float 오차로 네 번 들어가지 않게
+
+#### GYM에서 고쳐서 옮긴 것
+- ScriptableObject를 모든 탄이 공유해 탄끼리 상태가 섞였다 → 모듈을 탄마다 새로 만든다
+- `Rebound.Initialize`의 조건이 뒤집혀 튕기는 탄이 초기화되지 않았다
+- `StayStun` · `WhiteOut`의 Exit가 Enter를 불러 떨어질 때 피해가 한 번 더 들어갔다
+- `Spiral` · `ScaleOverTime`이 '5 - 남은 수명'으로 시간을 구해 수명이 5초가 아니면 어긋났다
+- `Trace`가 이름만 추적이고 직진이었다 → 초당 `TRACE_TURN` 라디안까지 휜다
+- 폭발 탄 ID가 201로 박혀 있었다 → `ImpactInfo.csv`의 `iRefID`
+
+#### 개발용 스위치 (`GameConfig.asset`, 1-6)
+플레이어 탄을 쏘는 스킬이 아직 없고 포수는 일반탄만 쏘므로, 나머지 탄은 **이 스위치 없이는 화면에서 볼 수 없다.**
+
+| 항목 | 뜻 |
+|---|---|
+| `m_iDevAutoFireProjectileID` | 0이 아니면 플레이어가 그 탄을 가장 가까운 몬스터에게 저절로 쏜다 |
+| `m_fDevAutoFireCool` | 위 자동 발사 간격 |
+| `m_iDevEnemyShotID` | 0이 아니면 포수가 표 대신 그 탄을 쏜다 |
+
+#### 옮기지 않은 것
+- GYM 몬스터의 이동 종류 — `MonsterInfo.csv`에 주석으로만 있고 코드는 추적 하나뿐이었다
+- 플레이어 스킬이 탄을 쏘는 연결 — 어떤 스킬로 쏠지는 기획이 정할 일이라 스위치만 두었다
+
+### 2-16. 비헤이비어 트리 — Portfolio_SoloLeveling 이식 (260917)
+`03.Module/CNode.cs`(Selector · Sequence · Condition · Action · Wait)와 `CBlackboard.cs`(`CBehaviorTreeHandler` 포함).
+M4 보스 패턴용 골격이라 **아직 붙은 곳이 없다.**
+- 노드가 소유자(Animator · CActor)를 모른다. 조건 · 행동은 대리자로 받는다
+- `Evaluate(dt)`로 시간을 주입한다 — 화면 없이 검증한다
+- Selector가 우선순위 높은 자식에게 넘어갈 때 **하던 자식을 끊는다**(원본은 OnExit가 안 불렸다)
+- 3D 전투 노드(대시 · 콤보 등)는 CharacterController 전용이라 옮기지 않았다
 
 
 ---

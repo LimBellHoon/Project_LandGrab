@@ -24,6 +24,12 @@ namespace Client
         protected float m_fDuration;
         protected int   m_iRefID;
 
+        // 260917_발사 패턴 — 탄을 쏘는 기믹만 쓴다
+        protected FIRE_PATTERN  m_eFirePattern;
+        protected int           m_iFireCount;
+        protected float         m_fFireAngle;
+        protected float         m_fFireInterval;
+
         /// <summary> eGimmick에 맞는 모듈을 만든다. NONE이면 null (기믹 없는 몬스터). </summary>
         public static CEnemyGimmick Create(ENEMY_GIMMICK eGimmick)
         {
@@ -52,6 +58,11 @@ namespace Client
             m_fDuration = cDesc.fGimmickDuration;
             m_iRefID    = cDesc.iGimmickRefID;
 
+            m_eFirePattern  = cDesc.eFirePattern;
+            m_iFireCount    = Mathf.Max(1, cDesc.iFireCount);
+            m_fFireAngle    = cDesc.fFireAngle;
+            m_fFireInterval = Mathf.Max(0.01f, cDesc.fFireInterval);
+
             // 스폰하자마자 터지면 플레이어가 반응할 수 없다 — 한 주기 기다린다.
             m_fTimer = m_fCool;
             return true;
@@ -64,6 +75,8 @@ namespace Client
         {
             if (m_cHost == null)
                 return;
+
+            Tick_Pending(fDeltaTime, vPlayerPos);
 
             if (m_fTimer > 0f)
                 m_fTimer -= fDeltaTime;
@@ -83,5 +96,8 @@ namespace Client
         protected virtual bool Can_Fire(Vector2 vPlayerPos) => m_cHost.IS_PLAYER_EXPOSED;
 
         protected abstract void Fire(Vector2 vPlayerPos);
+
+        /// <summary> 쿨타임과 따로 도는 일(연발의 남은 발)이 있을 때. </summary>
+        protected virtual void Tick_Pending(float fDeltaTime, Vector2 vPlayerPos) { }
     }
 }

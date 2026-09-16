@@ -102,6 +102,88 @@
     // (뱀서라이크 방식) 장비/강화 스킬(SKILL_TYPE)과는 완전히 별개의 표·핸들러를 쓴다 —
     // 저쪽은 '하나만 장착', 이쪽은 '여러 개를 동시에 들고 레벨업'이라 구조 자체가 다르다.
     /// <summary> 이름이 RunSkillInfo.csv의 eType 열과 정확히 같아야 한다. 뒤에만 추가할 것(저장 슬롯 없음 — 판마다 초기화되므로 순서 걱정은 없다). </summary>
+    // 260917_투사체 — Project_GYM의 BulletLogic 구조를 이식
+    /// <summary> 누가 쏜 탄인가. 적탄은 플레이어를, 플레이어 탄은 몬스터를 맞힌다. </summary>
+    public enum PROJECTILE_SIDE
+    {
+        ENEMY_SHOT,
+        PLAYER_SHOT,
+    }
+
+    /// <summary>
+    /// 탄의 판정 모양. GYM은 모양마다 프리팹과 하위 클래스(CBullet_Laser 등)를 따로 뒀는데,
+    /// 이 프로젝트는 프리팹 하나 + 표 한 줄 원칙(2-6)이라 모양도 모듈로 바꿨다.
+    /// </summary>
+    public enum PROJECTILE_SHAPE
+    {
+        POINT,      // 원 — 일반 탄
+        LASER,      // 가는 예고선 → 두꺼운 빔 → 사라짐. 사각형 (GYM CBullet_Laser)
+        SWEEP,      // 가로로 맵 끝까지 뻗어 나가는 띠 (GYM CBullet_Horizontal)
+        BLAST,      // 점점 커지는 원. 커지는 동안만 맞는다 (GYM CBullet_Explosion)
+    }
+
+    /// <summary> 탄 하나가 어떻게 움직이는가. 단일 선택. (GYM BulletLogic_Movement) </summary>
+    public enum PROJECTILE_MOVE
+    {
+        NONE,       // 제자리
+        STRAIGHT,   // 직진 (GYM Normal)
+        TRACE,      // 대상을 향해 휜다 (GYM Trace는 이름만 추적형이고 직진이었다 — 여기선 실제로 휜다)
+        SPIRAL,     // 나선
+        BOOMERANG,  // 나갔다 멈췄다 쏜 쪽으로 돌아온다
+        ORBIT,      // 쏜 쪽 주위를 돈다 (GYM CirclePattern)
+        SYNC,       // 쏜 쪽 위치에 붙어 다닌다 (GYM SyncPlayer)
+    }
+
+    /// <summary> 탄에 얹는 특성. 복수 선택. (GYM BulletLogic_Trait) </summary>
+    public enum PROJECTILE_TRAIT
+    {
+        NONE,
+        REBOUND,            // 벽에 맞으면 튕긴다
+        GRAVITY_PULL,       // 닿아 있는 동안 끌어당긴다 (인력)
+        GRAVITY_PUSH,       // 닿아 있는 동안 밀어낸다 (척력)
+        KNOCKBACK_PULL,     // 닿는 순간 탄 쪽으로 당긴다
+        KNOCKBACK_PUSH,     // 닿는 순간 진행 방향으로 날린다
+        ENTER_STUN,         // 닿는 순간 잠깐 기절
+        STAY_STUN,          // 닿아 있는 동안 기절 (속박)
+        HIT_STOP,           // 닿는 순간 탄이 잠깐 멈춘다 (타격감)
+        SCALE_OVER_TIME,    // 시간이 지날수록 커진다
+        STAY_STOP,          // 닿아 있는 동안 느려진다
+        WHITE_OUT,          // 닿아 있는 동안 하얗게 빛난다
+        RANDOM,             // 함께 적힌 특성 중 하나만 무작위로 남긴다
+    }
+
+    /// <summary> 맞은 대상에게 남는 효과. (GYM CImpact) </summary>
+    public enum IMPACT_TYPE
+    {
+        NONE,
+        STUN,       // 기절
+        SLOW,       // 감속
+        DOT,        // 초마다 피해
+        KNOCKBACK,  // 탄에서 먼 쪽으로 밀림
+        EXPLODE,    // 그 자리에 다른 탄을 터뜨린다 (iRefID)
+    }
+
+    /// <summary>
+    /// 한 번에 몇 발을 어떤 모양으로 뿌리는가. 탄 자체의 성질이 아니라 쏘는 쪽의 성질이다
+    /// (GYM은 SkillInfo 한 줄에 섞여 있었다 — M4 기획서 1-2의 결정대로 나눴다).
+    /// </summary>
+    public enum FIRE_PATTERN
+    {
+        SINGLE,     // 조준 방향으로 한 발
+        SPREAD,     // 부채꼴로 여러 발 (GYM 방사형)
+        RING,       // 360도로 고르게 (8방향 등)
+        BURST,      // 한 방향으로 시간차를 두고 여러 발 (연발)
+        SPIN,       // RING을 쏠 때마다 각도를 돌린다 (CW/CCW)
+    }
+
+    /// <summary> 플레이어 탄이 누구를 노리는가. (GYM ExploreType) </summary>
+    public enum TARGET_FIND
+    {
+        NEAREST,        // 가장 가까운 몬스터
+        HIGHEST_HP,     // 체력이 가장 많은 몬스터
+        CROWDED,        // 몬스터가 가장 몰려 있는 곳
+    }
+
     // 260917_비헤이비어 트리 (Portfolio_SoloLeveling에서 이식)
     /// <summary> 노드 한 번 평가의 결과. </summary>
     public enum NODE_STATE

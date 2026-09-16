@@ -10,9 +10,10 @@ namespace Client
     /// </summary>
     public interface IGimmickHost
     {
-        /// <param name="fSpeed"> 초당 셀 </param>
-        /// <param name="fRange"> 셀. 이 거리를 날아가면 사라진다 </param>
-        void Spawn_Projectile(Vector2 vPos, Vector2 vDir, float fSpeed, float fRange, float fLifeTime);
+        // 260917_탄의 속도 · 사거리 · 수명은 이제 ProjectileInfo.csv 한 줄이 정한다.
+        /// <param name="iProjectileID"> ProjectileInfo.csv의 ID </param>
+        /// <param name="cOwner"> 쏜 몬스터. 궤도 · 부메랑 탄이 따라간다 </param>
+        void Spawn_EnemyShot(int iProjectileID, Vector2 vPos, Vector2 vDir, IImpactTarget cOwner);
 
         void Spawn_Web(Vector2Int vCell, float fLifeTime, float fSlowRatio);
 
@@ -48,6 +49,48 @@ namespace Client
         void Spawn_Soul();
     }
 
+
+    // 260917_투사체에 맞을 수 있는 대상 (플레이어 / 몬스터)
+    /// <summary>
+    /// GYM은 CMonster로 캐스팅해 효과를 걸었다(몬스터만 맞을 수 있었다).
+    /// 여기선 적탄이 플레이어를, 플레이어 탄이 몬스터를 맞히므로 둘 다 이 창구로 받는다.
+    /// </summary>
+    public interface IImpactTarget
+    {
+        Vector2 POS { get; }
+        /// <summary> 월드 단위 충돌 반경 </summary>
+        float   HIT_RADIUS { get; }
+        bool    IS_ALIVE { get; }
+        /// <summary> 조준 대상 고르기(체력 많은 적)에 쓴다 </summary>
+        int     HP { get; }
+        /// <summary> 기절 · 감속 · 도트 · 번쩍임 타이머를 들고 있는 곳 </summary>
+        CImpactHandler IMPACT { get; }
+
+        void Take_Damage(int iAmount);
+
+        /// <summary> 밀어낸다(월드 거리). 그리드를 따라 움직이는 플레이어처럼 밀릴 수 없는 대상은 무시한다. </summary>
+        void Push(Vector2 vDir, float fDistance, float fDuration);
+    }
+
+    // 260917_탄이 자기 밖(맵 · 다른 탄)을 알아야 할 때 쓰는 창구
+    /// <summary>
+    /// 기믹 · 스킬 창구와 같은 이유다 — 탄이 스테이지를 직접 알면 화면 없이 검증할 수 없고,
+    /// 새로 생긴 탄(폭발)을 스테이지가 회수할 수 없게 된다.
+    /// </summary>
+    public interface IProjectileHost
+    {
+        /// <summary> 이 자리가 탄에게 벽인가. 맵 밖은 항상 벽이고, 적탄에게는 점령지도 벽이다. </summary>
+        bool Is_Wall(Vector2 vWorldPos, PROJECTILE_SIDE eSide);
+
+        /// <summary> 맵 전체의 월드 영역. SWEEP이 끝까지 뻗는 길이를 잰다. </summary>
+        Rect WORLD_BOUNDS { get; }
+
+        /// <summary> 폭발 효과처럼 탄이 다른 탄을 부를 때. </summary>
+        void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide);
+
+        /// <summary> 추적탄이 쫓을 대상. 적탄이면 플레이어, 플레이어 탄이면 가장 가까운 몬스터. 없으면 null. </summary>
+        IImpactTarget Find_Target(Vector2 vFrom, PROJECTILE_SIDE eSide);
+    }
 
     // 260904_진행도 저장소
     /// <summary>

@@ -59,6 +59,11 @@ namespace Client
         public float            fGimmickRange   { get; set; }
         public float            fGimmickDuration{ get; set; }
         public int              iGimmickRefID   { get; set; }
+        // 260917_발사 패턴 (EnemyInfo.csv)
+        public FIRE_PATTERN     eFirePattern    { get; set; }
+        public int              iFireCount      { get; set; }
+        public float            fFireAngle      { get; set; }
+        public float            fFireInterval   { get; set; }
 
         public override void OnReturn()
         {
@@ -68,21 +73,26 @@ namespace Client
     }
 
     // 260904_몬스터 기믹이 소환하는 것들
-    /// <summary> CProjectile 생성 Desc. 속도·사거리는 셀 단위로 받아 안에서 월드로 환산한다. </summary>
+    /// <summary> CProjectile 생성 Desc. 수치는 표(ProjectileInfo)에 있고, 셀 크기로 월드 환산은 본체가 한다. </summary>
     public class CProjectileDesc : CGameObjectDesc
     {
-        public CTerritoryGrid   cGrid       { get; set; }
-        public Vector2          vStartPos   { get; set; }
-        public Vector2          vDir        { get; set; }
-        public float            fSpeed      { get; set; }   // 초당 셀
-        public float            fLifeTime   { get; set; }   // 초
-        public float            fMaxRange   { get; set; }   // 셀. 0 이하면 수명까지 날아간다
-        public float            fHitRange   { get; set; }   // 셀
+        // 260917_탄 한 종류(ProjectileInfo.csv 한 줄)를 통째로 넘긴다. 속도 · 사거리를 낱개로 넘기던 것을 대체한다.
+        public CProjectileInfo                  cInfo       { get; set; }
+        public IReadOnlyList<CImpactInfo>       lstImpact   { get; set; }
+        public IProjectileHost                  cHost       { get; set; }
+        public float                            fCellSize   { get; set; }
+        public Vector2                          vStartPos   { get; set; }
+        public Vector2                          vDir        { get; set; }
+        public PROJECTILE_SIDE                  eSide       { get; set; }
+        public IImpactTarget                    cOwner      { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
-            cGrid = null;
+            cInfo     = null;
+            lstImpact = null;
+            cHost     = null;
+            cOwner    = null;
         }
     }
 

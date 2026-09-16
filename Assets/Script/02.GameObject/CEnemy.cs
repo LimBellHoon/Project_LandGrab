@@ -11,7 +11,7 @@ namespace Client
     /// 기믹(거미줄 / 투사체 / 부하 소환)은 CEnemyGimmick 모듈로 붙는다 — 상속이 아니라 조합이다.
     /// 그래서 몬스터 종류가 늘어도 프리팹은 하나면 된다 (EnemyInfo.csv의 eGimmick 한 칸).
     /// </summary>
-    public class CEnemy : CGameObject
+    public class CEnemy : CGameObject, IImpactTarget
     {
         // 260904_기믹별로 색을 달리해 어떤 위협인지 한눈에 읽히게 한다. 추적 중에는 밝아진다.
         private static readonly Color COLOR_NONE       = new Color(1f, 0.35f, 0.35f);
@@ -22,6 +22,9 @@ namespace Client
         [SerializeField] private SpriteRenderer m_srBody;
 
         private readonly CEnemyMoveHandler m_cMoveHandler = new CEnemyMoveHandler();
+        // 260917_탄에 맞아 걸린 기절 · 감속 · 도트 · 번쩍임 (GYM CImpact)
+        private readonly CImpactHandler    m_cImpact      = new CImpactHandler();
+        private bool                       m_bWhiteShown;
 
         // 260904_기믹은 조합으로 붙인다. NONE이면 null이고, 그때는 배회/추적만 한다.
         private CEnemyGimmick m_cGimmick;
@@ -57,6 +60,17 @@ namespace Client
         /// <summary> Engine이 bCollect가 선 오브젝트를 알아서 풀로 돌려준다(CProjectile 설명 참고). </summary>
         public bool             IS_DEAD         => bCollect;
 
+        #region IImpactTarget
+        // 260917_탄 판정 반경은 플레이어 충돌 반경과 같은 값을 쓴다 — 몸 크기가 하나라서.
+        public float            HIT_RADIUS      => m_cGrid != null ? m_fHitRange * m_cGrid.CELL_SIZE : 0f;
+        public bool             IS_ALIVE        => bCollect == false && m_cGrid != null;
+        public int              HP              => m_iHp;
+        public CImpactHandler   IMPACT          => m_cImpact;
+
+        public void Take_Damage(int iAmount) => Damage(iAmount);
+        public void Push(Vector2 vDir, float fDistance, float fDuration) => Add_Knockback(vDir, fDistance, fDuration);
+        #endregion IImpactTarget
+
         #region Engine.CGameObject
         public override bool Initialize(IGameObjectDesc iBaseDesc)
         {
@@ -87,6 +101,8 @@ namespace Client
             m_eGimmick      = cDesc.eGimmick;
             m_fHitRange     = cDesc.fHitRange;
             m_iHp           = DEFAULT_HP;
+            m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
+            m_bWhiteShown   = false;
             bCollect        = false;   // 풀에서 재사용되므로 지난 판의 죽음이 남지 않게 내려 둔다
 
             m_cGimmick = CEnemyGimmick.Create(cDesc.eGimmick);
@@ -112,8 +128,20 @@ namespace Client
             if (m_cGrid == null || bCollect == true)
                 return;
 
+            // 260917_탄 효과. 도트로 죽었으면 여기서 끝난다.
+            Damage(m_cImpact.Tick(fDeltaTime));
+            if (bCollect == true)
+                return;
+
+            Apply_Speed(m_bChase);
+            Refresh_WhiteOut();
+
+            // 기절 중에는 움직이지도 쏘지도 않는다. 넉백은 기절과 상관없이 밀려야 하므로 이동 핸들러는 돌리되 속도를 0으로 둔다.
             m_cMoveHandler.Tick(fDeltaTime, m_bChase, m_vTargetPos, m_fTurnRate);
             transform.position = m_cMoveHandler.POS;
+
+            if (m_cImpact.IS_STUNNED == true)
+                return;
 
             // m_vTargetPos는 추적 여부와 상관없이 매 프레임 갱신된다(Set_ChaseState).
             // 거미줄처럼 플레이어가 안 나와도 발동하는 기믹이 있어 여기서 항상 돌린다.
@@ -125,6 +153,7 @@ namespace Client
             // 풀에 반납되므로 기믹과 창구를 끊는다. 다음 재사용 때 새로 만든다.
             m_cGimmick = null;
             m_cGrid    = null;
+            m_cImpact.Clear();
             base.Hide();
         }
         #endregion Engine.CGameObject
@@ -160,7 +189,19 @@ namespace Client
 
         private void Apply_Speed(bool bChase)
         {
-            m_cMoveHandler.SPEED = (bChase == true ? m_fChaseSpeed : m_fSpeed) * m_fSpeedScale;
+            // 260917_탄 효과(감속 · 기절)는 스킬 · 카드 감속과 따로 곱한다 — 스테이지가 넣는 배율에 덮어써지지 않게.
+            float fImpact = m_cImpact.IS_STUNNED == true ? 0f : m_cImpact.SPEED_SCALE;
+            m_cMoveHandler.SPEED = (bChase == true ? m_fChaseSpeed : m_fSpeed) * m_fSpeedScale * fImpact;
+        }
+
+        // 260917_번쩍임(WHITE_OUT)이 켜지고 꺼지는 순간에만 색을 다시 칠한다.
+        private void Refresh_WhiteOut()
+        {
+            if (m_bWhiteShown == m_cImpact.IS_WHITE_OUT)
+                return;
+
+            m_bWhiteShown = m_cImpact.IS_WHITE_OUT;
+            Refresh_Color();
         }
 
 
@@ -189,6 +230,9 @@ namespace Client
                 case ENEMY_GIMMICK.SPAWN:      cBase = COLOR_SPAWN;      break;
                 default:                       cBase = COLOR_NONE;       break;
             }
+
+            if (m_bWhiteShown == true)
+                cBase = Color.white;
 
             m_srBody.color = m_bChase == true ? Color.Lerp(cBase, Color.white, 0.45f) : cBase;
         }

@@ -16,7 +16,7 @@ namespace Client
     /// 웨이브: N웨이브를 fClearRatio만큼 점령하면 그리드를 다시 깔고 이미지 스택을 한 장 벗긴다.
     /// 마지막 웨이브까지 넘기면 CLEAR.
     /// </summary>
-    public class CStage_Manager : IGimmickHost, ISkillHost, IRunSkillHost
+    public class CStage_Manager : IGimmickHost, ISkillHost, IRunSkillHost, IProjectileHost
     {
         private const string PREFAB_PLAYER      = "Prefab_Player";
         private const string PREFAB_PROJECTILE  = "Prefab_Projectile";
@@ -32,9 +32,6 @@ namespace Client
         // 260904_소환 기믹의 안전장치. RefID가 다시 SPAWN 몬스터를 가리키면 끝없이 늘어난다.
         // 규칙 값이 아니라 사고 방지용 상한이라 CSV로 빼지 않는다.
         private const int    MAX_ENEMY          = 32;
-
-        // 탄의 충돌 반경(셀). 몬스터와 달리 종류가 하나뿐이라 CSV로 뺄 이유가 아직 없다.
-        private const float  PROJECTILE_HIT_RANGE = 0.7f;
 
         // 260916_목숨 개수 → HP 전환. EnemyInfo/ProjectileInfo에 공격력 열이 아직 없어
         // 몬스터/탄 피격 모두 임시로 같은 고정 피해량을 쓴다 — M4 보스 작업에서
@@ -74,6 +71,21 @@ namespace Client
         private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
         // 260916_런 스킬이 떨어뜨린 것들. 위 두 목록과 같은 자리다.
         private readonly List<CSoul>        m_lstSoul       = new List<CSoul>();
+        // 260917_탄 표. 없으면 탄을 쏘지 않을 뿐 판은 돈다.
+        private CCSVData_ProjectileInfo     m_cProjectileTable;
+        private CCSVData_ImpactInfo         m_cImpactTable;
+        // 탄 ID → 효과 목록. 쏠 때마다 표를 뒤지지 않게 처음 한 번만 찾아 둔다.
+        private readonly Dictionary<int, List<CImpactInfo>> m_dicImpactCache = new Dictionary<int, List<CImpactInfo>>();
+        // 탄이 맞힐 수 있는 대상 목록. 매 프레임 새로 만들지 않고 비웠다 채운다.
+        private readonly List<IImpactTarget> m_lstEnemyTarget  = new List<IImpactTarget>();
+        private readonly List<IImpactTarget> m_lstPlayerTarget = new List<IImpactTarget>();
+
+        // 260917_개발용 스위치(CGameConfig). 0이면 꺼져 있다.
+        private int                         m_iDevAutoFireID;       // 플레이어가 저절로 쏘는 탄
+        private float                       m_fDevAutoFireCool;
+        private float                       m_fDevAutoFireTimer;
+        private int                         m_iDevEnemyShotID;      // 포수가 표 대신 쏘는 탄
+
         // 260916_회전탄 좌표 재사용 버퍼. 매 프레임 새로 만들지 않는다.
         private readonly List<Vector2>      m_lstOrbitPoint = new List<Vector2>();
 
@@ -135,6 +147,22 @@ namespace Client
         {
             m_cSkillInfo = cSkillInfo;
             m_iSkillLevel = Mathf.Max(0, iSkillLevel);
+        }
+
+        // 260917_탄 표와 개발용 스위치. Start_Stage 전에 넣어 둔다.
+        /// <param name="iDevAutoFireID"> 0이 아니면 플레이어가 그 탄을 가장 가까운 몬스터에게 저절로 쏜다 </param>
+        /// <param name="iDevEnemyShotID"> 0이 아니면 포수가 표에 적힌 탄 대신 이 탄을 쏜다 </param>
+        public void Set_ProjectileSetting(CCSVData_ProjectileInfo cProjectileTable, CCSVData_ImpactInfo cImpactTable,
+                                          int iDevAutoFireID, float fDevAutoFireCool, int iDevEnemyShotID)
+        {
+            m_cProjectileTable = cProjectileTable;
+            m_cImpactTable     = cImpactTable;
+            m_dicImpactCache.Clear();
+
+            m_iDevAutoFireID    = Mathf.Max(0, iDevAutoFireID);
+            m_fDevAutoFireCool  = Mathf.Max(0.05f, fDevAutoFireCool);
+            m_fDevAutoFireTimer = m_fDevAutoFireCool;
+            m_iDevEnemyShotID   = Mathf.Max(0, iDevEnemyShotID);
         }
 
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
@@ -303,7 +331,8 @@ namespace Client
             Tick_Orbit();
             Tick_Club();
             Tick_Enemy();
-            Tick_Projectile();
+            Tick_DevAutoFire(fDeltaTime);
+            Tick_Projectile(fDeltaTime);
             Tick_Web();
             Tick_Soul();
 
@@ -699,6 +728,10 @@ namespace Client
                 fGimmickRange   = cInfo.fGimmickRange,
                 fGimmickDuration= cInfo.fGimmickDuration,
                 iGimmickRefID   = cInfo.iGimmickRefID,
+                eFirePattern    = cInfo.eFirePattern,
+                iFireCount      = cInfo.iFireCount,
+                fFireAngle      = cInfo.fFireAngle,
+                fFireInterval   = cInfo.fFireInterval,
             };
 
             GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
@@ -833,31 +866,13 @@ namespace Client
         // 기믹 모듈이 직접 풀을 만지면 웨이브가 넘어갈 때 회수할 방법이 없어진다.
         public bool IS_PLAYER_EXPOSED => m_bPlayerExposed;
 
-        public void Spawn_Projectile(Vector2 vPos, Vector2 vDir, float fSpeed, float fRange, float fLifeTime)
+        // 260917_포수가 쏜다. 탄의 수치는 전부 ProjectileInfo.csv에 있다.
+        public void Spawn_EnemyShot(int iProjectileID, Vector2 vPos, Vector2 vDir, IImpactTarget cOwner)
         {
-            if (Has_Prefab(PREFAB_PROJECTILE) == false)
-                return;
+            if (m_iDevEnemyShotID > 0)
+                iProjectileID = m_iDevEnemyShotID;
 
-            CProjectileDesc cDesc = new CProjectileDesc
-            {
-                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
-                strPrefabName   = PREFAB_PROJECTILE,
-                cGrid           = m_cGrid,
-                vStartPos       = vPos,
-                vDir            = vDir,
-                fSpeed          = fSpeed,
-                fMaxRange       = fRange,
-                fLifeTime       = fLifeTime,
-                fHitRange       = PROJECTILE_HIT_RANGE,
-            };
-
-            GameObject goProjectile = CGameInstance.Instance.Reuse_Object(cDesc);
-            if (goProjectile == null)
-                return;
-
-            CProjectile cProjectile = goProjectile.GetComponent<CProjectile>();
-            if (cProjectile != null)
-                m_lstProjectile.Add(cProjectile);
+            Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.ENEMY_SHOT, cOwner);
         }
 
         public void Spawn_Web(Vector2Int vCell, float fLifeTime, float fSlowRatio)
@@ -913,10 +928,10 @@ namespace Client
             }
         }
 
-        private void Tick_Projectile()
+        // 260917_탄이 누구에게 닿았는지는 여기서 한 번에 본다. 닿기 시작 · 닿아 있음 · 떨어짐은 탄 본체가 가린다.
+        private void Tick_Projectile(float fDeltaTime)
         {
-            Vector2 vPlayerPos = m_cPlayer != null ? (Vector2)m_cPlayer.transform.position : Vector2.zero;
-            bool bHit = false;
+            Build_ImpactTargets();
 
             // 뒤에서부터 지운다 — 앞에서 지우면 인덱스가 밀린다.
             for (int i = m_lstProjectile.Count - 1; i >= 0; --i)
@@ -932,18 +947,49 @@ namespace Client
                     continue;
                 }
 
-                // 몬스터 충돌과 같은 규칙 — 땅을 먹으러 나와 있을 때만 맞는다.
-                // 탄은 점령지에 닿는 순간 사라지므로 안전 지대까지 쫓아오지 못한다.
-                if (m_bPlayerExposed == true
-                    && Vector2.Distance(cProjectile.POS, vPlayerPos) <= cProjectile.HIT_RANGE * m_cGrid.CELL_SIZE)
-                {
-                    bHit = true;
+                CProjectileCore cCore = cProjectile.CORE;
+                cCore.Update_Contact(cCore.SIDE == PROJECTILE_SIDE.ENEMY_SHOT ? m_lstPlayerTarget : m_lstEnemyTarget,
+                                     fDeltaTime);
+
+                if (cCore.IS_EXPIRED == true)
                     cProjectile.Expire();
-                }
+            }
+        }
+
+        private void Build_ImpactTargets()
+        {
+            m_lstEnemyTarget.Clear();
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                if (m_lstEnemy[i] != null && m_lstEnemy[i].IS_ALIVE == true)
+                    m_lstEnemyTarget.Add(m_lstEnemy[i]);
             }
 
-            if (bHit == true && m_cPlayer != null)
-                m_cPlayer.Damage(DEFAULT_HIT_DAMAGE);
+            // 몬스터 충돌과 같은 규칙 — 땅을 먹으러 나와 있을 때만 맞는다.
+            // 무적 중(맞고 안전 지대로 돌아온 직후)에는 기절 · 감속도 걸지 않는다 — 피해만 막으면 굳은 채로 다시 맞는다.
+            m_lstPlayerTarget.Clear();
+            if (m_cPlayer != null && m_bPlayerExposed == true && m_cPlayer.IS_INVINCIBLE == false
+                && m_cPlayer.IS_ALIVE == true)
+                m_lstPlayerTarget.Add(m_cPlayer);
+        }
+
+        // 260917_개발용 — 플레이어 탄을 쏘는 스킬이 아직 없어 이 스위치로만 확인한다(CGameConfig).
+        private void Tick_DevAutoFire(float fDeltaTime)
+        {
+            if (m_iDevAutoFireID <= 0 || m_cPlayer == null)
+                return;
+
+            m_fDevAutoFireTimer -= fDeltaTime;
+            if (m_fDevAutoFireTimer > 0f)
+                return;
+
+            IImpactTarget cTarget = CTargetFinder_Utility.Find(m_lstEnemy, m_cPlayer.POS, TARGET_FIND.NEAREST);
+            if (cTarget == null)
+                return;     // 쏠 대상이 생기면 바로 나가게 타이머를 그대로 둔다
+
+            m_fDevAutoFireTimer = m_fDevAutoFireCool;
+            Spawn_Projectile(m_iDevAutoFireID, m_cPlayer.POS, cTarget.POS - m_cPlayer.POS,
+                             PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer);
         }
 
         private void Tick_Web()
@@ -969,6 +1015,100 @@ namespace Client
             m_cPlayer?.Set_SpeedScale(fSlowRatio);
         }
         #endregion 기믹 소환물 (IGimmickHost)
+
+        #region 투사체 (IProjectileHost)
+        // 260917_Project_GYM 이식. 적탄 · 플레이어 탄 모두 여기서 만들고 여기서 회수한다(기믹 소환물과 같은 이유).
+        public Rect WORLD_BOUNDS => new Rect(m_cGrid.ORIGIN, m_cGrid.WORLD_SIZE);
+
+        /// <summary>
+        /// 맵 밖과 모양 마스크로 잘린 칸은 누구에게나 벽이다. 적탄에게는 점령지도 벽이다 —
+        /// 땅을 먹은 만큼 막아 주는 것이 이 게임의 규칙이라 튕기는 탄 · 레이저도 점령지 가장자리에서 멈춘다.
+        /// 플레이어 탄은 점령지 위를 지나간다(몬스터는 미점령 지대에만 있으므로).
+        /// </summary>
+        public bool Is_Wall(Vector2 vWorldPos, PROJECTILE_SIDE eSide)
+        {
+            if (WORLD_BOUNDS.Contains(vWorldPos) == false)
+                return true;
+
+            CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorldPos));
+            if (eState == CELL_STATE.BLOCK)
+                return true;
+
+            return eSide == PROJECTILE_SIDE.ENEMY_SHOT && eState == CELL_STATE.OWNED;
+        }
+
+        public IImpactTarget Find_Target(Vector2 vFrom, PROJECTILE_SIDE eSide)
+        {
+            if (eSide == PROJECTILE_SIDE.PLAYER_SHOT)
+                return CTargetFinder_Utility.Find(m_lstEnemy, vFrom, TARGET_FIND.NEAREST);
+
+            return m_cPlayer != null && m_cPlayer.IS_ALIVE == true ? m_cPlayer : null;
+        }
+
+        // 폭발 효과처럼 탄이 다른 탄을 부를 때. 쏜 쪽은 모른다.
+        public void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide)
+            => Spawn_Projectile(iProjectileID, vPos, vDir, eSide, null);
+
+        private void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide,
+                                      IImpactTarget cOwner)
+        {
+            if (m_cProjectileTable == null || Has_Prefab(PREFAB_PROJECTILE) == false)
+                return;
+
+            CProjectileInfo cInfo = m_cProjectileTable.Get_Info(iProjectileID);
+            if (cInfo == null)
+            {
+                Debug.LogError($"[CStage_Manager] ProjectileInfo.csv에 탄 {iProjectileID}가 없습니다.");
+                return;
+            }
+
+            CProjectileDesc cDesc = new CProjectileDesc
+            {
+                // 적탄 · 플레이어 탄 모두 ENEMY_EFFECT에 올린다 — 연출 · 일시정지 때 함께 세워야 한다(2-8).
+                eObjectType     = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName   = PREFAB_PROJECTILE,
+                cInfo           = cInfo,
+                lstImpact       = Get_ImpactList(cInfo),
+                cHost           = this,
+                fCellSize       = m_cGrid.CELL_SIZE,
+                vStartPos       = vPos,
+                vDir            = vDir,
+                eSide           = eSide,
+                cOwner          = cOwner,
+            };
+
+            GameObject goProjectile = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goProjectile == null)
+                return;
+
+            CProjectile cProjectile = goProjectile.GetComponent<CProjectile>();
+            if (cProjectile != null && cProjectile.IS_EXPIRED == false)
+                m_lstProjectile.Add(cProjectile);
+        }
+
+        private List<CImpactInfo> Get_ImpactList(CProjectileInfo cInfo)
+        {
+            if (m_dicImpactCache.TryGetValue(cInfo.iProjectileID, out List<CImpactInfo> lstImpact) == true)
+                return lstImpact;
+
+            lstImpact = new List<CImpactInfo>();
+            for (int i = 0; i < cInfo.lstImpactID.Count; ++i)
+            {
+                CImpactInfo cImpact = m_cImpactTable != null ? m_cImpactTable.Get_Info(cInfo.lstImpactID[i]) : null;
+                if (cImpact == null)
+                {
+                    Debug.LogError($"[CStage_Manager] 탄 {cInfo.iProjectileID}의 효과 {cInfo.lstImpactID[i]}가 "
+                                 + "ImpactInfo.csv에 없습니다.");
+                    continue;
+                }
+
+                lstImpact.Add(cImpact);
+            }
+
+            m_dicImpactCache.Add(cInfo.iProjectileID, lstImpact);
+            return lstImpact;
+        }
+        #endregion 투사체 (IProjectileHost)
 
         #region 런 스킬 소환물 (IRunSkillHost)
         // 260916_영혼 수집가. 위 기믹 소환물과 같은 이유로 여기서 만들고 여기서 회수한다.
@@ -1046,6 +1186,10 @@ namespace Client
                 {
                     CProjectile cProjectile = m_lstProjectile[p];
                     if (cProjectile == null || cProjectile.IS_EXPIRED == true)
+                        continue;
+
+                    // 260917_회전탄은 적탄 중 작은 탄만 지운다. 제 편 탄 · 레이저 · 폭발은 지우지 않는다.
+                    if (cProjectile.SIDE != PROJECTILE_SIDE.ENEMY_SHOT || cProjectile.CORE.IS_CANCELABLE == false)
                         continue;
 
                     if (Vector2.Distance(cProjectile.POS, vPoint) <= fHitRange)

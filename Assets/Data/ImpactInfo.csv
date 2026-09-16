@@ -1,0 +1,12 @@
+﻿iImpactID	strName	eType	fTime	fValue	iRefID	NONE
+;== 피격 효과 테이블 ==	Project_GYM의 SkillImpactInfo.csv를 옮겨 왔다
+;fTime	지속 시간(초). -1이면 탄에 닿아 있는 동안만
+;fValue	STUN 미사용 / SLOW 속도 배율(0.5=절반) / DOT 초당 피해 / KNOCKBACK 밀리는 거리(셀)
+;iRefID	EXPLODE가 터뜨릴 ProjectileInfo ID
+;---	이름	종류	시간	수치	참조	메모
+1	기절	STUN	1.5	0	0	GYM 스턴
+2	감속	SLOW	2	0.5	0	GYM 슬로우
+3	폭발	EXPLODE	0	0	8	GYM 폭발. 맞은 자리에 폭발(8)
+4	도트	DOT	3	1	0	3초간 초마다 1
+5	감속:충돌	SLOW	-1	0.5	0	닿아 있는 동안만
+6	넉백	KNOCKBACK	0.2	2	0	탄에서 먼 쪽으로 2칸
