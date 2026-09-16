@@ -60,6 +60,7 @@ namespace Client
             Test_CameraShake();
             Test_CameraPunch();
             Test_FlashEffect();
+            Test_SoundUtility();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -1356,6 +1357,44 @@ namespace Client
 
             cFlash.Clear();
             Check("Clear는 즉시 0", cFlash.ALPHA == 0f);
+        }
+
+        // 260916_절차적 효과음 파형. 실제 AudioClip 재생은 화면(오디오 장치)이 있어야
+        // 확인되므로, 여기서는 샘플 배열 자체의 모양만 본다 — 텍스처 픽셀을 검증하는 것과 같은 결.
+        private static void Test_SoundUtility()
+        {
+            float[] arrSample = CSound_Utility.Generate_Tone(WAVE_SHAPE.SINE, 440f, 440f, 0.1f);
+            int iExpected = Mathf.RoundToInt(0.1f * CSound_Utility.SAMPLE_RATE);
+            Check("길이(초)만큼 샘플이 나온다", arrSample.Length, iExpected);
+
+            Check("시작은 무음에 가깝다(클릭 방지 페이드인)", Mathf.Abs(arrSample[0]) < 0.05f);
+            Check("끝도 무음에 가깝다(클릭 방지 페이드아웃)", Mathf.Abs(arrSample[arrSample.Length - 1]) < 0.05f);
+
+            bool bClipped = false;
+            foreach (float f in arrSample)
+            {
+                if (f > 1.0001f || f < -1.0001f)
+                    bClipped = true;
+            }
+            Check("진폭이 -1~1을 넘지 않는다(클리핑 없음)", bClipped == false);
+
+            // 시작음==끝음이면 일정한 톤 — 최댓값 근처가 여러 번 나와야 한다(주기적 파형)
+            int iNearPeak = 0;
+            foreach (float f in arrSample)
+            {
+                if (f > 0.9f)
+                    ++iNearPeak;
+            }
+            Check("일정한 톤은 주기적으로 반복된다", iNearPeak > 1);
+
+            // 시작음과 끝음이 다르면(하강 톤) 뒤로 갈수록 한 주기가 길어진다 — 저음일수록 느리게 흔들린다.
+            float[] arrSweep = CSound_Utility.Generate_Tone(WAVE_SHAPE.SINE, 800f, 100f, 0.2f);
+            Check("파형이 비지 않는다", arrSweep.Length > 0);
+
+            // 파형 종류가 달라도 길이는 같다 — 모양만 다르다.
+            float[] arrSquare = CSound_Utility.Generate_Tone(WAVE_SHAPE.SQUARE, 300f, 300f, 0.05f);
+            Check("사각파도 사인파와 같은 규칙으로 길이가 정해진다",
+                  arrSquare.Length, Mathf.RoundToInt(0.05f * CSound_Utility.SAMPLE_RATE));
         }
 
         private static void Test_Joystick()

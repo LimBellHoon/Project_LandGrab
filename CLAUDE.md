@@ -107,10 +107,10 @@ Assets/
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
     │                       CInputHandler, CVirtualJoystick, CCameraFitter
     │                       CCameraShake, CCameraPunch, CFlashEffect, CCameraFeel_Utility
-    │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
+    │                       CEnemyGimmick(+_Projectile/_Web/_Spawn), CSound_Utility
     │                       CSkillHandler, CSkillEffect(+_Warp/_Shield/_Dash/_Slow/_Seal)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
-    ├── 98.Manager/         CStage_Manager, CProgress_Manager
+    ├── 98.Manager/         CStage_Manager, CProgress_Manager, CAudio_Manager
     └── 99.Defines/         Client_Enum, Client_Desc, Client_Interface
 
 Assets/Data/                EnemyInfo.csv, MapInfo.csv  ← 기획 데이터
@@ -597,8 +597,51 @@ CPlayer ── CSkillHandler   (쿨타임만 잰다)
 **점령 판정을 새로 만들지 않는다.** 평소 이동과 똑같이 한 칸씩 밟아 `Step_To`를 지나게 해서
 규칙이 한 군데에만 있도록 유지한다(2-3). 워프도 같은 이유로 한 칸씩 간다.
 
+### 2-12. 효과음 — 절차적 플레이스홀더 (260916)
+효과음 파일이 하나도 없다. `Engine.dll`을 직접 열어 확인해 보니(1-4) **Engine에는 애초에
+오디오용 홀더가 없다** — `CTextureDataHolder`/`CPrefabDataHolder`는 있어도 오디오는 없다.
+그래서 사운드는 Addressable/`CGameInstance`를 거치지 않고 **처음부터 클라이언트가 전담**한다.
 
+당장은 `CSound_Utility`(03.Module)가 사인/사각/삼각/톱니파를 코드로 합성해 대신 채운다 —
+텍스처를 `CProtoSetup`이 절차적으로 그려 두는 것과 같은 자리다. 시작음과 끝음을 다르게 주면
+미끄러지는 톤이 나온다(하강=사망, 상승=점령처럼 **방향만으로 좋고 나쁨이 읽힌다**).
+시작·끝 몇 ms를 무음에서 감아올려 클릭(뚝) 소리를 없앤다.
 
+```
+CSound_Utility.Generate_Tone   숫자 배열만 만든다 — AudioClip을 몰라도 된다(화면 없이 테스트)
+CAudio_Manager.Build_Clip      그 배열을 AudioClip으로 감싸 캐싱한다(앱 수명 동안 한 번)
+CAudio_Manager.Play(SOUND_ID)  캐시에서 꺼내 PlayOneShot — 여러 개가 겹쳐도 서로 안 끊는다
+```
+
+**진짜 SFX가 오면 `Build_Clip` 안쪽만 "합성"에서 "에셋 로드"로 바꾸면 된다.** 호출부
+(`Play(SOUND_ID)`)는 그대로다 — `CGameManager`도, 훅이 걸린 자리들도 손댈 일이 없다.
+
+`CAudio_Manager`는 `CStage_Manager`처럼 `CGameManager`가 들고 있는 순수 C# 클래스이지만,
+**스테이지가 아니라 앱 전체 수명**이다 — `GameLogic_Async`에서 한 번만 `Initialize()`하고
+`OnDestroy`에서 `Release()`한다. 재생을 위한 `AudioSource` 하나짜리 GameObject를 직접
+만든다 — Engine이 프리팹/UI는 풀링해 주지만 오디오는 그 대상이 아니라서, 굳이 Engine의
+풀링 규약(2-7)을 흉내 낼 이유가 없다.
+
+**어떤 파형·음높이를 쓸지는 소리의 정체성이지 세기 값이 아니다.** 그래서 `CGameConfig`가
+아니라 `CAudio_Manager` 안의 표(`s_dicDef`)에 상수로 둔다 — `CUI_InGame`의 플래시 색과
+같은 자리(2-10-3). `CGameConfig`에는 켬/끔과 전체 볼륨만 있다. 새 효과음을 추가할 때는
+`SOUND_ID`에 값 하나, 그 표에 줄 하나만 늘리면 된다 — 이미 흔들림/펀치/플래시에서 반복해
+온 확장 방식과 같다(2-10-2, 2-10-3, 1-6).
+
+지금 걸려 있는 자리는 전부 **이미 있던 손맛 훅**이다 — 새 이벤트를 뚫지 않았다.
+
+| `SOUND_ID` | 훅 |
+|---|---|
+| `HIT` | `CPlayer.OnDamaged` |
+| `DEATH` | `CPlayer.OnDead` |
+| `EVADE` | `CPlayer.OnEvade` |
+| `CAPTURE` | `CPlayer.OnCapture` |
+| `CARD_READY` | `CStage_Manager.OnCardReady` |
+| `STAGE_CLEAR` / `STAGE_FAIL` | `CStage_Manager.OnStateChanged` — **`m_bLastCleared` 기준**(2-7의 결과 화면과 같은 기준). 별을 하나라도 땄으면 `STAGE_STATE.FAIL`이어도 클리어 소리가 난다 |
+
+**웨이브 하나를 깼을 때(중간 REVEAL)는 아직 소리가 없다.** `CStage_Manager`의 웨이브
+상태 기계에 새 이벤트를 뚫어야 하는데, 이미 잘 도는 핵심 흐름이라 이번엔 손대지 않았다 —
+필요해지면 그때 REVEAL 진입 지점에 이벤트를 하나 추가할 것.
 
 
 ---

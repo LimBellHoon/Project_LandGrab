@@ -101,6 +101,14 @@ namespace Client
         [Range(0f, 1f)]
         [SerializeField] private float m_fFlashEvadeAlpha = 0.25f;
 
+        [Header("사운드")]
+        [Tooltip("끄면 효과음이 전혀 나지 않는다.")]
+        [SerializeField] private bool m_bSfxEnabled = true;
+
+        [Tooltip("효과음 전체 볼륨. 종류별 상대 크기는 CAudio_Manager 표에 따로 있다.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fSfxVolume = 0.8f;
+
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
         [SerializeField] private bool m_bUnlockAllStage;
@@ -132,6 +140,8 @@ namespace Client
         public float FLASH_HIT_ALPHA         => Mathf.Clamp01(m_fFlashHitAlpha);
         public float FLASH_EVADE_DURATION    => Mathf.Max(0.01f, m_fFlashEvadeDuration);
         public float FLASH_EVADE_ALPHA       => Mathf.Clamp01(m_fFlashEvadeAlpha);
+        public bool  SFX_ENABLED             => m_bSfxEnabled;
+        public float SFX_VOLUME              => Mathf.Clamp01(m_fSfxVolume);
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);

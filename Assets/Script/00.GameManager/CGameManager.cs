@@ -57,6 +57,8 @@ namespace Client
         // 260916_점령 펀치줌. Shake와 같은 계산을 쓰지만 위치가 아니라 크기를 건드린다.
         private CCameraPunch        m_cCameraPunch  = new CCameraPunch();
         private Camera              m_cCamera;
+        // 260916_효과음. 스테이지가 아니라 앱 전체 수명이라 스테이지마다 다시 만들지 않는다(2-12).
+        private CAudio_Manager      m_cAudioManager = new CAudio_Manager();
 
         private CGameInstance       m_cGameInstance;
         private CStage_Manager      m_cStageManager;
@@ -107,6 +109,7 @@ namespace Client
             CancelInvoke();
             m_cStageManager?.Release();
             m_cGameInstance?.Release_Engine();
+            m_cAudioManager?.Release();
         }
 
         public void FixedUpdate()
@@ -151,11 +154,27 @@ namespace Client
                 m_cCamera.orthographicSize *= fZoom;
         }
 
-        // 260916_카메라 흔들림 / 펀치줌. 새 원인을 추가할 때 여기 한 줄, CGameConfig에 값 하나만 늘면 된다 —
-        // CCameraShake/CCameraPunch와 Tick_Camera는 고칠 필요가 없다(2-10-2).
-        private void On_PlayerDamaged()   => m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_HIT);
-        private void On_PlayerDeadShake() => m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_DEATH);
-        private void On_PlayerCaptured(int iCapturedCount) => m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_CAPTURE);
+        // 260916_카메라 흔들림 / 펀치줌 / 효과음. 같은 이벤트를 여러 손맛 시스템이 함께 듣는다 —
+        // 새 원인을 추가할 때도 여기 한 줄, CGameConfig에 값 하나만 늘면 된다(2-10-2, 2-12).
+        private void On_PlayerDamaged()
+        {
+            m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_HIT);
+            m_cAudioManager.Play(SOUND_ID.HIT);
+        }
+
+        private void On_PlayerDead()
+        {
+            m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_DEATH);
+            m_cAudioManager.Play(SOUND_ID.DEATH);
+        }
+
+        private void On_PlayerEvaded() => m_cAudioManager.Play(SOUND_ID.EVADE);
+
+        private void On_PlayerCaptured(int iCapturedCount)
+        {
+            m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_CAPTURE);
+            m_cAudioManager.Play(SOUND_ID.CAPTURE);
+        }
 
         public void LateUpdate()
         {
@@ -200,6 +219,10 @@ namespace Client
 
                 m_cConfig = CGameConfig.Load();
 
+                // 260916_옵션창이 아직 없어 CGameConfig 값을 그대로 켠다(1-6).
+                m_cAudioManager.Initialize();
+                m_cAudioManager.Set_Enabled(m_cConfig.SFX_ENABLED);
+                m_cAudioManager.Set_Volume(m_cConfig.SFX_VOLUME);
 
                 if (m_cProgressManager.Initialize(m_cMapTable, new CStageProgress_Local(), m_cEquipTable) == false)
                     return;
@@ -383,6 +406,7 @@ namespace Client
 
             m_cStageManager.Set_Pause(true);
             (m_cInGameUI as CUI_InGame)?.Set_Interactable(false);
+            m_cAudioManager.Play(SOUND_ID.CARD_READY);
 
             CUI_CardPickDesc cDesc = new CUI_CardPickDesc
             {
@@ -571,12 +595,14 @@ namespace Client
             m_cStageManager.OnStateChanged += On_StageStateChanged;
             m_cStageManager.OnCardReady    += On_CardReady;
 
-            // 260916_피격/사망 흔들림 + 점령 펀치줌. CPlayer.Hide()가 풀에 반납할 때 구독을 비워 주므로
-            // 재사용된 인스턴스라도 여기서 새로 걸면 안전하다(2-7의 OnStateChanged와 같은 방식).
+            // 260916_피격/사망/회피/점령 손맛(흔들림·펀치·효과음). CPlayer.Hide()가 풀에 반납할 때
+            // 구독을 비워 주므로 재사용된 인스턴스라도 여기서 새로 걸면 안전하다
+            // (2-7의 OnStateChanged와 같은 방식).
             if (m_cStageManager.PLAYER != null)
             {
                 m_cStageManager.PLAYER.OnDamaged += On_PlayerDamaged;
-                m_cStageManager.PLAYER.OnDead    += On_PlayerDeadShake;
+                m_cStageManager.PLAYER.OnDead    += On_PlayerDead;
+                m_cStageManager.PLAYER.OnEvade   += On_PlayerEvaded;
                 m_cStageManager.PLAYER.OnCapture += On_PlayerCaptured;
             }
 
@@ -648,6 +674,10 @@ namespace Client
 
             if (m_iLastCoin > 0)
                 m_cProgressManager.Add_Coin(m_iLastCoin);
+
+            // 260916_결과 화면과 같은 기준(m_bLastCleared)으로 고른다 — STAGE_STATE.FAIL이어도
+            // 별을 하나 이상 땄으면 화면은 "클리어!"라고 뜨므로 소리도 거기 맞춘다.
+            m_cAudioManager.Play(m_bLastCleared == true ? SOUND_ID.STAGE_CLEAR : SOUND_ID.STAGE_FAIL);
 
             // 260904_클리어는 드러난 보상을 조금 더 보여준 뒤 결과를 띄운다.
             // 실패는 굳이 끌 이유가 없어 빨리 띄운다.

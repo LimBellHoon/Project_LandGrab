@@ -137,6 +137,20 @@
         SPAWN,          // 부하 소환 (fGimmickValue = 소환 마리수)
     }
 
+    // 260916_효과음 종류. CAudio_Manager.Play(SOUND_ID)로 재생한다.
+    /// <summary> 새 종류를 추가해도 여기 하나 늘리고 CAudio_Manager에 정의 한 줄만 더하면 된다(2-12). </summary>
+    public enum SOUND_ID
+    {
+        NONE = 0,
+        HIT,            // 피격
+        DEATH,          // 사망
+        EVADE,          // 회피 성공
+        CAPTURE,        // 점령
+        CARD_READY,     // 카드 3지선다 등장
+        STAGE_CLEAR,    // 스테이지 클리어
+        STAGE_FAIL,     // 스테이지 실패
+    }
+
     /// <summary> Addressable 라벨 (Engine.CData_Manager.LoadAssetAsync 인자) </summary>
     public static class CAddressableLabel
     {
