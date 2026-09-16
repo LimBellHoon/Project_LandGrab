@@ -90,7 +90,7 @@ Assets/
     ├── 01.UI/              CDebugHUD, CUI_StageSelect, CUI_InGame, CUI_Popup (Engine.CUI 상속), CSafeArea
     ├── 02.GameObject/      CPlayer, CEnemy, CProjectile, CWeb  (Engine.CGameObject 상속)
     ├── 03.Module/          CTerritoryGrid, CGridRenderer, CMoveHandler, CEnemyMoveHandler
-    │                       CInputHandler, CVirtualJoystick, CCameraFitter
+    │                       CInputHandler, CVirtualJoystick, CCameraFitter, CCameraShake
     │                       CEnemyGimmick(+_Projectile/_Web/_Spawn)
     │                       CSkillHandler, CSkillEffect(+_Warp/_Shield/_Dash/_Slow/_Seal)
     ├── 97.Data/            CCSVData_EnemyInfo, CCSVData_MapInfo, CCSV_Utility, CStageProgress, CGameConfig
@@ -479,6 +479,39 @@ CStage_Manager.Apply_Card       효과를 건다
 
 속도·회피·감속은 **누적**된다. 플레이어의 속도는 이제 세 갈래가 곱해진다 —
 거미줄(환경) × 질주(스킬) × 카드. 몬스터 감속도 스킬 × 카드다(2-11).
+
+### 2-10-2. 카메라 흔들림 — 트라우마 기반 (260916)
+`CCameraShake`(`03.Module`)는 **"얼마나 세게 흔들지"만 안다.** 무엇이 흔들 자격이 있는지는 모른다.
+호출부가 `Add_Trauma(양)`을 부르면 그 양이 누적(최대 1)되고, 시간이 지나면 스스로 줄어든다.
+화면에 보이는 세기는 트라우마의 **제곱**이라 — 조금 쌓였을 땐 거의 안 보이다가 많이 쌓이면
+급격히 커진다(Squirrel Eiserloh, GDC "Juicing Your Cameras With Math" 방식을 그대로 따랐다).
+
+```
+CPlayer.OnDamaged  ──> CGameManager.On_PlayerDamaged   ──> Add_Trauma(TRAUMA_ON_HIT)
+CPlayer.OnDead     ──> CGameManager.On_PlayerDeadShake ──> Add_Trauma(TRAUMA_ON_DEATH)
+CGameManager.Tick_Camera가 매 프레임 오프셋을 읽어 카메라 Transform에 더한다
+```
+
+**어디를 볼지(`CCameraFitter`)와 얼마나 흔들지(`CCameraShake`)는 서로 모른다.** Fitter가 먼저
+그 프레임의 카메라 위치를 다 계산해 박아 두면(`Apply`), 그 위에 흔들림 오프셋을 얹는다 —
+다음 프레임에도 Fitter가 같은 기준점에서 다시 계산하므로 흔들림이 누적되어 표류하지 않는다.
+
+**새 흔들림 원인을 추가해도 `CCameraShake`는 고치지 않는다.** `CGameConfig`에 트라우마 양
+하나(`m_fTraumaOn<원인>`)를 늘리고, 그 이벤트가 일어나는 곳에서 `Add_Trauma(그 값)` 한 줄만
+부르면 된다. 원인별로 진폭·지속시간 쌍을 따로 관리하지 않는 게 핵심이다 — 쌍이 늘어날수록
+관리할 조합이 늘어난다.
+
+`CPlayer`는 `OnLifeChanged`(목숨 변화 전체, 회복 포함)와 `OnDamaged`(실제로 맞았을 때만)를
+따로 둔다. 흔들림처럼 "맞았다"만 골라 들어야 하는 연출이 `OnLifeChanged`를 들으면
+포션으로 회복할 때도 흔들리는 사고가 난다.
+
+**옵션창은 아직 없다.** 대신 끄는 자리 하나(`CCameraShake.Set_Enabled`)는 미리 못박아 뒀다 —
+`CGameConfig.m_bCameraShakeEnabled`를 그대로 흘려보내고 있을 뿐이라, 옵션창이 생기면
+이 값을 유저 설정으로 바꿔치기만 하면 된다. `CProgress_Manager.Set_FreeSpend`와 같은 자리다.
+꺼져 있으면 트라우마가 아예 안 쌓이고, 쌓여 있던 것도 즉시 지운다.
+
+판정(`CCameraShake`)과 적용(카메라 `Transform`에 더하기)을 나눠서 화면 없이 `CProtoTest`에서
+파형과 감쇠를 검증한다 — `CCameraFitter`와 같은 이유다.
 
 ### 2-11. 플레이어 스킬 — 효과 모듈 (260912)
 스킬은 **기믹과 같은 조합 구조**다(2-6). `CPlayer`가 `CSkillEffect` 모듈을 하나 들고 있고,

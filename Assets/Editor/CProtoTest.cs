@@ -57,6 +57,7 @@ namespace Client
             Test_CoverResolution();
             Test_LayerBounds();
             Test_Joystick();
+            Test_CameraShake();
 
             s_sbLog.AppendLine($"\n===== RESULT : PASS {s_iPass} / FAIL {s_iFail} =====");
             string strResult = s_sbLog.ToString();
@@ -1251,6 +1252,51 @@ namespace Client
         private static CCSVData_UpgradeInfo Load_UpgradeTable() => Load_CsvTable<CCSVData_UpgradeInfo>("UpgradeInfo");
 
         // 260904_가상 조이스틱 — 판정만 떼어 두었으므로 화면 없이 검증할 수 있다
+        // 260916_카메라 흔들림. 판정(CCameraShake)만 검증한다 — 실제 Transform에 더하는 건
+        // CGameManager.Tick_Camera가 하고, 그건 화면이 있어야 확인된다(2-10-2).
+        private static void Test_CameraShake()
+        {
+            // 정적 계산 — 화면·인스턴스 없이도 파형 자체를 본다
+            Check("트라우마 0은 오프셋 0", CCameraShake.Calc_Offset(0f, 12.3f, 1f, 2f, 0.2f) == Vector2.zero);
+
+            Vector2 vLow  = CCameraShake.Calc_Offset(0.2f, 5f, 1f, 2f, 0.2f);
+            Vector2 vHigh = CCameraShake.Calc_Offset(0.8f, 5f, 1f, 2f, 0.2f);
+            Check("트라우마가 크면 더 세게 흔들린다", vHigh.magnitude > vLow.magnitude);
+
+            Vector2 vFull = CCameraShake.Calc_Offset(1f, 3f, 1f, 2f, 0.2f);
+            Check("최대 트라우마에서도 최대 변위를 넘지 않는다",
+                  Mathf.Abs(vFull.x) <= 0.2f + 0.001f && Mathf.Abs(vFull.y) <= 0.2f + 0.001f);
+
+            // 인스턴스 — 누적 / 클램프 / 감쇠 / 스위치
+            CCameraShake cShake = new CCameraShake();
+            cShake.Initialize(0.2f, 0.5f);      // 초당 0.5씩 줄어든다
+
+            Check("처음엔 안 흔들린다", cShake.Tick(0f) == Vector2.zero);
+
+            cShake.Add_Trauma(0.5f);
+            cShake.Add_Trauma(0.8f);
+            Check("트라우마는 1을 넘지 않는다", cShake.TRAUMA <= 1f + 0.0001f);
+
+            cShake.Tick(1f);
+            Check("시간이 지나면 감쇠한다", Mathf.Approximately(cShake.TRAUMA, 0.5f));
+
+            cShake.Tick(10f);
+            Check("바닥 밑으로는 안 내려간다", cShake.TRAUMA == 0f);
+
+            cShake.Add_Trauma(0.6f);
+            Check("Reset 전에는 남아 있다", cShake.TRAUMA > 0f);
+            cShake.Reset();
+            Check("Reset은 즉시 0", cShake.TRAUMA == 0f);
+
+            cShake.Set_Enabled(false);
+            cShake.Add_Trauma(1f);
+            Check("꺼져 있으면 트라우마가 안 쌓인다", cShake.TRAUMA == 0f);
+
+            cShake.Set_Enabled(true);
+            cShake.Add_Trauma(0.5f);
+            Check("다시 켜면 정상 동작", cShake.TRAUMA > 0f);
+        }
+
         private static void Test_Joystick()
         {
             const int   SCREEN_H = 1000;

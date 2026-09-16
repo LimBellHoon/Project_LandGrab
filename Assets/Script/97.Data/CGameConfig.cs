@@ -43,6 +43,28 @@ namespace Client
         [Range(0f, 0.6f)]
         [SerializeField] private float m_fCameraFollowTime = 0.12f;
 
+        [Header("카메라 흔들림")]
+        [Tooltip("끄면 아예 흔들리지 않는다. 옵션창이 생기면 이 값 하나만 토글하면 된다.")]
+        [SerializeField] private bool m_bCameraShakeEnabled = true;
+
+        [Tooltip("트라우마가 가득 찼을 때(1) 카메라가 밀리는 최대 거리. 월드 단위다.")]
+        [Range(0f, 0.5f)]
+        [SerializeField] private float m_fShakeMaxOffset = 0.18f;
+
+        [Tooltip("트라우마가 초당 줄어드는 양. 클수록 흔들림이 빨리 잦아든다.")]
+        [Range(0.5f, 10f)]
+        [SerializeField] private float m_fShakeDecayPerSecond = 2.5f;
+
+        // 260916_원인마다 값을 하나씩 늘리는 자리다. CCameraShake는 안 고치고 여기에
+        // 필드 하나, Add_Trauma 호출 한 줄만 추가하면 새 흔들림 원인이 생긴다(2-10-2).
+        [Tooltip("피격 한 번에 쌓는 트라우마 0~1.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fTraumaOnHit = 0.35f;
+
+        [Tooltip("사망 시 쌓는 트라우마 0~1. 피격 트라우마와 더해지므로 죽는 순간은 항상 더 세다.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fTraumaOnDeath = 0.8f;
+
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
         [SerializeField] private bool m_bUnlockAllStage;
@@ -60,6 +82,11 @@ namespace Client
         public float CAMERA_MARGIN      => Mathf.Max(0f, m_fCameraMargin);
         public float VIEW_CELL_HEIGHT   => Mathf.Max(0f, m_fViewCellHeight);
         public float CAMERA_FOLLOW_TIME => Mathf.Clamp(m_fCameraFollowTime, 0f, 0.6f);
+        public bool  CAMERA_SHAKE_ENABLED    => m_bCameraShakeEnabled;
+        public float SHAKE_MAX_OFFSET        => Mathf.Max(0f, m_fShakeMaxOffset);
+        public float SHAKE_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fShakeDecayPerSecond);
+        public float TRAUMA_ON_HIT           => Mathf.Clamp01(m_fTraumaOnHit);
+        public float TRAUMA_ON_DEATH         => Mathf.Clamp01(m_fTraumaOnDeath);
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);

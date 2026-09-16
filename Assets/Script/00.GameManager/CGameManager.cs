@@ -52,6 +52,9 @@ namespace Client
 
         // 260912_맵이 화면에 다 들어오게 카메라를 맞춘다. 기기마다 비율이 달라 런타임에서만 알 수 있다.
         private CCameraFitter       m_cCameraFitter = new CCameraFitter();
+        // 260916_피격/사망 흔들림. 어디를 볼지(Fitter)와 얼마나 흔들지(Shake)를 나눠 각자 테스트한다(2-10-2).
+        private CCameraShake        m_cCameraShake  = new CCameraShake();
+        private Camera              m_cCamera;
 
         private CGameInstance       m_cGameInstance;
         private CStage_Manager      m_cStageManager;
@@ -130,7 +133,18 @@ namespace Client
                 return;
 
             m_cCameraFitter.Tick(cPlayer.transform.position, Time.deltaTime);
+
+            // 260916_Fitter가 매 프레임 위치를 다시 계산해 박아 두므로(Apply), 그 위에 흔들림을 얹는다 —
+            // 다음 프레임에도 Fitter가 같은 기준점에서 다시 계산하니 흔들림이 누적되어 표류하지 않는다.
+            Vector2 vShake = m_cCameraShake.Tick(Time.deltaTime);
+            if (m_cCamera != null && vShake != Vector2.zero)
+                m_cCamera.transform.position += (Vector3)vShake;
         }
+
+        // 260916_카메라 흔들림. 새 원인을 추가할 때 여기 한 줄, CGameConfig에 트라우마 값 하나만 늘면 된다 —
+        // CCameraShake와 Tick_Camera는 고칠 필요가 없다(2-10-2).
+        private void On_PlayerDamaged()   => m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_HIT);
+        private void On_PlayerDeadShake() => m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_DEATH);
 
         public void LateUpdate()
         {
@@ -521,10 +535,17 @@ namespace Client
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
             // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.
             CTerritoryGrid cGrid = m_cStageManager.GRID;
-            m_cCameraFitter.Initialize(Camera.main, m_cConfig.UI_RESERVE_TOP, m_cConfig.UI_RESERVE_BOTTOM,
+            m_cCamera = Camera.main;
+            m_cCameraFitter.Initialize(m_cCamera, m_cConfig.UI_RESERVE_TOP, m_cConfig.UI_RESERVE_BOTTOM,
                                        m_cConfig.CAMERA_MARGIN,
                                        m_cConfig.VIEW_CELL_HEIGHT * cGrid.CELL_SIZE,
                                        m_cConfig.CAMERA_FOLLOW_TIME);
+
+            // 260916_옵션창이 아직 없어 CGameConfig 값을 그대로 켠다. 옵션창이 생기면
+            // 여기서 읽던 자리를 유저 설정으로 바꾸기만 하면 된다 — CCameraShake 쪽은 안 바뀐다.
+            m_cCameraShake.Initialize(m_cConfig.SHAKE_MAX_OFFSET, m_cConfig.SHAKE_DECAY_PER_SECOND);
+            m_cCameraShake.Set_Enabled(m_cConfig.CAMERA_SHAKE_ENABLED);
+            m_cCameraShake.Reset();     // 이전 판 흔들림이 새 판으로 넘어가지 않게 한다.
 
             Vector2 vStart = m_cStageManager.PLAYER != null
                            ? (Vector2)m_cStageManager.PLAYER.transform.position
@@ -534,6 +555,14 @@ namespace Client
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
             m_cStageManager.OnCardReady    += On_CardReady;
+
+            // 260916_피격/사망 흔들림. CPlayer.Hide()가 풀에 반납할 때 구독을 비워 주므로
+            // 재사용된 인스턴스라도 여기서 새로 걸면 안전하다(2-7의 OnStateChanged와 같은 방식).
+            if (m_cStageManager.PLAYER != null)
+            {
+                m_cStageManager.PLAYER.OnDamaged += On_PlayerDamaged;
+                m_cStageManager.PLAYER.OnDead    += On_PlayerDeadShake;
+            }
 
             if (m_cStageManager.Start_Stage() == false)
             {

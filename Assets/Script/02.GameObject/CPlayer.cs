@@ -66,6 +66,9 @@ namespace Client
         public event Action OnDead;
         /// <summary> 260905_회피 성공. 연출/사운드를 붙일 자리. </summary>
         public event Action OnEvade;
+        // 260916_OnLifeChanged는 Heal에도 불려 '맞았다'만 골라 듣기 어렵다.
+        /// <summary> 실제로 맞아 목숨이 줄었을 때만. 카메라 흔들림 같은 피격 연출은 이걸 들을 것. </summary>
+        public event Action OnDamaged;
         /// <summary> 점령 판정에 쓸 몬스터 셀 목록 공급자 (없으면 null) </summary>
         public Func<IReadOnlyList<Vector2Int>> GetEnemyCells;
 
@@ -141,6 +144,7 @@ namespace Client
             OnLifeChanged   = null;
             OnDead          = null;
             OnEvade         = null;
+            OnDamaged       = null;
             GetEnemyCells   = null;
             m_cGrid         = null;
 
@@ -294,6 +298,7 @@ namespace Client
             m_cGrid.Clear_Trail();
 
             --m_iLife;
+            OnDamaged?.Invoke();
             OnLifeChanged?.Invoke(m_iLife);
 
             if (m_iLife <= 0)
