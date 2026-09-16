@@ -87,6 +87,14 @@ namespace Client
             "Tex_Card_SHIELD", "Tex_Card_HEAL", "Tex_Card_SPEED", "Tex_Card_EVASION", "Tex_Card_SLOW",
         };
         private const string TEX_CARD_GLOW = "Tex_CardGlow";
+        // 260917_런 스킬 아이콘. RUN_SKILL_TYPE 순서(NONE 빼고)를 그대로 따른다 — CUI_CardPick이 (int)타입 - 1로 찾는다.
+        // 흰색으로 구워 두고 분류(액티브/패시브) 색은 런타임에 칠한다.
+        private static readonly string[] ARR_RUN_SKILL_ICON =
+        {
+            "Tex_RunSkill_MOONWALK", "Tex_RunSkill_EDGE_WRAP", "Tex_RunSkill_SOUL_COLLECTOR", "Tex_RunSkill_RAGE",
+            "Tex_RunSkill_MAGNET", "Tex_RunSkill_EVASION", "Tex_RunSkill_ORBIT", "Tex_RunSkill_CLUB",
+        };
+        private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -169,7 +177,7 @@ namespace Client
             iFail += Validate_UIPrefab<CUI_Inventory>(PATH_PREFAB_UI_INVEN, UI_INVENTORY,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_CardPick>(PATH_PREFAB_UI_CARD, UI_CARDPICK,
-                                                 new[] { "m_txtTitle", "m_btnTemplate", "m_trContent", "m_arrIcon" });
+                                                 new[] { "m_txtTitle", "m_btnTemplate", "m_trContent", "m_arrIcon", "m_arrRunSkillIcon" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -625,6 +633,13 @@ namespace Client
                 Import_AsSprite(strPath, 100);
             }
 
+            for (int i = 0; i < ARR_RUN_SKILL_ICON.Length; ++i)
+            {
+                string strPath = $"{DIR_ART}/{ARR_RUN_SKILL_ICON[i]}.png";
+                Write_Png(strPath, Make_CardIcon(ICON, RUN_SKILL_ICON_KIND_START + i));
+                Import_AsSprite(strPath, 100);
+            }
+
             // 테두리 발광 — 9슬라이스로 늘려 쓰므로 가운데는 비워 둔다.
             string strGlow = $"{DIR_ART}/{TEX_CARD_GLOW}.png";
             Write_Png(strGlow, Make_CardGlow(64));
@@ -645,7 +660,8 @@ namespace Client
                 new Color(0.80f, 0.60f, 1.00f),     // EVASION — 보라 잔상
                 new Color(1.00f, 0.55f, 0.55f),     // SLOW    — 붉은 모래시계
             };
-            Color cInk = arrColor[Mathf.Clamp(iKind, 0, arrColor.Length - 1)];
+            // 260917_런 스킬 아이콘은 흰색 — 분류 색을 런타임에 곱해 칠한다.
+            Color cInk = iKind < arrColor.Length ? arrColor[Mathf.Max(0, iKind)] : Color.white;
 
             float fHalf = iSize * 0.5f;
 
@@ -689,11 +705,69 @@ namespace Client
                         || (Mathf.Abs(fU) < 0.11f && Mathf.Abs(fV) < 0.5f)
                         || (Mathf.Abs(fU - 0.52f) < 0.16f && Mathf.Abs(fV) < 0.66f);
 
-                default:    // 모래시계
+                case 4:     // 모래시계
                     if (Mathf.Abs(fV) > 0.72f)
                         return fAbsU < 0.5f;
 
                     return fAbsU < Mathf.Abs(fV) * 0.68f + 0.05f;
+
+                default:
+                    return Is_RunSkillInk(iKind - RUN_SKILL_ICON_KIND_START, fU, fV);
+            }
+        }
+
+        // 260917_런 스킬 여덟 모양. 순서는 ARR_RUN_SKILL_ICON(= RUN_SKILL_TYPE)과 같다.
+        private static bool Is_RunSkillInk(int iSkill, float fU, float fV)
+        {
+            float fAbsU = Mathf.Abs(fU);
+            float fAbsV = Mathf.Abs(fV);
+            float fDist = Mathf.Sqrt(fU * fU + fV * fV);
+
+            switch (iSkill)
+            {
+                case 0:     // 월보 — 초승달
+                {
+                    float fInner = Mathf.Sqrt((fU - 0.28f) * (fU - 0.28f) + (fV - 0.1f) * (fV - 0.1f));
+                    return fDist < 0.68f && fInner > 0.5f;
+                }
+
+                case 1:     // 어디로든 신발 — 양쪽 화살(좌우를 잇는다)
+                    return (fAbsV < 0.1f && fAbsU < 0.55f)
+                        || Is_Chevron(fU - 0.25f, fV * 1.4f)
+                        || Is_Chevron(-fU - 0.25f, fV * 1.4f);
+
+                case 2:     // 영혼 수집가 — 아래는 둥글고 위로 뾰족한 불꽃
+                    return (fDist < 0.42f && fV < 0.1f)
+                        || (fV >= 0.1f && fV < 0.75f && fAbsU < (0.75f - fV) * 0.62f);
+
+                case 3:     // 분노 — 번개
+                    return (fV > 0f && fV < 0.72f && Mathf.Abs(fU - fV * 0.5f + 0.05f) < 0.14f)
+                        || (fAbsV < 0.09f && fU > -0.3f && fU < 0.3f)
+                        || (fV < 0f && fV > -0.72f && Mathf.Abs(fU - fV * 0.5f - 0.05f) < 0.14f);
+
+                case 4:     // 자석 — 말굽(U)
+                    if (fV > 0f)
+                        return fAbsU > 0.3f && fAbsU < 0.62f && fV < 0.7f;
+
+                    return fDist > 0.3f && fDist < 0.62f;
+
+                case 5:     // 회피 — 카드 회피와 같은 잔상(색으로 가른다)
+                    return Is_IconInk(3, fU, fV);
+
+                case 6:     // 회전탄 — 고리와 그 위를 도는 탄 둘
+                {
+                    bool bRing = fDist > 0.46f && fDist < 0.56f;
+                    float fDotA = Mathf.Sqrt((fU - 0.36f) * (fU - 0.36f) + (fV - 0.36f) * (fV - 0.36f));
+                    float fDotB = Mathf.Sqrt((fU + 0.36f) * (fU + 0.36f) + (fV + 0.36f) * (fV + 0.36f));
+                    return bRing || fDotA < 0.17f || fDotB < 0.17f || fDist < 0.14f;
+                }
+
+                default:    // 몽둥이 — 대각선 자루와 굵은 머리
+                {
+                    float fAlong  = (fU + fV) * 0.7071f;
+                    float fAcross = Mathf.Abs(fU - fV) * 0.7071f;
+                    return fAlong > -0.72f && fAlong < 0.72f && fAcross < 0.09f + Mathf.Max(0f, fAlong - 0.15f) * 0.45f;
+                }
             }
         }
 
@@ -1541,6 +1615,13 @@ namespace Client
             cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cCard;
             cSerialized.FindProperty("m_trContent").objectReferenceValue   = trContent;
             cSerialized.FindProperty("m_arrIcon").arraySize                 = ARR_CARD_ICON.Length;
+            cSerialized.FindProperty("m_arrRunSkillIcon").arraySize         = ARR_RUN_SKILL_ICON.Length;
+
+            for (int i = 0; i < ARR_RUN_SKILL_ICON.Length; ++i)
+            {
+                Sprite spIcon = AssetDatabase.LoadAssetAtPath<Sprite>($"{DIR_ART}/{ARR_RUN_SKILL_ICON[i]}.png");
+                cSerialized.FindProperty("m_arrRunSkillIcon").GetArrayElementAtIndex(i).objectReferenceValue = spIcon;
+            }
 
             for (int i = 0; i < ARR_CARD_ICON.Length; ++i)
             {

@@ -84,6 +84,13 @@
         HEAL,       // 목숨 1 회복
     }
 
+    // 260917_3지선다 한 칸의 종류. 카드와 런 스킬을 한 화면에 섞는다
+    public enum PICK_KIND
+    {
+        CARD,           // CardInfo.csv — 보호막 · 회복 · 가속 · 회피 · 둔화
+        RUN_SKILL,      // RunSkillInfo.csv — 새로 얻거나 레벨업
+    }
+
     // 260912_점령률을 넘길 때마다 셋 중 하나를 고르는 카드
     /// <summary> 고른 그 판 동안만 유지된다. 스테이지를 나가면 사라진다. </summary>
     public enum CARD_TYPE

@@ -463,6 +463,23 @@ namespace Client
         // 260912_카드 효과. 고른 판이 끝날 때까지 유지된다.
         // 즉시 효과(보호막 / 회복)와 누적 효과(속도 / 회피 / 감속)를 한곳에서 본다.
         /// <returns> 효과를 걸었으면 true </returns>
+        // 260917_3지선다에서 고른 것 — 카드면 카드 효과, 런 스킬이면 플레이어에게 붙이거나 레벨을 올린다.
+        /// <returns> 효과를 걸었으면 true </returns>
+        public bool Apply_Pick(CPickOption cOption)
+        {
+            if (cOption == null)
+                return false;
+
+            if (cOption.eKind == PICK_KIND.CARD)
+                return Apply_Card(cOption.cCard);
+
+            if (m_cPlayer == null || cOption.cRunSkill == null)
+                return false;
+
+            m_cPlayer.Add_RunSkill(cOption.cRunSkill);
+            return true;
+        }
+
         public bool Apply_Card(CCardInfo cInfo)
         {
             if (cInfo == null || m_cPlayer == null)

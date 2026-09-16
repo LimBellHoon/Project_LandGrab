@@ -53,6 +53,7 @@ namespace Client
             Test_CameraFit();
             Test_CameraFollow();
             Test_CardPick();
+            Test_PickOption();
             Test_BehaviorTree();
             Test_Projectile();
             Test_SafeArea();
@@ -1286,7 +1287,6 @@ namespace Client
             Check("Vector2도 비워진다", cBoard.Has(BLACKBOARD_KEY.TARGET_POS) == false);
         }
 
-        // 260912_카드 3지선다 — 표가 읽히고, 서로 다른 카드가 뽑히고, 효과가 걸리는지
         // 260917_투사체 (Project_GYM BulletLogic 이식) — 모양 · 이동 · 특성 · 효과 · 발사 패턴 · 조준을 화면 없이 본다
         private static void Test_Projectile()
         {
@@ -1725,6 +1725,102 @@ namespace Client
             }
         }
 
+        // 260917_3지선다에 카드와 런 스킬이 섞여 나오는지 — 해금 · 만렙 · 슬롯 상한(액티브/패시브 각 5) · 중복 없음
+        private static void Test_PickOption()
+        {
+            CCSVData_CardInfo cCardTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");
+            CCSVData_RunSkillInfo cSkillTable = Load_CsvTable<CCSVData_RunSkillInfo>("RunSkillInfo");
+            if (cCardTable == null || cSkillTable == null)
+            {
+                Check("CardInfo / RunSkillInfo 로드(Test_PickOption)", false);
+                return;
+            }
+
+            Dictionary<RUN_SKILL_TYPE, int> dicLevel = new Dictionary<RUN_SKILL_TYPE, int>();
+            System.Func<RUN_SKILL_TYPE, int> fnLevel = eType => dicLevel.TryGetValue(eType, out int iLevel) ? iLevel : 0;
+
+            // 여러 번 뽑아 섞여 나오는지 본다 — 가중치 무작위라 한 번으로는 알 수 없다
+            bool bSawCard = false, bSawSkill = false, bDuplicate = false, bLocked = false;
+            for (int n = 0; n < 200; ++n)
+            {
+                List<CPickOption> lstPick = CPickOption_Utility.Pick(cCardTable, cSkillTable, fnLevel, iMapID => false, 3);
+                HashSet<string> hsName = new HashSet<string>();
+
+                for (int i = 0; i < lstPick.Count; ++i)
+                {
+                    if (lstPick[i].eKind == PICK_KIND.CARD)
+                        bSawCard = true;
+                    else
+                    {
+                        bSawSkill = true;
+                        if (lstPick[i].cRunSkill.iUnlockMapID > 0)
+                            bLocked = true;
+                    }
+
+                    if (hsName.Add(lstPick[i].eKind + lstPick[i].NAME) == false)
+                        bDuplicate = true;
+                }
+            }
+            Check("섞기 — 카드가 나온다", bSawCard);
+            Check("섞기 — 런 스킬이 나온다", bSawSkill);
+            Check("섞기 — 한 번에 같은 것이 두 장 나오지 않는다", bDuplicate == false);
+            Check("섞기 — 해금 전 런 스킬은 안 나온다", bLocked == false);
+
+            // 새로 얻는 스킬은 NEW, 가진 스킬은 다음 레벨
+            CRunSkillInfo cMagnet = cSkillTable.Find_ByType(RUN_SKILL_TYPE.MAGNET);
+            dicLevel[RUN_SKILL_TYPE.MAGNET] = 2;
+            CPickOption cLevelUp = null;
+            for (int n = 0; n < 300 && cLevelUp == null; ++n)
+            {
+                List<CPickOption> lstPick = CPickOption_Utility.Pick(null, cSkillTable, fnLevel, iMapID => true, 3);
+                for (int i = 0; i < lstPick.Count; ++i)
+                {
+                    if (lstPick[i].cRunSkill == cMagnet)
+                        cLevelUp = lstPick[i];
+                }
+            }
+            Check("레벨업 — 가진 스킬은 다음 레벨로 나온다", cLevelUp != null ? cLevelUp.iNextLevel : -1, 3);
+            Check("레벨업 — NEW가 아니다", cLevelUp != null && cLevelUp.IS_NEW == false);
+            Check("레벨업 — 제목에 레벨", cLevelUp != null ? CUI_CardPick.Get_Title(cLevelUp) : "", "자석  Lv.3");
+            Check("새로 얻기 — 제목에 NEW",
+                  CUI_CardPick.Get_Title(CPickOption.From_RunSkill(cMagnet, 1)), "자석  NEW");
+            Check("레벨이 하나뿐인 스킬은 레벨을 안 붙인다",
+                  CUI_CardPick.Get_Title(CPickOption.From_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.MOONWALK), 1)), "월보  NEW");
+
+            // 만렙은 후보에서 빠진다
+            dicLevel[RUN_SKILL_TYPE.MAGNET] = cMagnet.iMaxLevel;
+            Check("만렙 스킬은 후보가 아니다",
+                  cSkillTable.Collect_Candidates(fnLevel, iMapID => true).Contains(cMagnet) == false);
+
+            // 슬롯 상한 — 패시브를 5개 들고 있으면 여섯 번째 패시브는 새로 못 얻는다. 가진 것의 레벨업과 액티브는 그대로
+            dicLevel.Clear();
+            RUN_SKILL_TYPE[] arrFive =
+            {
+                RUN_SKILL_TYPE.MOONWALK, RUN_SKILL_TYPE.EVASION, RUN_SKILL_TYPE.MAGNET,
+                RUN_SKILL_TYPE.EDGE_WRAP, RUN_SKILL_TYPE.RAGE,
+            };
+            for (int i = 0; i < arrFive.Length; ++i)
+                dicLevel[arrFive[i]] = 1;
+
+            List<CRunSkillInfo> lstCandidate = cSkillTable.Collect_Candidates(fnLevel, iMapID => true);
+            Check("패시브 보유 수", cSkillTable.Count_Owned(SKILL_CATEGORY.PASSIVE, fnLevel), 5);
+            Check("슬롯 상한 — 여섯 번째 패시브(영혼 수집가)는 안 나온다",
+                  lstCandidate.Contains(cSkillTable.Find_ByType(RUN_SKILL_TYPE.SOUL_COLLECTOR)) == false);
+            Check("슬롯 상한 — 가진 패시브의 레벨업은 나온다",
+                  lstCandidate.Contains(cSkillTable.Find_ByType(RUN_SKILL_TYPE.EVASION)) == true);
+            Check("슬롯 상한 — 액티브는 따로 센다",
+                  lstCandidate.Contains(cSkillTable.Find_ByType(RUN_SKILL_TYPE.ORBIT)) == true);
+
+            // 표가 하나 없어도 돈다
+            Check("런 스킬 표가 없으면 카드만", CPickOption_Utility.Pick(cCardTable, null, fnLevel, null, 3)
+                  .TrueForAll(cOption => cOption.eKind == PICK_KIND.CARD));
+
+            // 가중치 뽑기 공통 함수 — 가중치 0은 안 나오고, 후보보다 많이 달라면 있는 만큼만
+            List<int> lstWeighted = CWeightedPick_Utility.Pick(new List<int> { 0, 5, 0, 7 }, iValue => iValue, 10);
+            Check("가중치 뽑기 — 0은 안 나오고 있는 만큼만", lstWeighted.Count == 2 && lstWeighted.Contains(0) == false);
+        }
+
+        // 260912_카드 3지선다 — 표가 읽히고, 서로 다른 카드가 뽑히고, 효과가 걸리는지
         private static void Test_CardPick()
         {
             CCSVData_CardInfo cTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");

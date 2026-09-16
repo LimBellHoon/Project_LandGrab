@@ -68,16 +68,21 @@ namespace Client
         /// <param name="fnGetLevel"> 그 스킬을 지금 몇 레벨 들고 있는지 (안 가졌으면 0) </param>
         public List<CRunSkillInfo> Pick_Random(int iCount, System.Func<RUN_SKILL_TYPE, int> fnGetLevel,
                                                System.Func<int, bool> fnIsMapCleared, List<CRunSkillInfo> lstResult = null)
+            => CWeightedPick_Utility.Pick(Collect_Candidates(fnGetLevel, fnIsMapCleared), cInfo => cInfo.iWeight,
+                                          iCount, lstResult);
+
+        // 260917_3지선다에 오를 수 있는 스킬 — 카드와 섞어 뽑기 위해 뽑기와 떼어 냈다(CPickOption_Utility).
+        /// <summary>
+        /// 가중치가 있고 · 해금됐고 · 만렙이 아니고 · 새로 얻는 거라면 그 분류(액티브/패시브)의 슬롯이 남아 있는 스킬.
+        /// 이미 가진 스킬의 레벨업은 슬롯을 새로 먹지 않으므로 상한에 걸리지 않는다(Design_RunSkill_Awaken 2장 규칙 1).
+        /// </summary>
+        public List<CRunSkillInfo> Collect_Candidates(System.Func<RUN_SKILL_TYPE, int> fnGetLevel,
+                                                      System.Func<int, bool> fnIsMapCleared)
         {
-            if (lstResult == null)
-                lstResult = new List<CRunSkillInfo>();
+            int iOwnedActive  = Count_Owned(SKILL_CATEGORY.ACTIVE, fnGetLevel);
+            int iOwnedPassive = Count_Owned(SKILL_CATEGORY.PASSIVE, fnGetLevel);
 
-            lstResult.Clear();
-            if (iCount <= 0)
-                return lstResult;
-
-            List<CRunSkillInfo> lstPool = new List<CRunSkillInfo>();
-            int iTotal = 0;
+            List<CRunSkillInfo> lstCandidate = new List<CRunSkillInfo>();
 
             for (int i = 0; i < m_lstInfo.Count; ++i)
             {
@@ -92,32 +97,29 @@ namespace Client
                 if (iLevel >= cInfo.iMaxLevel)
                     continue;
 
-                lstPool.Add(cInfo);
-                iTotal += cInfo.iWeight;
+                int iOwned = cInfo.IS_PASSIVE == true ? iOwnedPassive : iOwnedActive;
+                if (iLevel <= 0 && iOwned >= CRunSkillHandler.SLOT_PER_CATEGORY)
+                    continue;
+
+                lstCandidate.Add(cInfo);
             }
 
-            // 260912_카드 뽑기와 같은 가중치 무작위 추출(같은 스킬이 한 번에 두 장 나오지 않는다).
-            while (lstResult.Count < iCount && lstPool.Count > 0)
+            return lstCandidate;
+        }
+
+        /// <summary> 그 분류의 스킬을 지금 몇 개 들고 있는가. </summary>
+        public int Count_Owned(SKILL_CATEGORY eCategory, System.Func<RUN_SKILL_TYPE, int> fnGetLevel)
+        {
+            if (fnGetLevel == null)
+                return 0;
+
+            int iCount = 0;
+            for (int i = 0; i < m_lstInfo.Count; ++i)
             {
-                int iRoll = Random.Range(0, iTotal);
-                int iPick = lstPool.Count - 1;
-
-                for (int i = 0; i < lstPool.Count; ++i)
-                {
-                    iRoll -= lstPool[i].iWeight;
-                    if (iRoll >= 0)
-                        continue;
-
-                    iPick = i;
-                    break;
-                }
-
-                lstResult.Add(lstPool[iPick]);
-                iTotal -= lstPool[iPick].iWeight;
-                lstPool.RemoveAt(iPick);
+                if (m_lstInfo[i].eCategory == eCategory && fnGetLevel(m_lstInfo[i].eType) > 0)
+                    ++iCount;
             }
-
-            return lstResult;
+            return iCount;
         }
 
         // 헤더 순서와 1:1로 맞춘다.

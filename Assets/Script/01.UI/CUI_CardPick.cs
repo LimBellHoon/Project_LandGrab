@@ -9,6 +9,7 @@ using Engine;
 namespace Client
 {
     // 260912_카드 3지선다 — 점령률을 넘길 때마다 한 번
+    // 260917_런 스킬도 같은 자리에 섞여 나온다(CPickOption). 새로 얻는지 · 몇 레벨이 되는지를 이름 옆에 적는다
     /// <summary>
     /// 셋 중 하나를 고르면 그 판이 끝날 때까지 효과가 유지된다.
     ///
@@ -24,10 +25,12 @@ namespace Client
         [SerializeField] private RectTransform  m_trContent;
         // 260912_CARD_TYPE 순서대로 넣어 둔다. NONE은 0번이라 한 칸 당겨 쓴다.
         [SerializeField] private Sprite[]       m_arrIcon;
+        // 260917_RUN_SKILL_TYPE 순서대로. 흰색으로 구워 두고 분류(액티브/패시브) 색을 칠한다
+        [SerializeField] private Sprite[]       m_arrRunSkillIcon;
 
         private readonly List<GameObject> m_lstSpawned = new List<GameObject>();
 
-        private Action<CCardInfo> m_OnPick;
+        private Action<CPickOption> m_OnPick;
 
         #region Engine.CUI
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -45,7 +48,7 @@ namespace Client
             if (m_txtTitle != null)
                 m_txtTitle.text = cDesc.strTitle;
 
-            Build_Cards(cDesc.lstCard);
+            Build_Cards(cDesc.lstOption);
             return true;
         }
 
@@ -57,16 +60,16 @@ namespace Client
         }
         #endregion Engine.CUI
 
-        private void Build_Cards(IReadOnlyList<CCardInfo> lstCard)
+        private void Build_Cards(IReadOnlyList<CPickOption> lstOption)
         {
             Clear_Cards();
 
-            if (m_btnTemplate == null || m_trContent == null || lstCard == null)
+            if (m_btnTemplate == null || m_trContent == null || lstOption == null)
                 return;
 
-            for (int i = 0; i < lstCard.Count; ++i)
+            for (int i = 0; i < lstOption.Count; ++i)
             {
-                CCardInfo cInfo = lstCard[i];
+                CPickOption cInfo = lstOption[i];
                 if (cInfo == null)
                     continue;
 
@@ -76,12 +79,12 @@ namespace Client
 
                 Text[] arrText = goCard.GetComponentsInChildren<Text>(true);
                 if (arrText.Length > 0)
-                    arrText[0].text = cInfo.strName;
+                    arrText[0].text = Get_Title(cInfo);
                 if (arrText.Length > 1)
-                    arrText[1].text = cInfo.strDesc;
+                    arrText[1].text = cInfo.DESC;
 
-                Color cTint = Get_Tint(cInfo.eType);
-                Paint_Part(goCard, "Img_Icon", Get_Icon(cInfo.eType), cTint);
+                Color cTint = Get_Tint(cInfo);
+                Paint_Part(goCard, "Img_Icon", Get_Icon(cInfo), cTint);
                 Paint_Part(goCard, "Img_Glow", null, cTint);
 
                 Button cButton = goCard.GetComponent<Button>();
@@ -89,10 +92,35 @@ namespace Client
                     continue;
 
                 // 260912_루프 변수를 그대로 넘기면 마지막 카드만 잡힌다. 지역 변수로 묶어 둔다.
-                CCardInfo cPicked = cInfo;
+                CPickOption cPicked = cInfo;
                 cButton.onClick.RemoveAllListeners();
                 cButton.onClick.AddListener(() => On_Click(cPicked));
             }
+        }
+
+        // 260917_런 스킬은 이름 옆에 '새로 얻는가 / 몇 레벨이 되는가'를 붙인다. 레벨이 하나뿐인 스킬은 붙이지 않는다.
+        public static string Get_Title(CPickOption cOption)
+        {
+            if (cOption.eKind == PICK_KIND.CARD)
+                return cOption.NAME;
+
+            if (cOption.IS_NEW == true)
+                return $"{cOption.NAME}  NEW";
+
+            return cOption.cRunSkill.iMaxLevel <= 1 ? cOption.NAME : $"{cOption.NAME}  Lv.{cOption.iNextLevel}";
+        }
+
+        // 260917_런 스킬은 분류로 색을 가른다 — 액티브는 공격적인 주황, 패시브는 청록.
+        // 카드 다섯 색과 겹치지 않게 골랐다(카드는 종류마다 색이 따로 있다).
+        private static readonly Color TINT_RUN_ACTIVE  = new Color(1.00f, 0.50f, 0.20f);
+        private static readonly Color TINT_RUN_PASSIVE = new Color(0.30f, 0.95f, 0.90f);
+
+        private static Color Get_Tint(CPickOption cOption)
+        {
+            if (cOption.eKind == PICK_KIND.RUN_SKILL)
+                return cOption.cRunSkill.IS_PASSIVE == true ? TINT_RUN_PASSIVE : TINT_RUN_ACTIVE;
+
+            return Get_Tint(cOption.cCard.eType);
         }
 
         // 260912_종류마다 색을 달리해 셋을 한눈에 가르게 한다.
@@ -110,14 +138,20 @@ namespace Client
             }
         }
 
-        private Sprite Get_Icon(CARD_TYPE eType)
+        private Sprite Get_Icon(CPickOption cOption)
         {
             // NONE이 0번이라 한 칸 당긴다. 표에 종류를 더하면 배열에도 같은 순서로 넣어야 한다.
-            int iIndex = (int)eType - 1;
-            if (m_arrIcon == null || iIndex < 0 || iIndex >= m_arrIcon.Length)
+            return cOption.eKind == PICK_KIND.CARD
+                 ? Get_ArrayItem(m_arrIcon, (int)cOption.cCard.eType - 1)
+                 : Get_ArrayItem(m_arrRunSkillIcon, (int)cOption.cRunSkill.eType - 1);
+        }
+
+        private static Sprite Get_ArrayItem(Sprite[] arrSprite, int iIndex)
+        {
+            if (arrSprite == null || iIndex < 0 || iIndex >= arrSprite.Length)
                 return null;
 
-            return m_arrIcon[iIndex];
+            return arrSprite[iIndex];
         }
 
         private static void Paint_Part(GameObject goCard, string strName, Sprite spSprite, Color cTint)
@@ -133,7 +167,7 @@ namespace Client
             cImage.color = cTint;
         }
 
-        private void On_Click(CCardInfo cInfo)
+        private void On_Click(CPickOption cInfo)
         {
             // 두 번 눌러 두 장을 먹는 일을 막는다 — 누른 순간 더는 못 누르게 한다.
             for (int i = 0; i < m_lstSpawned.Count; ++i)

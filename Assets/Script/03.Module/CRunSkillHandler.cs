@@ -11,6 +11,10 @@ namespace Client
     /// </summary>
     public class CRunSkillHandler
     {
+        // 260917_한 판에 얻을 수 있는 수 — 액티브 5개 / 패시브 5개 (Design_RunSkill_Awaken 2장 규칙 1).
+        // 이미 가진 스킬의 레벨업은 이 수와 상관없다.
+        public const int SLOT_PER_CATEGORY = 5;
+
         private readonly Dictionary<RUN_SKILL_TYPE, int> m_dicLevel = new Dictionary<RUN_SKILL_TYPE, int>();
 
         public IReadOnlyDictionary<RUN_SKILL_TYPE, int> ALL => m_dicLevel;

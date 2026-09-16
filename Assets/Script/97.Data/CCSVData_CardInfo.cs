@@ -45,48 +45,7 @@ namespace Client
         // 셋 중 하나를 고르는 재미는 '서로 다른 선택지'에서 나온다.
         /// <summary> 서로 다른 카드를 iCount장 뽑는다. 표에 그만큼 없으면 있는 만큼만 준다. </summary>
         public List<CCardInfo> Pick_Random(int iCount, List<CCardInfo> lstResult = null)
-        {
-            if (lstResult == null)
-                lstResult = new List<CCardInfo>();
-
-            lstResult.Clear();
-            if (iCount <= 0)
-                return lstResult;
-
-            List<CCardInfo> lstPool = new List<CCardInfo>();
-            int iTotal = 0;
-
-            for (int i = 0; i < m_lstInfo.Count; ++i)
-            {
-                if (m_lstInfo[i].iWeight <= 0)
-                    continue;
-
-                lstPool.Add(m_lstInfo[i]);
-                iTotal += m_lstInfo[i].iWeight;
-            }
-
-            while (lstResult.Count < iCount && lstPool.Count > 0)
-            {
-                int iRoll = Random.Range(0, iTotal);
-                int iPick = lstPool.Count - 1;       // 부동소수 오차로 끝을 넘기는 경우의 보험
-
-                for (int i = 0; i < lstPool.Count; ++i)
-                {
-                    iRoll -= lstPool[i].iWeight;
-                    if (iRoll >= 0)
-                        continue;
-
-                    iPick = i;
-                    break;
-                }
-
-                lstResult.Add(lstPool[iPick]);
-                iTotal -= lstPool[iPick].iWeight;
-                lstPool.RemoveAt(iPick);
-            }
-
-            return lstResult;
-        }
+            => CWeightedPick_Utility.Pick(m_lstInfo, cInfo => cInfo.iWeight, iCount, lstResult);
 
         protected override void Parse_CSVData(string[] arrField)
         {

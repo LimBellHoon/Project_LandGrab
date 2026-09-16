@@ -493,6 +493,27 @@ CStage_Manager.Apply_Card       효과를 건다
 - 같은 카드가 한 번에 두 장 나오지 않는다(`Pick_Random`). 고르는 재미는 서로 다른 선택지에서 나온다
 - 가중치(`iWeight`)가 0이면 안 나온다 — 카드를 지우지 않고 잠글 때 쓴다
 
+#### 런 스킬도 같은 자리에 섞여 나온다 (260917)
+3지선다 한 칸은 이제 `CPickOption`이다 — 카드(`CardInfo.csv`)이거나 런 스킬(`RunSkillInfo.csv`, 2-11-1)이다.
+**두 표를 한 풀에 넣고 `iWeight`로 뽑는다**(`CPickOption_Utility.Pick`). 어느 쪽이 자주 나올지는 두 표의 가중치로 조절한다.
+
+```
+CGameManager.On_CardReady   카드 표 + 런 스킬 표 + 이번 판 레벨(CPlayer.RUN_SKILL) + 해금(CProgress_Manager.Is_Cleared)
+CPickOption_Utility.Pick    한 풀에 넣고 가중치로 셋 (CWeightedPick_Utility — 카드 · 런 스킬 표가 같이 쓴다)
+CStage_Manager.Apply_Pick   카드면 Apply_Card, 런 스킬이면 CPlayer.Add_RunSkill (새로 얻거나 레벨업)
+```
+
+런 스킬이 후보에 오르는 조건은 `CCSVData_RunSkillInfo.Collect_Candidates` 한곳이다.
+- 해금됐다(`iUnlockMapID` 맵을 깼거나 0) · 만렙이 아니다 · 가중치가 0이 아니다
+- **새로 얻는 스킬이면 그 분류(액티브/패시브)를 5개 미만으로 들고 있다**(`CRunSkillHandler.SLOT_PER_CATEGORY`).
+  이미 가진 스킬의 레벨업은 슬롯을 새로 먹지 않으므로 상한과 상관없다 (Docs/Design_RunSkill_Awaken.md 2장 규칙 1)
+
+화면은 런 스킬 이름 옆에 **`NEW` 또는 `Lv.N`**(고르면 될 레벨)을 붙인다. 레벨이 하나뿐인 스킬(월보 · 신발)은 `NEW`만 붙는다.
+색은 분류로 가른다 — **액티브 주황, 패시브 청록**. 아이콘(`Tex_RunSkill_<RUN_SKILL_TYPE>`)은 흰색으로 구워 이 색을 곱한다.
+**런 스킬 종류를 더하면 `CProtoSetup.ARR_RUN_SKILL_ICON`과 `Is_RunSkillInk`에 `RUN_SKILL_TYPE` 순서대로 넣을 것.**
+
+각성(같은 문서 규칙 3~5)은 아직 없다 — 후보 종류가 하나 더 느는 자리가 `CPickOption`이다.
+
 카드는 **색과 아이콘이 먼저 읽히게** 만든다. 글자만으로는 순간적으로 고르기 어렵다.
 종류마다 아이콘(`Tex_Card_<CARD_TYPE>`)과 색이 정해져 있고, 테두리 발광도 같은 색으로 칠한다.
 발광은 9슬라이스(`Tex_CardGlow`)라 카드 크기가 달라져도 두께가 유지된다.
@@ -625,6 +646,8 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 영구히 남는다.
 
 **액티브/패시브 조합으로 액티브를 각성시키는 조합식**은 아직 설계하지 않았다 — 다음 단계.
+
+> 260917_**3지선다에 연결했다**(2-10-1). 이제 카드와 섞여 나와 실제 게임에서 얻을 수 있다.
 
 8종 전부 코드가 붙었다. 마지막 둘(회전탄/몽둥이)은 이 프로젝트에 없던 "몬스터가 전투로
 죽는다"는 개념을 처음 요구해서, 최소한의 HP/넉백 골격(`CEnemy.Damage`/`IS_DEAD`,

@@ -73,6 +73,7 @@ namespace Client
         private CCSVData_EquipInfo  m_cEquipTable;      // 260905_장비 표
         private CCSVData_CardInfo   m_cCardTable;       // 260912_카드 표
         private CCSVData_ProjectileInfo m_cProjectileTable; // 260917_탄 표
+        private CCSVData_RunSkillInfo   m_cRunSkillTable;   // 260917_런 스킬 표 — 3지선다에 카드와 섞는다
         private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
@@ -298,6 +299,8 @@ namespace Client
             m_cEquipTable = m_cGameInstance.Get_CSVData(CCSVData_EquipInfo.CSV_KEY) as CCSVData_EquipInfo;
             // 260912_카드 표가 없으면 카드만 안 나오고 나머지는 그대로 돈다.
             m_cCardTable  = m_cGameInstance.Get_CSVData(CCSVData_CardInfo.CSV_KEY) as CCSVData_CardInfo;
+            // 260917_런 스킬 표가 없으면 3지선다에 카드만 나온다.
+            m_cRunSkillTable   = m_cGameInstance.Get_CSVData(CCSVData_RunSkillInfo.CSV_KEY) as CCSVData_RunSkillInfo;
             // 260917_탄 표가 없으면 포수가 쏘지 않을 뿐 나머지는 그대로 돈다.
             m_cProjectileTable = m_cGameInstance.Get_CSVData(CCSVData_ProjectileInfo.CSV_KEY) as CCSVData_ProjectileInfo;
             m_cImpactTable     = m_cGameInstance.Get_CSVData(CCSVData_ImpactInfo.CSV_KEY) as CCSVData_ImpactInfo;
@@ -411,7 +414,7 @@ namespace Client
         // 카드를 보는 사이에 몬스터에게 맞으면 고르는 재미가 아니라 벌이 된다.
         private void On_CardReady()
         {
-            if (m_cCardTable == null || m_cCardTable.COUNT == 0)
+            if (m_cCardTable == null && m_cRunSkillTable == null)
                 return;
 
             if (m_cGameInstance.Has_Prefab(PREFAB_UI_CARDPICK) == false)
@@ -421,8 +424,14 @@ namespace Client
                 return;
             }
 
-            List<CCardInfo> lstCard = m_cCardTable.Pick_Random(CARD_PICK_COUNT);
-            if (lstCard.Count == 0)
+            // 260917_카드와 런 스킬을 한 풀에 넣어 뽑는다. 레벨은 이번 판 플레이어가, 해금은 계정 진행도가 안다.
+            CRunSkillHandler cRunSkill = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.RUN_SKILL : null;
+            List<CPickOption> lstOption = CPickOption_Utility.Pick(
+                m_cCardTable, m_cRunSkillTable,
+                eType => cRunSkill != null ? cRunSkill.Get_Level(eType) : 0,
+                m_cProgressManager.Is_Cleared,
+                CARD_PICK_COUNT);
+            if (lstOption.Count == 0)
                 return;
 
             m_cStageManager.Set_Pause(true);
@@ -433,17 +442,17 @@ namespace Client
             CUI_CardPickDesc cDesc = new CUI_CardPickDesc
             {
                 eObjectType = OBJECT_TYPE.UI_POPUP,
-                strTitle    = "카드를 고르세요",
-                lstCard     = lstCard,
+                strTitle    = "하나를 고르세요",
+                lstOption   = lstOption,
                 OnPick      = On_CardPicked,
             };
 
             m_cCardUI = m_cGameInstance.Open_UI<CUI_CardPick>(cDesc, m_trUIPopup);
         }
 
-        private void On_CardPicked(CCardInfo cInfo)
+        private void On_CardPicked(CPickOption cOption)
         {
-            m_cStageManager.Apply_Card(cInfo);
+            m_cStageManager.Apply_Pick(cOption);
 
             if (m_cCardUI != null)
             {

@@ -197,14 +197,15 @@ namespace Client
     public class CUI_CardPickDesc : CUIDesc
     {
         public string                   strTitle { get; set; }
-        public IReadOnlyList<CCardInfo> lstCard  { get; set; }
-        public Action<CCardInfo>        OnPick   { get; set; }
+        // 260917_카드와 런 스킬이 섞여 들어온다
+        public IReadOnlyList<CPickOption> lstOption { get; set; }
+        public Action<CPickOption>        OnPick    { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
-            lstCard = null;
-            OnPick  = null;
+            lstOption = null;
+            OnPick    = null;
         }
     }
 
