@@ -58,6 +58,8 @@ namespace Client
         public int              iCoinPerStar;
         // 260912_이 점령률을 넘을 때마다 카드를 한 번 고른다. 웨이브가 아니라 판 전체 기준이다.
         public List<float>      lstCardRatio = new List<float>();
+        // 260917_이 맵을 클리어하면 얻거나 강화하는 캐릭터(CharacterInfo.csv ID). 0이면 잔향/파밍 스테이지.
+        public int               iCharacterID;
         public List<string>     lstLayerTex = new List<string>();
         public List<CWaveInfo>  lstWave     = new List<CWaveInfo>();
 
@@ -125,6 +127,7 @@ namespace Client
                 strShapeMask    = CCSV_Utility.To_String(arrField, 9),
                 iCoinPerStar    = CCSV_Utility.To_Int(arrField, 14, 50),
                 lstCardRatio    = CCSV_Utility.To_FloatList(arrField, 15),
+                iCharacterID    = CCSV_Utility.To_Int(arrField, 16),
             };
 
             if (cInfo.iMapID <= 0)

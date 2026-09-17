@@ -1,0 +1,11 @@
+﻿iCharacterID	strName	strPrefabName	iMaxLevel	fSpeedRateBase	fSpeedRatePerLevel	fMaxHpRateBase	fMaxHpRatePerLevel	fEvasionBonusBase	fEvasionBonusPerLevel	strDesc	NONE
+;== 캐릭터 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
+;캐릭터는 스킨(외형)과 스탯 배율만 다르다 — 전용 스킬은 없다(런 스킬 뽑기 풀은 전 캐릭터 공통, 노션 "캐릭터 시스템" 카드 4장 A안)
+;fSpeedRateBase/PerLevel : MapInfo.fPlayerSpeed에 곱하는 배율. 1레벨 기준이 Base, 레벨마다 PerLevel씩 늘어난다
+;fMaxHpRateBase/PerLevel : MapInfo.iMaxHp(+강화 보너스)에 곱하는 배율
+;fEvasionBonusBase/PerLevel : 회피율에 더하는 값(0~1). 곱하지 않고 더한다 — 강화/장비 회피와 같은 갈래
+;iMaxLevel : 강화 상한. 겹치는 캐릭터(잔향 조각)를 얻을 때마다 1레벨씩 오른다(CProgress_Manager.Add_Or_LevelUpCharacter)
+;strPrefabName : 전용 스킨 프리팹이 아직 없으면(Setup Assets 전) 기본 Prefab_Player로 대체된다(CStage_Manager.Spawn_Player) — 표에는 최종 이름을 적어 둔다
+;---	이름	프리팹	최대레벨	속도배율	속도배율/Lv	체력배율	체력배율/Lv	회피보너스	회피보너스/Lv	설명	메모
+1	리네트	Prefab_Character_Rinette	10	1	0	1.15	0.03	0	0.01	전직 결계 경비대 — 몽둥이	노션 세계관 카드 참고
+2	셀레스티안	Prefab_Character_Celestian	10	1.05	0.01	0.95	0.01	0.03	0.01	별자리 회의 수제자 — 회전탄	노션 세계관 카드 참고

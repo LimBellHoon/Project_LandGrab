@@ -152,6 +152,7 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | `ImpactInfo.csv` | `CCSVData_ImpactInfo` | 맞은 대상에게 남는 효과 (2-15) |
 | `RunSkillInfo.csv` | `CCSVData_RunSkillInfo` | 런 스킬 — 해금 · 레벨 · 투사체 무기 열 (2-11-1, 2-11-2) |
 | `AwakenInfo.csv` | `CCSVData_AwakenInfo` | 런 스킬 각성 — 액티브 + 짝 패시브 (2-11-2) |
+| `CharacterInfo.csv` | `CCSVData_CharacterInfo` | 캐릭터 — 스킨 프리팹 · 레벨별 스탯 배율 (2-17) |
 
 > 표를 추가하면 `CProtoSetup`의 **`ARR_CSV`와 `ARR_CSV_TYPE` 두 곳 모두**에 넣을 것.
 > 한쪽만 넣으면 검증이 배열 밖을 짚어 예외로 죽는다(260912에 가드를 넣어 이제는 이름을 대고 멈춘다).
@@ -927,6 +928,31 @@ M4 보스 패턴용 골격이라 **아직 붙은 곳이 없다.**
 - `Evaluate(dt)`로 시간을 주입한다 — 화면 없이 검증한다
 - Selector가 우선순위 높은 자식에게 넘어갈 때 **하던 자식을 끊는다**(원본은 OnExit가 안 불렸다)
 - 3D 전투 노드(대시 · 콤보 등)는 CharacterController 전용이라 옮기지 않았다
+
+### 2-17. 캐릭터 시스템 — 스킨 + 스탯 배율 (260917, 골격)
+캐릭터는 **전용 스킬이 없다.** 런 스킬 풀(2-11-1/2-11-2)은 전 캐릭터 공통이고, 캐릭터마다 다른 것은
+스킨(프리팹)과 스탯 배율(속도 · 체력 · 회피)뿐이다 — 캐릭터가 늘 때마다 밸런싱 비용이 같이 느는
+전용 킷 구조를 피했다. 로비 "가방"에서 장착을 바꾸고, 스테이지 진입 후에는 못 바꾼다.
+
+```
+CharacterInfo.csv          캐릭터별 프리팹 이름 · 최대레벨 · 레벨당 속도/체력 배율 · 회피 보너스
+CStageProgress             보유 캐릭터 + 레벨 + 지금 장착한 캐릭터(스킬 레벨과 같은 자리)
+CProgress_Manager          Add_Or_LevelUpCharacter(처음 얻으면 자동 장착) / Try_EquipCharacter
+CStage_Manager.Set_Character  CGameManager가 장착 캐릭터 정보를 넘긴다 → Spawn_Player가 반영
+```
+
+- `MapInfo.csv`의 `iCharacterID`가 그 맵(각성 스테이지)을 클리어하면 얻거나 강화할 캐릭터다.
+  0이면 캐릭터를 안 주는 잔향/파밍 스테이지다
+- **같은 캐릭터를 다시 얻으면 새 캐릭터가 아니라 레벨업이다**("잔향 조각" — 이미 구출한 그 아이의
+  힘이 느는 것으로 노션에서 서사를 붙였다). 만렙을 넘지 않는다
+- `Get_SpeedRate`/`Get_MaxHpRate`/`Get_EvasionBonus`는 **레벨 0(미보유)도 레벨 1로 클램프한다** —
+  `CRunSkillInfo.Get_Value`(레벨 0이면 0)와 다른 의도적 차이다. 곱셈용 배율이 0이면 스탯이 사라진다
+- 캐릭터 스킨 프리팹(`Prefab_Character_*`)이 아직 없어도(로컬 `Setup Assets` 전) 게임이 죽지
+  않는다 — `Spawn_Player`가 `Has_Prefab`으로 먼저 확인하고 없으면 기본 `Prefab_Player`로
+  대체하며 경고만 남긴다(3장 "프리팹 누락" 결정과 같은 자리). 스탯 배율은 스킨과 무관하게 그대로 적용된다
+- **가방 탭 UI(캐릭터 서브탭)는 아직 없다** — 로컬에서 `Setup Assets`가 필요한 프리팹 작업이라
+  클라우드 세션에서는 만들 수 없다. 지금은 `CProgress_Manager`가 처음 얻은 캐릭터를 자동 장착하므로
+  UI 없이도 로직은 동작한다
 
 
 ---

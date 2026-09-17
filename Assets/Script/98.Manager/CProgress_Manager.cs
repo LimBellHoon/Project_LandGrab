@@ -291,6 +291,49 @@ namespace Client
             return null;
         }
 
+        #region 260917_캐릭터 (스킨 + 스탯 배율, 노션 "캐릭터 시스템" 카드 4장)
+        public int  EQUIPPED_CHARACTER_ID          => m_cProgress.iEquippedCharacterID;
+        public bool Has_Character(int iCharacterID)     => m_cProgress.Has_Character(iCharacterID);
+        public int  Get_CharacterLevel(int iCharacterID) => m_cProgress.Get_CharacterLevel(iCharacterID);
+
+        // 260917_각성 스테이지(MapInfo.iCharacterID > 0) 클리어마다 부른다.
+        // 처음 클리어면 1레벨로 얻고 곧바로 장착한다. 이미 있으면 잔향 조각으로 레벨업만 한다.
+        /// <returns> 레벨이 올랐으면(또는 새로 얻었으면) true. 표에 없거나 이미 만렙이면 false. </returns>
+        public bool Add_Or_LevelUpCharacter(CCSVData_CharacterInfo cTable, int iCharacterID)
+        {
+            CCharacterInfo cInfo = cTable != null ? cTable.Get_Info(iCharacterID) : null;
+            if (cInfo == null)
+                return false;
+
+            int iLevel = m_cProgress.Get_CharacterLevel(iCharacterID);
+            if (iLevel >= cInfo.iMaxLevel)
+                return false;
+
+            m_cProgress.Set_CharacterLevel(iCharacterID, iLevel + 1);
+
+            // 260917_처음 얻은 캐릭터는 곧바로 장착한다 — 안 그러면 그 판을 나가도 여전히 이전 캐릭터로 던전에 들어간다.
+            if (iLevel <= 0)
+                m_cProgress.iEquippedCharacterID = iCharacterID;
+
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        /// <summary> 가방에서 캐릭터를 갈아 낀다. 보유하지 않은 캐릭터는 무시한다. </summary>
+        public bool Try_EquipCharacter(int iCharacterID)
+        {
+            if (m_cProgress.Has_Character(iCharacterID) == false)
+                return false;
+
+            if (m_cProgress.iEquippedCharacterID == iCharacterID)
+                return true;
+
+            m_cProgress.iEquippedCharacterID = iCharacterID;
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+        #endregion 260917_캐릭터
+
         public int Get_SkillLevel(SKILL_TYPE eType) => m_cProgress.Get_SkillLevel(eType);
 
         /// <summary> 스킬 강화. 코인이 모자라거나 만렙이면 아무 일도 없다. </summary>

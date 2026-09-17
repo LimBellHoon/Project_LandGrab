@@ -44,6 +44,8 @@ namespace Client
             Test_ShapeMask();
             Test_DirtyCell();
             Test_StageProgress();
+            Test_CharacterTable();
+            Test_Character();
             Test_Star();
             Test_Currency();
             Test_Skill();
@@ -2423,6 +2425,82 @@ namespace Client
             // 저장 왕복 (JSON 직렬화가 깨지지 않는지)
             CStageProgress cSaved = cRepo.STORED;
             Check("저장된 기록에 클리어가 담김", cSaved != null && cSaved.Is_Cleared(iFirst));
+        }
+
+        // 260917_캐릭터 표 — 레벨 스케일링(속도·체력 배율, 회피 보너스)이 CRunSkillInfo와
+        // 다르게 레벨 0도 1로 클램프되는지(2-11-1 Get_Value와의 의도적 차이) 본다.
+        private static void Test_CharacterTable()
+        {
+            CCSVData_CharacterInfo cTable = Load_CsvTable<CCSVData_CharacterInfo>("CharacterInfo");
+            if (cTable == null || cTable.COUNT < 1)
+            {
+                Check("CharacterInfo.csv 로드", false);
+                return;
+            }
+
+            CCharacterInfo cInfo = cTable.ALL[0];
+            Check("레벨 0(미보유)도 속도배율 1 이상", cInfo.Get_SpeedRate(0) > 0f);
+            Check("레벨 0도 체력배율 1 이상", cInfo.Get_MaxHpRate(0) > 0f);
+            Check("레벨 1과 레벨 0의 배율이 같다(최소 레벨 1로 클램프)",
+                  Mathf.Approximately(cInfo.Get_SpeedRate(0), cInfo.Get_SpeedRate(1)));
+
+            if (cInfo.iMaxLevel > 1)
+            {
+                Check("레벨이 오르면 속도배율도 오르거나 유지", cInfo.Get_SpeedRate(2) >= cInfo.Get_SpeedRate(1));
+                Check("만렙을 넘겨도 값이 그대로", Mathf.Approximately(cInfo.Get_SpeedRate(99), cInfo.Get_SpeedRate(cInfo.iMaxLevel)));
+            }
+
+            Check("표에 없는 ID는 null", cTable.Get_Info(99999) == null);
+        }
+
+        // 260917_보유·강화·장착 — CStageProgress 저장/왕복과 CProgress_Manager의 만렙 클램프를 함께 본다.
+        private static void Test_Character()
+        {
+            CCSVData_CharacterInfo cTable = Load_CsvTable<CCSVData_CharacterInfo>("CharacterInfo");
+            if (cTable == null || cTable.COUNT < 1)
+            {
+                Check("CharacterInfo.csv 로드(Test_Character)", false);
+                return;
+            }
+
+            int iCharacterID = cTable.ALL[0].iCharacterID;
+            int iMaxLevel    = cTable.ALL[0].iMaxLevel;
+
+            CFakeProgressRepository cRepo = new CFakeProgressRepository();
+            CProgress_Manager cProgress = new CProgress_Manager();
+            Check("진행도 초기화(캐릭터)", cProgress.Initialize(Load_MapTable(), cRepo));
+
+            Check("처음엔 캐릭터를 갖고 있지 않다", cProgress.Has_Character(iCharacterID) == false);
+            Check("처음 장착 캐릭터는 없다(0)", cProgress.EQUIPPED_CHARACTER_ID, 0);
+
+            // 처음 얻으면 1레벨 + 자동 장착
+            Check("처음 얻으면 성공", cProgress.Add_Or_LevelUpCharacter(cTable, iCharacterID));
+            Check("얻은 뒤 보유", cProgress.Has_Character(iCharacterID));
+            Check("얻은 뒤 레벨 1", cProgress.Get_CharacterLevel(iCharacterID), 1);
+            Check("처음 얻으면 자동 장착", cProgress.EQUIPPED_CHARACTER_ID, iCharacterID);
+
+            // 잔향 조각으로 다시 클리어하면 레벨업
+            bool bLeveledUp = cProgress.Add_Or_LevelUpCharacter(cTable, iCharacterID);
+            int iExpectLevel = Mathf.Min(2, iMaxLevel);
+            Check("재클리어로 레벨업(또는 이미 만렙)", bLeveledUp == (iMaxLevel > 1));
+            Check("재클리어 후 레벨", cProgress.Get_CharacterLevel(iCharacterID), iExpectLevel);
+
+            // 만렙을 넘기지 않는다
+            for (int i = 0; i < iMaxLevel + 3; ++i)
+                cProgress.Add_Or_LevelUpCharacter(cTable, iCharacterID);
+            Check("만렙을 넘지 않는다", cProgress.Get_CharacterLevel(iCharacterID), iMaxLevel);
+            Check("만렙이면 더 얻어도 실패를 반환", cProgress.Add_Or_LevelUpCharacter(cTable, iCharacterID) == false);
+
+            // 표에 없는 ID / 못 가진 캐릭터는 장착할 수 없다
+            Check("없는 캐릭터는 얻을 수 없다", cProgress.Add_Or_LevelUpCharacter(cTable, 99999) == false);
+            Check("못 가진 캐릭터는 장착할 수 없다", cProgress.Try_EquipCharacter(99999) == false);
+            Check("가진 캐릭터는 장착할 수 있다", cProgress.Try_EquipCharacter(iCharacterID));
+
+            // 저장 왕복(JSON) — 보유·레벨·장착이 그대로 남는가
+            CStageProgress cSaved = cRepo.STORED;
+            Check("저장된 기록에 캐릭터가 담긴다", cSaved != null && cSaved.Has_Character(iCharacterID));
+            Check("저장된 기록의 레벨이 유지된다", cSaved != null && cSaved.Get_CharacterLevel(iCharacterID) == iMaxLevel);
+            Check("저장된 기록의 장착이 유지된다", cSaved != null && cSaved.iEquippedCharacterID == iCharacterID);
         }
 
         /// <summary> 테스트용 메모리 저장소 — PlayerPrefs를 건드리지 않는다. </summary>

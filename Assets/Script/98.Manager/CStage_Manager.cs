@@ -126,6 +126,12 @@ namespace Client
         private CSkillInfo      m_cSkillInfo;           // 260905_장착한 액티브 스킬
         private int             m_iSkillLevel;          // 260905_스킬 강화 레벨
 
+        // 260917_장착 캐릭터(스킨 + 스탯 배율만 다르다. 전용 스킬 없음 — 노션 "캐릭터 시스템" 카드 4장).
+        private string          m_strCharacterPrefab;   // 비어 있으면 기본 PREFAB_PLAYER
+        private float           m_fCharSpeedRate   = 1f;
+        private float           m_fCharHpRate      = 1f;
+        private float           m_fCharEvasionBonus;
+
         /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
         /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
         /// <param name="iBonusHp"> 맵 기본 최대 체력에 더할 양 </param>
@@ -134,6 +140,16 @@ namespace Client
             m_fSpeedRate = Mathf.Max(0.1f, fSpeedRate);
             m_fEvasion   = Mathf.Clamp01(fEvasion);
             m_iBonusHp   = Mathf.Max(0, iBonusHp);
+        }
+
+        // 260917_가방에서 장착한 캐릭터. Start_Stage 전에 넣어 둔다.
+        /// <param name="cInfo"> 없으면(null) 기본 스킨·배율 1로 되돌아간다 </param>
+        public void Set_Character(CCharacterInfo cInfo, int iLevel)
+        {
+            m_strCharacterPrefab = cInfo != null ? cInfo.strPrefabName : null;
+            m_fCharSpeedRate     = cInfo != null ? cInfo.Get_SpeedRate(iLevel)    : 1f;
+            m_fCharHpRate        = cInfo != null ? cInfo.Get_MaxHpRate(iLevel)    : 1f;
+            m_fCharEvasionBonus  = cInfo != null ? cInfo.Get_EvasionBonus(iLevel) : 0f;
         }
 
         // 260905_장착 시스템이 생기기 전까지는 CGameManager가 표에서 골라 넣어 준다.
@@ -596,9 +612,21 @@ namespace Client
 
         private bool Spawn_Player()
         {
-            if (Has_Prefab(PREFAB_PLAYER) == false)
+            // 260917_캐릭터 스킨 프리팹이 아직 없으면(Setup Assets 전) 기본 프리팹으로 대체한다 —
+            // 프리팹 누락이 스테이지 전체를 죽인 적이 있다(260903 결정, 3장). 스탯 배율은 스킨과 상관없이 그대로 적용된다.
+            string strPrefab = PREFAB_PLAYER;
+            if (string.IsNullOrEmpty(m_strCharacterPrefab) == false)
             {
-                Debug.LogError($"[CStage_Manager] '{PREFAB_PLAYER}'를 찾을 수 없습니다. "
+                if (Has_Prefab(m_strCharacterPrefab) == true)
+                    strPrefab = m_strCharacterPrefab;
+                else
+                    Debug.LogWarning($"[CStage_Manager] 캐릭터 스킨 '{m_strCharacterPrefab}'이 없어 기본 스킨으로 대체합니다. "
+                                    + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+            }
+
+            if (Has_Prefab(strPrefab) == false)
+            {
+                Debug.LogError($"[CStage_Manager] '{strPrefab}'를 찾을 수 없습니다. "
                              + "Unity 메뉴 Tools/LandGrab/Setup Assets 를 실행한 뒤 다시 시도하세요.");
                 return false;
             }
@@ -606,15 +634,15 @@ namespace Client
             CPlayerDesc cPlayerDesc = new CPlayerDesc
             {
                 eObjectType     = OBJECT_TYPE.PLAYER,
-                strPrefabName   = PREFAB_PLAYER,
+                strPrefabName   = strPrefab,
                 cGrid           = m_cGrid,
                 vStartCell      = Find_StartCell(),
-                // 260905_능력치 강화 반영
-                fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate,
-                fEvasion        = m_fEvasion,
+                // 260905_능력치 강화 + 260917_캐릭터 배율을 함께 반영
+                fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate * m_fCharSpeedRate,
+                fEvasion        = m_fEvasion + m_fCharEvasionBonus,
                 cSkillInfo      = m_cSkillInfo,
                 iSkillLevel     = m_iSkillLevel,
-                iMaxHp          = m_cMapInfo.iMaxHp + m_iBonusHp,
+                iMaxHp          = Mathf.RoundToInt((m_cMapInfo.iMaxHp + m_iBonusHp) * m_fCharHpRate),
             };
 
             GameObject goPlayer = CGameInstance.Instance.Reuse_Object(cPlayerDesc);

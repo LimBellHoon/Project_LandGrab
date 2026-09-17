@@ -38,6 +38,15 @@ namespace Client
         public int iCount;
     }
 
+    // 260917_캐릭터 보유·강화 기록. 각성 스테이지를 다시 클리어하면(잔향 조각) 레벨만 오른다 —
+    // 새 캐릭터가 아니라 이미 구출한 그 아이의 힘이 늘어나는 것이다(노션 "캐릭터 시스템" 카드 4장).
+    [Serializable]
+    public class CCharacterRecord
+    {
+        public int iCharacterID;
+        public int iLevel;
+    }
+
 
     [Serializable]
     public class CStageProgress
@@ -58,6 +67,10 @@ namespace Client
         // 260905_구버전(별이 없던 시절) 기록. Migrate_Legacy로 옮기고 비운다.
         // 필드를 지우면 JsonUtility가 옛 저장본을 읽을 때 그냥 버려서 진행도가 날아간다.
         public List<int>        lstClearedMap = new List<int>();
+
+        // 260917_보유 캐릭터·강화 레벨 + 지금 장착한 캐릭터. 스킬 레벨(lstSkillLevel)과 같은 자리다.
+        public List<CCharacterRecord> lstCharacter = new List<CCharacterRecord>();
+        public int                    iEquippedCharacterID;
 
         /// <summary> 별 하나라도 얻었으면 그 맵은 클리어한 것이다(웨이브 하나만 달성해도 클리어). </summary>
         public bool Is_Cleared(int iMapID) => Get_Star(iMapID) >= 1;
@@ -254,6 +267,42 @@ namespace Client
             }
 
             lstSkillLevel.Add(new CUpgradeRecord { eType = (STAT_TYPE)eType, iLevel = iLevel });
+        }
+
+        // 260917_캐릭터. Get/Set은 Get_UpgradeLevel/Set_UpgradeLevel과 같은 자리다 —
+        // 만렙 클램프는 표를 아는 쪽(CProgress_Manager)이 하고, 여기는 그대로 저장만 한다.
+        public bool Has_Character(int iCharacterID) => Get_CharacterLevel(iCharacterID) > 0;
+
+        public int Get_CharacterLevel(int iCharacterID)
+        {
+            CCharacterRecord cRecord = Find_Character(iCharacterID);
+            return cRecord != null ? cRecord.iLevel : 0;
+        }
+
+        public void Set_CharacterLevel(int iCharacterID, int iLevel)
+        {
+            if (iCharacterID <= 0 || iLevel < 0)
+                return;
+
+            CCharacterRecord cRecord = Find_Character(iCharacterID);
+            if (cRecord == null)
+            {
+                lstCharacter.Add(new CCharacterRecord { iCharacterID = iCharacterID, iLevel = iLevel });
+                return;
+            }
+
+            cRecord.iLevel = iLevel;
+        }
+
+        private CCharacterRecord Find_Character(int iCharacterID)
+        {
+            for (int i = 0; i < lstCharacter.Count; ++i)
+            {
+                if (lstCharacter[i].iCharacterID == iCharacterID)
+                    return lstCharacter[i];
+            }
+
+            return null;
         }
 
 

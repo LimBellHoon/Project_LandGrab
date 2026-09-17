@@ -76,6 +76,7 @@ namespace Client
         private CCSVData_RunSkillInfo   m_cRunSkillTable;   // 260917_런 스킬 표 — 3지선다에 카드와 섞는다
         private CCSVData_AwakenInfo     m_cAwakenTable;     // 260917_각성 표 — 없으면 각성 후보가 안 나온다
         private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
+        private CCSVData_CharacterInfo  m_cCharacterTable;  // 260917_캐릭터 표(스킨 + 스탯 배율)
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cInGameUI;
@@ -306,6 +307,8 @@ namespace Client
             // 260917_탄 표가 없으면 포수가 쏘지 않을 뿐 나머지는 그대로 돈다.
             m_cProjectileTable = m_cGameInstance.Get_CSVData(CCSVData_ProjectileInfo.CSV_KEY) as CCSVData_ProjectileInfo;
             m_cImpactTable     = m_cGameInstance.Get_CSVData(CCSVData_ImpactInfo.CSV_KEY) as CCSVData_ImpactInfo;
+            // 260917_캐릭터 표가 없으면 전부 기본 스킨/배율(1배)로 진행한다.
+            m_cCharacterTable  = m_cGameInstance.Get_CSVData(CCSVData_CharacterInfo.CSV_KEY) as CCSVData_CharacterInfo;
             if (m_cProjectileTable == null)
             {
                 Debug.LogWarning("[CGameManager] ProjectileInfo.csv를 읽지 못해 탄 없이 진행합니다. "
@@ -602,6 +605,12 @@ namespace Client
             m_cStageManager.Set_PlayerSkill(cSkill,
                 cSkill != null ? m_cProgressManager.Get_SkillLevel(cSkill.eType) : 0);
 
+            // 260917_장착 캐릭터(스킨 + 스탯 배율). 표/보유 캐릭터가 없으면 기본 스킨·배율 1로 진행한다.
+            int iCharacterID = m_cProgressManager.EQUIPPED_CHARACTER_ID;
+            CCharacterInfo cCharacter = iCharacterID > 0 && m_cCharacterTable != null
+                                      ? m_cCharacterTable.Get_Info(iCharacterID) : null;
+            m_cStageManager.Set_Character(cCharacter, m_cProgressManager.Get_CharacterLevel(iCharacterID));
+
             // 260917_탄 표와 개발용 투사체 스위치
             m_cStageManager.Set_ProjectileSetting(m_cProjectileTable, m_cImpactTable,
                                                   m_cConfig.DEV_AUTO_FIRE_ID, m_cConfig.DEV_AUTO_FIRE_COOL,
@@ -714,6 +723,15 @@ namespace Client
 
             if (m_iLastCoin > 0)
                 m_cProgressManager.Add_Coin(m_iLastCoin);
+
+            // 260917_이 맵이 캐릭터를 주는 맵(각성 스테이지)이면 처음 클리어 시 얻고,
+            // 이미 가진 캐릭터면 잔향 조각으로 강화한다(노션 "캐릭터 시스템" 카드 4장).
+            if (m_bLastCleared == true && m_cCharacterTable != null)
+            {
+                CMapInfo cClearedMap = m_cMapTable.Get_Info(m_cStageManager.MAP_ID);
+                if (cClearedMap != null && cClearedMap.iCharacterID > 0)
+                    m_cProgressManager.Add_Or_LevelUpCharacter(m_cCharacterTable, cClearedMap.iCharacterID);
+            }
 
             // 260916_결과 화면과 같은 기준(m_bLastCleared)으로 고른다 — STAGE_STATE.FAIL이어도
             // 별을 하나 이상 땄으면 화면은 "클리어!"라고 뜨므로 소리도 거기 맞춘다.
