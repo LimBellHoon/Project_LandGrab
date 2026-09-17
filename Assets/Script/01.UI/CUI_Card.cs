@@ -136,6 +136,13 @@ namespace Client
             imgThumb.raycastTarget = false;
         }
 
+        // 260918_클라우드 작업에서 호출만 있고 정의가 빠져 컴파일되지 않았다 — CUI_Inventory와 같은 모양으로 채웠다.
+        private void Set_Title(string strTitle)
+        {
+            if (m_txtTitle != null)
+                m_txtTitle.text = strTitle;
+        }
+
         private void Clear_List()
         {
             for (int i = 0; i < m_lstButton.Count; ++i)

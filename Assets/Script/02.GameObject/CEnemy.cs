@@ -202,8 +202,10 @@ namespace Client
             if (m_cBehaviorTree == null)
                 m_cBehaviorTree = new CBehaviorTreeHandler();
 
-            m_cBehaviorTree.BLACKBOARD.Set(BLACKBOARD_KEY.ATTACK_RANGE, m_fGimmickRange);
+            // 260918_순서 주의 — Set_Tree가 블랙보드를 비우므로 트리를 먼저 꽂고 값을 넣는다.
+            // 거꾸로 하면 사거리가 0으로 지워져 포수가 늘 '사거리 밖'으로 보고 끝까지 쫓아온다.
             m_cBehaviorTree.Set_Tree(CEnemyBehaviorTree_Utility.Build_Kite(this, m_cBehaviorTree.BLACKBOARD, m_cGrid.CELL_SIZE));
+            m_cBehaviorTree.BLACKBOARD.Set(BLACKBOARD_KEY.ATTACK_RANGE, m_fGimmickRange);
         }
 
         /// <summary> 기믹이 무언가를 소환할 창구를 꽂아 준다. 스테이지가 몬스터를 만든 직후 부른다. </summary>

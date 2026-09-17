@@ -2,6 +2,8 @@
 
 using UnityEngine;
 
+using Engine;
+
 namespace Client
 {
     // 260917_캐릭터 표 (Assets/Data/CharacterInfo.csv)
