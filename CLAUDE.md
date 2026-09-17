@@ -843,7 +843,7 @@ CProjectile (풀 · 그리기) ── CProjectileCore (규칙 전부, 화면 없
                               ├─ CProjectileShape   POINT 원 / LASER 예고선→빔 / SWEEP 맵 끝까지 뻗는 띠 / BLAST 커지는 원
                               ├─ CProjectileMove    NONE / STRAIGHT / TRACE / SPIRAL / BOOMERANG / ORBIT / SYNC
                               └─ CProjectileTrait×N REBOUND / GRAVITY_* / KNOCKBACK_* / ENTER_STUN / STAY_STUN /
-                                                    HIT_STOP / SCALE_OVER_TIME / STAY_STOP / WHITE_OUT (+RANDOM)
+                                                    HIT_STOP / SCALE_OVER_TIME / STAY_STOP / WHITE_OUT / CHAIN (+RANDOM)
 맞은 대상 ── CImpactHandler   기절 · 감속 · 도트 · 번쩍임 타이머 (ImpactInfo.csv: STUN SLOW DOT KNOCKBACK EXPLODE)
 ```
 
@@ -857,8 +857,23 @@ GYM은 위치로 읽어 특성 하나를 빼면 값이 엉뚱한 특성으로 �
 `LASER_TELEGRAPH` `LASER_THICKEN` `LASER_FADE` `LASER_WIDTH` / `SWEEP_TIME` / `BLAST_GROW` `BLAST_SCALE` /
 `TRACE_TURN` / `SPIRAL_ROTATE` `SPIRAL_EXPAND` / `BOOMERANG_OUT` `BOOMERANG_STAY` / `ORBIT_RADIUS` `ORBIT_SPEED` /
 `GRAVITY_POWER` / `KNOCKBACK_DISTANCE` `KNOCKBACK_TIME` / `STUN_TIME` / `HITSTOP_TIME` / `GROW_SCALE` `GROW_TIME` /
-`STOP_SLOW` / `WHITE_TIME` / `CANCEL_SHOT`(1이면 닿은 작은 적탄을 지운다 — 플레이어 탄 전용). 없는 키는 기본값을 쓴다.
+`STOP_SLOW` / `WHITE_TIME` / `CANCEL_SHOT`(1이면 닿은 작은 적탄을 지운다 — 플레이어 탄 전용) /
+`CHAIN_STUN_TIME` `CHAIN_RANGE`. 없는 키는 기본값을 쓴다.
 **수명(`fLifeTime`) 0은 무한**이다 — 회전탄처럼 스킬이 직접 거두는 탄에 쓴다.
+
+#### CHAIN — 체인 라이트닝 (260917, GYM에 없던 특성)
+닿으면 기절시키고, 반경(`CHAIN_RANGE`) 안의 **아직 안 맞은** 대상 쪽으로 방향을 튼다 — `REBOUND`가 벽에서
+방향을 뒤집는 것과 같은 자리(`On_Wall` 대신 `On_Enter`에서 `Set_Dir`)라 이동은 그대로 STRAIGHT가 맡는다.
+그래서 화면에는 탄이 실제로 옆 적에게 날아가 맞는 것으로 보인다 — TRACE로 쓰면 안 된다. TRACE는 매 틱
+`Find_Target()`(가장 가까운 적 하나, 이미 맞았어도 다시 겨눔)으로 재조준해 이 트레잇의 `Set_Dir`을 바로
+덮어써 버린다.
+
+**몇 번 튈지는 새 값을 만들지 않고 REBOUND와 같은 자리(`iDurability`)로 정한다** — 맞을 때마다 내구도가
+줄어 다하면 사라진다(1-1, 같은 숫자를 두 곳에 두지 않는다).
+
+다음 대상 찾기는 `Find_Target`과 다른 창구(`IProjectileHost.Find_ChainTarget`)를 쓴다 — 반경으로 자르고
+**이미 맞은 대상(탄의 `m_hsContact`)을 제외**해야 두 대상 사이를 왕복하지 않는다. `CTargetFinder_Utility.Find`
+(가장 가까운 것 하나, 제외 없음)와 `Find_Nearby`(반경 + 제외)를 분리해 둔 이유이기도 하다.
 
 #### 닿음은 본체가 한 번만 가린다
 스테이지가 매 프레임 '맞을 수 있는 대상'을 넘기면(`Update_Contact`) 본체가 **닿기 시작 · 닿아 있음 · 떨어짐**을 가린다.

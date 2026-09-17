@@ -1092,6 +1092,20 @@ namespace Client
             return m_cPlayer != null && m_cPlayer.IS_ALIVE == true ? m_cPlayer : null;
         }
 
+        // 260917_CHAIN 특성이 다음으로 튈 대상을 찾을 때 쓴다. 플레이어는 하나뿐이라 적탄 쪽은
+        // 이미 맞았으면(hsExclude) 더 튈 곳이 없다 — 몬스터만 여럿이라 실제로 튀는 건 플레이어 탄이다.
+        public IImpactTarget Find_ChainTarget(Vector2 vFrom, PROJECTILE_SIDE eSide, float fRadius,
+                                              ICollection<IImpactTarget> hsExclude)
+        {
+            if (eSide == PROJECTILE_SIDE.PLAYER_SHOT)
+                return CTargetFinder_Utility.Find_Nearby(m_lstEnemy, vFrom, fRadius, hsExclude);
+
+            if (m_cPlayer == null || m_cPlayer.IS_ALIVE == false || hsExclude.Contains(m_cPlayer) == true)
+                return null;
+
+            return Vector2.Distance(vFrom, m_cPlayer.POS) <= fRadius ? m_cPlayer : null;
+        }
+
         // 폭발 효과처럼 탄이 다른 탄을 부를 때. 쏜 쪽은 모른다.
         public void Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide)
             => Spawn_Projectile(iProjectileID, vPos, vDir, eSide, null);

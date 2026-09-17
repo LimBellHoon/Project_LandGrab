@@ -1615,6 +1615,30 @@ namespace Client
                 cRebound.Tick(1f);
             Check("튕김 — 내구도를 다 쓰면 사라진다", cRebound.IS_EXPIRED == true);
 
+            // ---- 체인 라이트닝: 닿으면 기절, 반경 안의 아직 안 맞은 대상 쪽으로 방향을 튼다
+            CFakeProjectileHost cChainHost = new CFakeProjectileHost();
+            CFakeImpactTarget cChainA   = new CFakeImpactTarget(new Vector2(2f, 5f), 0.3f);
+            CFakeImpactTarget cChainB   = new CFakeImpactTarget(new Vector2(2f, 7f), 0.3f);    // 반경 3칸 안
+            CFakeImpactTarget cChainFar = new CFakeImpactTarget(new Vector2(2f, 20f), 0.3f);   // 반경 밖
+            cChainHost.lstChainCandidate.Add(cChainA);
+            cChainHost.lstChainCandidate.Add(cChainB);
+            cChainHost.lstChainCandidate.Add(cChainFar);
+
+            CProjectileInfo cChainInfo = new CProjectileInfo
+            { eMove = PROJECTILE_MOVE.STRAIGHT, fSpeed = 1f, fLifeTime = 10f, fHitRange = 0.5f, fScale = 1f,
+              iDamage = 1, iDurability = -1 };
+            cChainInfo.lstTrait.Add(PROJECTILE_TRAIT.CHAIN);
+            cChainInfo.dicParam["CHAIN_RANGE"] = 3f;
+            CProjectileCore cChain = Make_Core(cChainHost, cChainInfo, new Vector2(2f, 5f), Vector2.right);
+            cChain.Update_Contact(new List<IImpactTarget> { cChainA }, 0.1f);
+            Check("체인 — 맞으면 기절한다", cChainA.IMPACT.IS_STUNNED == true);
+            Check("체인 — 반경 안의 다음 대상 쪽으로 방향을 튼다",
+                  Vector2.Distance(cChain.DIR, (cChainB.POS - cChainA.POS).normalized) < 0.01f);
+
+            IImpactTarget cChainNext = CTargetFinder_Utility.Find_Nearby(cChainHost.lstChainCandidate, cChainA.POS, 3f,
+                                                                          new List<IImpactTarget> { cChainA, cChainB });
+            Check("체인 — 이미 맞은 대상은 다시 고르지 않는다", cChainNext != cChainA && cChainNext != cChainB);
+
             CFakeProjectileHost cShieldHost = new CFakeProjectileHost { vOwnedFrom = new Vector2(6f, 0f) };
             Check("벽 — 적탄에게 점령지는 벽이다", cShieldHost.Is_Wall(new Vector2(7f, 5f), PROJECTILE_SIDE.ENEMY_SHOT) == true);
             Check("벽 — 플레이어 탄은 점령지를 지나간다", cShieldHost.Is_Wall(new Vector2(7f, 5f), PROJECTILE_SIDE.PLAYER_SHOT) == false);
@@ -1924,6 +1948,8 @@ namespace Client
             public int              iLastSpawnID;
             public Vector2          vLastSpawnPos;
             public PROJECTILE_SIDE  eLastSpawnSide;
+            // 260917_CHAIN 특성 테스트용 후보 목록. Find_Target(cTarget 하나)과 달리 여러 개를 담아 반경 · 제외를 본다.
+            public readonly List<IImpactTarget> lstChainCandidate = new List<IImpactTarget>();
 
             public Rect WORLD_BOUNDS => new Rect(0f, 0f, 10f, 10f);
 
@@ -1943,6 +1969,10 @@ namespace Client
             }
 
             public IImpactTarget Find_Target(Vector2 vFrom, PROJECTILE_SIDE eSide) => cTarget;
+
+            public IImpactTarget Find_ChainTarget(Vector2 vFrom, PROJECTILE_SIDE eSide, float fRadius,
+                                                  ICollection<IImpactTarget> hsExclude)
+                => CTargetFinder_Utility.Find_Nearby(lstChainCandidate, vFrom, fRadius, hsExclude);
         }
 
         private class CFakeImpactTarget : IImpactTarget

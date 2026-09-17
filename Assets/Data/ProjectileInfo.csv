@@ -2,7 +2,7 @@
 ;== 투사체 테이블 ==	Project_GYM의 SkillInfo.csv(탄 관련 열)를 옮겨 왔다. 구분자는 반드시 [탭]
 ;eShape	POINT 원 / LASER 예고선→빔 / SWEEP 가로로 뻗는 띠 / BLAST 커지는 원
 ;eMove	NONE 제자리 / STRAIGHT 직진 / TRACE 대상 쪽으로 휨 / SPIRAL 나선 / BOOMERANG / ORBIT 쏜 쪽 주위 회전 / SYNC 쏜 쪽에 붙음
-;strTrait	| 로 여러 개. REBOUND GRAVITY_PULL GRAVITY_PUSH KNOCKBACK_PULL KNOCKBACK_PUSH ENTER_STUN STAY_STUN HIT_STOP SCALE_OVER_TIME STAY_STOP WHITE_OUT RANDOM
+;strTrait	| 로 여러 개. REBOUND GRAVITY_PULL GRAVITY_PUSH KNOCKBACK_PULL KNOCKBACK_PUSH ENTER_STUN STAY_STUN HIT_STOP SCALE_OVER_TIME STAY_STOP WHITE_OUT RANDOM CHAIN
 ;단위	fSpeed 초당 셀 / fMaxRange·fHitRange 셀 / iDurability 맞히거나 튕길 때마다 -1, -1이면 무한
 ;strImpact	ImpactInfo.csv의 ID를 | 로 여러 개. 맞은 대상에게 남는다
 ;strParam	KEY:VALUE를 | 로. 없으면 기본값. 전체 목록은 CLAUDE.md 2-15 참고
@@ -29,3 +29,4 @@
 20	회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:180|CANCEL_SHOT:1	런 스킬 회전탄. 수명 0 = 스킬이 거둘 때까지. 닿은 적탄을 지운다
 21	광란 회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:360|CANCEL_SHOT:1	각성 광란의 칼바람 — 분노가 터진 동안 두 배로 빨리 돈다
 22	몽둥이	BLAST	NONE	-	0	0.3	0	0.8	1	1	-1	7	BLAST_GROW:0.1|BLAST_SCALE:1.25	런 스킬 몽둥이. 휘두른 자리에서 짧게 커지는 원. 크기는 스킬 레벨이 곱한다(1레벨 반경 1칸)
+23	체인 라이트닝	POINT	STRAIGHT	CHAIN	7	4	0	0.6	1	1	4	-	CHAIN_STUN_TIME:0.6|CHAIN_RANGE:3	맞으면 기절, 3칸 안의 안 맞은 적 쪽으로 방향을 틀어 튄다. 4번 맞으면(내구도) 사라진다

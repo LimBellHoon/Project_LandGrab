@@ -31,6 +31,7 @@ namespace Client
                 case PROJECTILE_TRAIT.SCALE_OVER_TIME:  return new CProjectileTrait_ScaleOverTime();
                 case PROJECTILE_TRAIT.STAY_STOP:        return new CProjectileTrait_StayStop();
                 case PROJECTILE_TRAIT.WHITE_OUT:        return new CProjectileTrait_WhiteOut();
+                case PROJECTILE_TRAIT.CHAIN:            return new CProjectileTrait_Chain();
                 default:                                return null;    // NONE · RANDOM(본체가 고른다)
             }
         }
@@ -205,5 +206,38 @@ namespace Client
 
         public override void On_Enter(IImpactTarget cTarget)                   => cTarget.IMPACT?.Set_WhiteOut(this, m_fTime);
         public override void On_Stay(IImpactTarget cTarget, float fDeltaTime)  => cTarget.IMPACT?.Set_WhiteOut(this, m_fTime);
+    }
+
+    // 260917_체인 라이트닝 — 닿으면 기절시키고 반경 안의 아직 안 맞은 대상 쪽으로 방향을 튼다.
+    /// <summary>
+    /// REBOUND가 벽에서 방향을 뒤집듯, 이건 다음 적 쪽으로 방향을 튼다 — 이동은 그대로 STRAIGHT/TRACE가 맡으므로
+    /// 화면에는 탄이 실제로 옆 적에게 날아가 맞는 것으로 보인다. 몇 번 튈지는 새 값을 만들지 않고
+    /// REBOUND와 같은 자리(iDurability)로 정한다 — 맞을 때마다 내구도가 줄어 다하면 사라진다.
+    /// </summary>
+    public class CProjectileTrait_Chain : CProjectileTrait
+    {
+        private float m_fStunTime;
+        private float m_fRange;    // 셀
+
+        public override void Initialize(CProjectileCore cCore)
+        {
+            base.Initialize(cCore);
+            m_fStunTime = Mathf.Max(0f, cCore.Get_Param("CHAIN_STUN_TIME", 0.6f));
+            m_fRange    = Mathf.Max(0f, cCore.Get_Param("CHAIN_RANGE", 3f));
+        }
+
+        public override void On_Enter(IImpactTarget cTarget)
+        {
+            if (m_fStunTime > 0f)
+                cTarget.IMPACT?.Set_Stun(this, m_fStunTime);
+
+            IImpactTarget cNext = m_cCore.Find_ChainTarget(cTarget.POS, m_fRange * m_cCore.CELL_SIZE);
+            if (cNext == null)
+                return;
+
+            Vector2 vDir = cNext.POS - cTarget.POS;
+            if (vDir.sqrMagnitude > Mathf.Epsilon)
+                m_cCore.Set_Dir(vDir.normalized);
+        }
     }
 }

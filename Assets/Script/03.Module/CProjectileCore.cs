@@ -364,6 +364,12 @@ namespace Client
         /// <summary> 이동 · 모양이 조준할 대상. 적탄이면 플레이어, 플레이어 탄이면 몬스터 중에서. </summary>
         public IImpactTarget Find_Target() => m_cHost.Find_Target(m_vPos, m_eSide);
 
+        // 260917_CHAIN 특성. 이미 닿은 대상(m_hsContact)은 그대로 넘겨 다음 대상을 찾을 때 제외한다 —
+        // 안 그러면 둘 사이를 왕복한다.
+        /// <summary> 반경 안에서 아직 안 맞은 가장 가까운 대상. 없으면 null. </summary>
+        public IImpactTarget Find_ChainTarget(Vector2 vFrom, float fRadius)
+            => m_cHost.Find_ChainTarget(vFrom, m_eSide, fRadius, m_hsContact);
+
         private void Consume_Durability()
         {
             if (m_iDurability < 0)

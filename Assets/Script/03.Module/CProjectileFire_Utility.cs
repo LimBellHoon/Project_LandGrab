@@ -209,5 +209,34 @@ namespace Client
             }
             return iCount;
         }
+
+        // 260917_CHAIN 특성이 다음으로 튈 대상을 찾을 때 쓴다. Find와 달리 반경으로 자르고 제외 목록을 본다.
+        /// <returns> 반경 안에서 hsExclude에 없는 가장 가까운 대상. 없으면 null. </returns>
+        public static IImpactTarget Find_Nearby<T>(IReadOnlyList<T> lstTarget, Vector2 vFrom, float fRadius,
+                                                    ICollection<IImpactTarget> hsExclude) where T : IImpactTarget
+        {
+            if (lstTarget == null)
+                return null;
+
+            IImpactTarget cBest = null;
+            float fBestDistance = float.MaxValue;
+
+            for (int i = 0; i < lstTarget.Count; ++i)
+            {
+                IImpactTarget cTarget = lstTarget[i];
+                if (cTarget == null || cTarget.IS_ALIVE == false
+                    || (hsExclude != null && hsExclude.Contains(cTarget) == true))
+                    continue;
+
+                float fDistance = Vector2.Distance(vFrom, cTarget.POS);
+                if (fDistance > fRadius || fDistance >= fBestDistance)
+                    continue;
+
+                fBestDistance = fDistance;
+                cBest = cTarget;
+            }
+
+            return cBest;
+        }
     }
 }

@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+
+using UnityEngine;
 
 namespace Client
 {
@@ -99,6 +101,12 @@ namespace Client
 
         /// <summary> 추적탄이 쫓을 대상. 적탄이면 플레이어, 플레이어 탄이면 가장 가까운 몬스터. 없으면 null. </summary>
         IImpactTarget Find_Target(Vector2 vFrom, PROJECTILE_SIDE eSide);
+
+        // 260917_CHAIN 특성이 다음으로 튈 대상을 찾을 때 쓴다. Find_Target과 달리 반경 안으로 한정하고,
+        // 이미 맞은 대상(hsExclude)은 다시 고르지 않는다 — 안 그러면 둘 사이를 왕복한다.
+        /// <returns> 반경 안에서 hsExclude에 없는 가장 가까운 대상. 없으면 null. </returns>
+        IImpactTarget Find_ChainTarget(Vector2 vFrom, PROJECTILE_SIDE eSide, float fRadius,
+                                       ICollection<IImpactTarget> hsExclude);
     }
 
     // 260904_진행도 저장소
