@@ -45,6 +45,8 @@ namespace Client
     {
         public int iCharacterID;
         public int iLevel;
+        // 260918_레벨업 재화. 재클리어로 쌓이고, 가방의 레벨업 버튼이 소모한다.
+        public int iFragment;
     }
 
 
@@ -292,6 +294,39 @@ namespace Client
             }
 
             cRecord.iLevel = iLevel;
+        }
+
+        // 260918_레벨업 재화. Get/Set은 위 Get_CharacterLevel/Set_CharacterLevel과 같은 자리다.
+        public int Get_CharacterFragment(int iCharacterID)
+        {
+            CCharacterRecord cRecord = Find_Character(iCharacterID);
+            return cRecord != null ? cRecord.iFragment : 0;
+        }
+
+        public void Add_CharacterFragment(int iCharacterID, int iAmount)
+        {
+            if (iCharacterID <= 0 || iAmount <= 0)
+                return;
+
+            CCharacterRecord cRecord = Find_Character(iCharacterID);
+            if (cRecord == null)
+            {
+                lstCharacter.Add(new CCharacterRecord { iCharacterID = iCharacterID, iFragment = iAmount });
+                return;
+            }
+
+            cRecord.iFragment += iAmount;
+        }
+
+        /// <returns> 실제로 썼으면 true. 모자라면 아무 일도 없다. </returns>
+        public bool Use_CharacterFragment(int iCharacterID, int iAmount)
+        {
+            CCharacterRecord cRecord = Find_Character(iCharacterID);
+            if (cRecord == null || iAmount <= 0 || cRecord.iFragment < iAmount)
+                return false;
+
+            cRecord.iFragment -= iAmount;
+            return true;
         }
 
         private CCharacterRecord Find_Character(int iCharacterID)

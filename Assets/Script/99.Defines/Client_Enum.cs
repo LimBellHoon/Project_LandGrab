@@ -240,10 +240,13 @@
     }
 
     /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>
+    // 260918_캐릭터(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다) · 카드(웨이브 보상 갤러리) 추가
     public enum INVENTORY_TAB
     {
         EQUIP = 0,
         SKILL,
+        CHARACTER,
+        CARD,
     }
 
     // 260905_로비 하단 탭

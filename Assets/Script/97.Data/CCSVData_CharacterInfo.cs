@@ -26,11 +26,39 @@ namespace Client
 
         public string   strDesc;
 
+        // 260918_레벨업 재화 — 이미 가진 캐릭터를 각성 스테이지에서 다시 클리어하면 조각을 받고,
+        // 가방에서 조각을 모아 레벨업 버튼을 눌러야 실제로 레벨이 오른다(CProgress_Manager 참고).
+        public int      iFragmentPerClear;
+        public int      iFragmentCostBase;
+        public int      iFragmentCostAdd;
+
+        // 260918_성급 스켈레톤 — 화면 틀만 만들어 둔다. 임계 레벨과 설명 텍스트뿐이고
+        // 실제 스탯/효과는 아직 어디에도 걸려 있지 않다. 나중에 기획이 확정되면
+        // Get_SpeedRate 등과 같은 자리에 실제 배율을 추가하면 된다.
+        public List<int>    lstStarLevel = new List<int>();
+        public List<string> lstStarDesc  = new List<string>();
+
         // 260917_레벨 0(미보유)이어도 배율이 1(속도·체력) / 0(회피 보너스)이 나와야 안전하게 곱할 수 있다 —
         // CRunSkillInfo.Get_Value(레벨 0이면 0)와 다르게 최소 레벨을 1로 못박는 이유다.
         public float Get_SpeedRate(int iLevel)    => Get_Value(fSpeedRateBase, fSpeedRatePerLevel, iLevel);
         public float Get_MaxHpRate(int iLevel)    => Get_Value(fMaxHpRateBase, fMaxHpRatePerLevel, iLevel);
         public float Get_EvasionBonus(int iLevel) => Get_Value(fEvasionBonusBase, fEvasionBonusPerLevel, iLevel);
+
+        // 260918_레벨1 → 2가 첫 강화이므로 (iCurLevel - 1)을 '지금까지 강화한 횟수'로 본다 —
+        // CUpgradeInfo/CSkillInfo의 Get_Cost와 같은 형태이되, 이쪽은 레벨이 0이 아니라 1부터 시작해서다.
+        public int Get_FragmentCost(int iCurLevel) => iFragmentCostBase + iFragmentCostAdd * Mathf.Max(0, iCurLevel - 1);
+
+        /// <summary> 지금 몇 성인지(0~lstStarLevel.Count). 화면 표시용 — 실제 효과는 없다. </summary>
+        public int Get_StarTier(int iLevel)
+        {
+            int iTier = 0;
+            for (int i = 0; i < lstStarLevel.Count; ++i)
+            {
+                if (iLevel >= lstStarLevel[i])
+                    ++iTier;
+            }
+            return iTier;
+        }
 
         private float Get_Value(float fBase, float fPerLevel, int iLevel)
         {
@@ -83,6 +111,11 @@ namespace Client
                 fEvasionBonusBase     = CCSV_Utility.To_Float(arrField, 8),
                 fEvasionBonusPerLevel = CCSV_Utility.To_Float(arrField, 9),
                 strDesc               = CCSV_Utility.To_String(arrField, 10),
+                iFragmentPerClear     = CCSV_Utility.To_Int(arrField, 11, 10),
+                iFragmentCostBase     = CCSV_Utility.To_Int(arrField, 12, 20),
+                iFragmentCostAdd      = CCSV_Utility.To_Int(arrField, 13, 5),
+                lstStarLevel          = CCSV_Utility.To_IntList(arrField, 14),
+                lstStarDesc           = CCSV_Utility.To_List(arrField, 15),
             };
 
             if (cInfo.iCharacterID <= 0 || string.IsNullOrEmpty(cInfo.strPrefabName) == true)

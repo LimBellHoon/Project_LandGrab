@@ -523,6 +523,9 @@ namespace Client
                 eObjectType     = OBJECT_TYPE.UI_MAIN,
                 cEquipTable     = m_cEquipTable,
                 cSkillTable     = m_cSkillTable,
+                // 260918_캐릭터(스킨/레벨업) · 카드(웨이브 보상 갤러리) 탭이 참고할 표
+                cCharacterTable = m_cCharacterTable,
+                cMapTable       = m_cMapTable,
                 cProgress       = m_cProgressManager,
                 OnChanged       = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
             };
@@ -730,7 +733,7 @@ namespace Client
             {
                 CMapInfo cClearedMap = m_cMapTable.Get_Info(m_cStageManager.MAP_ID);
                 if (cClearedMap != null && cClearedMap.iCharacterID > 0)
-                    m_cProgressManager.Add_Or_LevelUpCharacter(m_cCharacterTable, cClearedMap.iCharacterID);
+                    m_cProgressManager.On_CharacterMapCleared(m_cCharacterTable, cClearedMap.iCharacterID);
             }
 
             // 260916_결과 화면과 같은 기준(m_bLastCleared)으로 고른다 — STAGE_STATE.FAIL이어도

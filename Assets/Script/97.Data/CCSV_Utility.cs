@@ -141,6 +141,22 @@ namespace Client
             return lstValue;
         }
 
+        // 260918_성급 임계 레벨(CharacterInfo.strStarLevel)처럼 정수 목록이 필요한 곳이 늘어 To_FloatList와 같은 자리에 둔다.
+        /// <summary> "3|6|10" → [3, 6, 10] </summary>
+        public static List<int> To_IntList(string[] arrField, int iIndex, char chSplit = SPLIT_LIST)
+        {
+            List<string> lstToken = To_List(arrField, iIndex, chSplit);
+            List<int> lstValue = new List<int>(lstToken.Count);
+
+            for (int i = 0; i < lstToken.Count; ++i)
+            {
+                lstValue.Add(int.TryParse(lstToken[i], NumberStyles.Integer, CultureInfo.InvariantCulture,
+                                          out int iValue) ? iValue : 0);
+            }
+
+            return lstValue;
+        }
+
         /// <summary> 목록 길이가 기대와 다르면 경고를 남기고 false. 표가 조용히 어긋나는 것을 막는다. </summary>
         public static bool Check_Count(string strTable, int iKey, string strColumn, int iActual, int iExpect)
         {

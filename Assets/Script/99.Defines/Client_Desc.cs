@@ -136,22 +136,27 @@ namespace Client
         }
     }
 
-    /// <summary> 인벤토리. 안쪽 탭(장비/스킬)은 UI가 스스로 관리한다. </summary>
+    /// <summary> 인벤토리. 안쪽 탭(장비/스킬/캐릭터/카드)은 UI가 스스로 관리한다. </summary>
     public class CUI_InventoryDesc : CUIDesc
     {
-        public CCSVData_EquipInfo   cEquipTable { get; set; }
-        public CCSVData_SkillInfo   cSkillTable { get; set; }
-        public CProgress_Manager    cProgress   { get; set; }
+        public CCSVData_EquipInfo     cEquipTable     { get; set; }
+        public CCSVData_SkillInfo     cSkillTable     { get; set; }
+        // 260918_캐릭터 탭(스킨/레벨업)과 카드 탭(웨이브 보상 갤러리)이 쓴다.
+        public CCSVData_CharacterInfo cCharacterTable { get; set; }
+        public CCSVData_MapInfo       cMapTable       { get; set; }
+        public CProgress_Manager      cProgress       { get; set; }
         /// <summary> 장착 상태가 바뀌었을 때 </summary>
-        public Action               OnChanged   { get; set; }
+        public Action                 OnChanged       { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
-            cEquipTable = null;
-            cSkillTable = null;
-            cProgress   = null;
-            OnChanged   = null;
+            cEquipTable     = null;
+            cSkillTable     = null;
+            cCharacterTable = null;
+            cMapTable       = null;
+            cProgress       = null;
+            OnChanged       = null;
         }
     }
 

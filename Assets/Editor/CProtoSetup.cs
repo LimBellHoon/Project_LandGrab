@@ -1350,7 +1350,8 @@ namespace Client
             cLayout.childControlWidth      = true;
             cLayout.childControlHeight     = true;
 
-            string[] arrTabName = { "\uc7a5\ube44", "\uc2a4\ud0ac" };
+            // 260918_INVENTORY_TAB \uc21c\uc11c(\uc7a5\ube44/\uc2a4\ud0ac/\uce90\ub9ad\ud130/\uce74\ub4dc)\uc640 1:1\ub85c \ub9de\ucd98\ub2e4.
+            string[] arrTabName = { "\uc7a5\ube44", "\uc2a4\ud0ac", "\uce90\ub9ad\ud130", "\uce74\ub4dc" };
             Button[] arrTabButton = new Button[arrTabName.Length];
 
             for (int i = 0; i < arrTabName.Length; ++i)

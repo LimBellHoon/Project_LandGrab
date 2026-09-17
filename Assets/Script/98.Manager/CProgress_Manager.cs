@@ -292,29 +292,62 @@ namespace Client
         }
 
         #region 260917_캐릭터 (스킨 + 스탯 배율, 노션 "캐릭터 시스템" 카드 4장)
-        public int  EQUIPPED_CHARACTER_ID          => m_cProgress.iEquippedCharacterID;
+        public int  EQUIPPED_CHARACTER_ID              => m_cProgress.iEquippedCharacterID;
         public bool Has_Character(int iCharacterID)     => m_cProgress.Has_Character(iCharacterID);
-        public int  Get_CharacterLevel(int iCharacterID) => m_cProgress.Get_CharacterLevel(iCharacterID);
+        public int  Get_CharacterLevel(int iCharacterID)    => m_cProgress.Get_CharacterLevel(iCharacterID);
+        public int  Get_CharacterFragment(int iCharacterID) => m_cProgress.Get_CharacterFragment(iCharacterID);
 
-        // 260917_각성 스테이지(MapInfo.iCharacterID > 0) 클리어마다 부른다.
-        // 처음 클리어면 1레벨로 얻고 곧바로 장착한다. 이미 있으면 잔향 조각으로 레벨업만 한다.
-        /// <returns> 레벨이 올랐으면(또는 새로 얻었으면) true. 표에 없거나 이미 만렙이면 false. </returns>
-        public bool Add_Or_LevelUpCharacter(CCSVData_CharacterInfo cTable, int iCharacterID)
+        // 260918_각성 스테이지(MapInfo.iCharacterID > 0) 클리어마다 부른다.
+        // 처음 클리어면 1레벨로 얻고 곧바로 장착한다. 이미 있으면 곧바로 레벨업하지 않고
+        // 조각만 쌓는다 — 레벨업은 가방에서 조각을 모아 버튼을 눌러야 한다(Try_LevelUpCharacter).
+        /// <returns> 새로 얻었거나 조각을 받았으면 true. 표에 없으면 false. </returns>
+        public bool On_CharacterMapCleared(CCSVData_CharacterInfo cTable, int iCharacterID)
         {
             CCharacterInfo cInfo = cTable != null ? cTable.Get_Info(iCharacterID) : null;
             if (cInfo == null)
                 return false;
 
-            int iLevel = m_cProgress.Get_CharacterLevel(iCharacterID);
-            if (iLevel >= cInfo.iMaxLevel)
+            if (m_cProgress.Has_Character(iCharacterID) == false)
+            {
+                m_cProgress.Set_CharacterLevel(iCharacterID, 1);
+                // 260917_처음 얻은 캐릭터는 곧바로 장착한다 — 안 그러면 그 판을 나가도 여전히 이전 캐릭터로 던전에 들어간다.
+                m_cProgress.iEquippedCharacterID = iCharacterID;
+            }
+            else
+            {
+                m_cProgress.Add_CharacterFragment(iCharacterID, cInfo.iFragmentPerClear);
+            }
+
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        /// <summary> 다음 레벨에 드는 조각 수. 표에 없거나 아직 없는 캐릭터거나 만렙이면 0. </summary>
+        public int Get_CharacterLevelUpCost(CCSVData_CharacterInfo cTable, int iCharacterID)
+        {
+            CCharacterInfo cInfo  = cTable != null ? cTable.Get_Info(iCharacterID) : null;
+            int            iLevel = m_cProgress.Get_CharacterLevel(iCharacterID);
+            if (cInfo == null || iLevel <= 0 || iLevel >= cInfo.iMaxLevel)
+                return 0;
+
+            return cInfo.Get_FragmentCost(iLevel);
+        }
+
+        /// <summary> 조각이 충분한가. UI가 레벨업 버튼을 켤지 정할 때 쓴다. </summary>
+        public bool Can_LevelUpCharacter(CCSVData_CharacterInfo cTable, int iCharacterID)
+        {
+            int iCost = Get_CharacterLevelUpCost(cTable, iCharacterID);
+            return iCost > 0 && m_cProgress.Get_CharacterFragment(iCharacterID) >= iCost;
+        }
+
+        /// <summary> 가방의 레벨업 버튼. 조각이 모자라거나 만렙이면 아무 일도 없다. </summary>
+        public bool Try_LevelUpCharacter(CCSVData_CharacterInfo cTable, int iCharacterID)
+        {
+            int iCost = Get_CharacterLevelUpCost(cTable, iCharacterID);
+            if (iCost <= 0 || m_cProgress.Use_CharacterFragment(iCharacterID, iCost) == false)
                 return false;
 
-            m_cProgress.Set_CharacterLevel(iCharacterID, iLevel + 1);
-
-            // 260917_처음 얻은 캐릭터는 곧바로 장착한다 — 안 그러면 그 판을 나가도 여전히 이전 캐릭터로 던전에 들어간다.
-            if (iLevel <= 0)
-                m_cProgress.iEquippedCharacterID = iCharacterID;
-
+            m_cProgress.Set_CharacterLevel(iCharacterID, m_cProgress.Get_CharacterLevel(iCharacterID) + 1);
             m_cRepository.Save(m_cProgress);
             return true;
         }

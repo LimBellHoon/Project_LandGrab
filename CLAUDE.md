@@ -929,30 +929,64 @@ M4 보스 패턴용 골격이라 **아직 붙은 곳이 없다.**
 - Selector가 우선순위 높은 자식에게 넘어갈 때 **하던 자식을 끊는다**(원본은 OnExit가 안 불렸다)
 - 3D 전투 노드(대시 · 콤보 등)는 CharacterController 전용이라 옮기지 않았다
 
-### 2-17. 캐릭터 시스템 — 스킨 + 스탯 배율 (260917, 골격)
+### 2-17. 캐릭터 시스템 — 스킨 + 스탯 배율 + 조각 레벨업 (260917~260918)
 캐릭터는 **전용 스킬이 없다.** 런 스킬 풀(2-11-1/2-11-2)은 전 캐릭터 공통이고, 캐릭터마다 다른 것은
 스킨(프리팹)과 스탯 배율(속도 · 체력 · 회피)뿐이다 — 캐릭터가 늘 때마다 밸런싱 비용이 같이 느는
-전용 킷 구조를 피했다. 로비 "가방"에서 장착을 바꾸고, 스테이지 진입 후에는 못 바꾼다.
+전용 킷 구조를 피했다. 로비 "가방"의 **캐릭터 탭**에서 장착을 바꾸고, 스테이지 진입 후에는 못 바꾼다.
 
 ```
-CharacterInfo.csv          캐릭터별 프리팹 이름 · 최대레벨 · 레벨당 속도/체력 배율 · 회피 보너스
-CStageProgress             보유 캐릭터 + 레벨 + 지금 장착한 캐릭터(스킬 레벨과 같은 자리)
-CProgress_Manager          Add_Or_LevelUpCharacter(처음 얻으면 자동 장착) / Try_EquipCharacter
+CharacterInfo.csv          프리팹 · 최대레벨 · 레벨당 속도/체력 배율 · 회피 보너스 · 조각 경제 · 성급 스켈레톤
+CStageProgress             보유 캐릭터 + 레벨 + 조각 + 지금 장착한 캐릭터(스킬 레벨과 같은 자리)
+CProgress_Manager          On_CharacterMapCleared / Try_LevelUpCharacter / Try_EquipCharacter
 CStage_Manager.Set_Character  CGameManager가 장착 캐릭터 정보를 넘긴다 → Spawn_Player가 반영
+CUI_Inventory              가방의 [캐릭터] 탭(장착·레벨업) / [카드] 탭(웨이브 보상 갤러리)
 ```
 
-- `MapInfo.csv`의 `iCharacterID`가 그 맵(각성 스테이지)을 클리어하면 얻거나 강화할 캐릭터다.
-  0이면 캐릭터를 안 주는 잔향/파밍 스테이지다
-- **같은 캐릭터를 다시 얻으면 새 캐릭터가 아니라 레벨업이다**("잔향 조각" — 이미 구출한 그 아이의
-  힘이 느는 것으로 노션에서 서사를 붙였다). 만렙을 넘지 않는다
-- `Get_SpeedRate`/`Get_MaxHpRate`/`Get_EvasionBonus`는 **레벨 0(미보유)도 레벨 1로 클램프한다** —
-  `CRunSkillInfo.Get_Value`(레벨 0이면 0)와 다른 의도적 차이다. 곱셈용 배율이 0이면 스탯이 사라진다
-- 캐릭터 스킨 프리팹(`Prefab_Character_*`)이 아직 없어도(로컬 `Setup Assets` 전) 게임이 죽지
-  않는다 — `Spawn_Player`가 `Has_Prefab`으로 먼저 확인하고 없으면 기본 `Prefab_Player`로
-  대체하며 경고만 남긴다(3장 "프리팹 누락" 결정과 같은 자리). 스탯 배율은 스킨과 무관하게 그대로 적용된다
-- **가방 탭 UI(캐릭터 서브탭)는 아직 없다** — 로컬에서 `Setup Assets`가 필요한 프리팹 작업이라
-  클라우드 세션에서는 만들 수 없다. 지금은 `CProgress_Manager`가 처음 얻은 캐릭터를 자동 장착하므로
-  UI 없이도 로직은 동작한다
+#### 획득 — 각성 스테이지 클리어
+`MapInfo.csv`의 `iCharacterID`가 그 맵(각성 스테이지)을 클리어하면 얻거나 강화할 캐릭터다.
+0이면 캐릭터를 안 주는 잔향/파밍 스테이지다. **처음 클리어하면 1레벨로 얻고 곧바로 장착한다**
+(`CProgress_Manager.On_CharacterMapCleared`) — 안 그러면 그 판을 나가도 이전 캐릭터로 던전에 들어간다.
+
+#### 강화 — 조각 + 가방의 레벨업 버튼 (260918)
+**이미 가진 캐릭터를 각성 스테이지에서 다시 클리어해도 레벨이 자동으로 오르지 않는다.**
+"잔향 조각"(`iFragmentPerClear`, `CharacterInfo.csv`)만 쌓이고, 가방 캐릭터 탭에서
+레벨업 버튼을 눌러야(`Try_LevelUpCharacter`) 조각을 소모해 레벨이 오른다.
+- 비용은 `Get_FragmentCost(iCurLevel)` = `iFragmentCostBase + iFragmentCostAdd * (iCurLevel - 1)`.
+  레벨 1→2가 첫 강화라 `(iCurLevel - 1)`을 지금까지 강화한 횟수로 본다 —
+  `CUpgradeInfo`/`CSkillInfo`의 `Get_Cost`(레벨 0부터 시작)와 형태는 같고 시작점만 다르다
+- 만렙을 넘지 않는다. 만렙이면 비용이 0이라 `Try_LevelUpCharacter`도 항상 실패한다
+- 캐릭터 탭의 행 버튼은 **`On_ClickSkill`과 같은 한 버튼 두 역할 패턴**이다 — 장착 안 된 캐릭터를
+  누르면 장착, 이미 장착한 캐릭터를 누르면 레벨업을 시도한다. 새 버튼을 늘리지 않았다
+
+#### 성급 — 화면 틀만 (260918, 스켈레톤)
+`CharacterInfo.csv`의 `strStarLevel`/`strStarDesc`(예: `3|6|10`, `효과 없음|최대 체력 +5%|공격력 +10%`)로
+성급 임계 레벨과 설명 텍스트만 표에 둔다. `CCharacterInfo.Get_StarTier(iLevel)`이 지금 몇 성인지
+계산해 캐릭터 탭에 `★★☆` 식으로 보여 주지만 **실제 스탯/효과는 어디에도 걸려 있지 않다** — 기획이
+확정되면 `Get_SpeedRate` 등과 같은 자리에 실제 배율을 추가할 것.
+
+#### 배율 계산 — 레벨 0도 1로 클램프
+`Get_SpeedRate`/`Get_MaxHpRate`/`Get_EvasionBonus`는 **레벨 0(미보유)도 레벨 1로 클램프한다** —
+`CRunSkillInfo.Get_Value`(레벨 0이면 0)와 다른 의도적 차이다. 곱셈용 배율이 0이면 스탯이 사라진다.
+
+#### 프리팹 누락 폴백
+캐릭터 스킨 프리팹(`Prefab_Character_*`)이 아직 없어도(로컬 `Setup Assets` 전) 게임이 죽지
+않는다 — `Spawn_Player`가 `Has_Prefab`으로 먼저 확인하고 없으면 기본 `Prefab_Player`로
+대체하며 경고만 남긴다(3장 "프리팹 누락" 결정과 같은 자리). 스탯 배율은 스킨과 무관하게 그대로 적용된다.
+
+#### 가방 — 캐릭터 탭 / 카드 탭 (260918)
+`CUI_Inventory`에 `INVENTORY_TAB.CHARACTER`/`CARD`를 추가했다. 기존 [장비]/[스킬] 탭과 같은
+목록형 UI(`Make_Row`)를 그대로 재사용한다 — 이 화면만을 위한 새 프리팹 레이아웃을 만들지 않았다.
+- **캐릭터 탭**이 스테이지 진입 캐릭터를 바꾸는 자리다. 보유한 캐릭터만 나열하고, 행 버튼이
+  장착/레벨업을 겸한다(위 "강화" 참고)
+- **카드 탭**은 지금까지 웨이브를 깨서 드러낸 보상 이미지를 훑어보는 갤러리다. **새 저장 데이터를
+  만들지 않았다** — `CProgress_Manager.Get_Star(iMapID)`(별 = 달성한 웨이브 수, 2-7)와
+  `CMapInfo.Get_RevealTex(iWave)`(2-5)를 그대로 읽어, 별 개수만큼의 웨이브 보상이 이미 드러난
+  것으로 본다. 썸네일은 `CGameInstance.Get_Texture`로 얻은 텍스처를 `RawImage`로 행마다
+  런타임에 하나씩 붙인다(템플릿에 이미지 자리가 없어서) — 장착 개념이 없어 누를 일도 없다
+- 스크린샷 레퍼런스(초상화 + 캐러셀 + 성급 게이지가 있는 전용 캐릭터 화면)와 달리 지금은
+  **같은 정보를 리스트 한 줄에 욱여넣은 상태**다. 클라우드 세션은 Unity 프리팹을 만들 수 없어
+  코드만 먼저 준비해 둔 것 — 전용 레이아웃(초상화 패널 + 하단 캐릭터 스트립)은 로컬에서
+  `Setup Assets`로 새 프리팹 구조를 짤 때 다시 붙일 것
 
 
 ---
