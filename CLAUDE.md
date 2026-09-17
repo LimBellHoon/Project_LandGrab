@@ -292,6 +292,12 @@ CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
 - 260917_`PROJECTILE`의 탄속 · 수명 · 사거리는 **탄 표(2-15)로 옮겼다.** 몇 발을 어떻게 뿌릴지는
   `EnemyInfo.csv`의 `eFirePattern` · `iFireCount` · `fFireAngle` · `fFireInterval`이 정한다 —
   탄 자체가 아니라 쏘는 쪽의 성질이기 때문이다.
+- 260918_**몬스터별 체력/공격력도 CSV로 뺐다.** `EnemyInfo.csv`의 `iHp`가 그 몬스터의 최대 체력,
+  `iAttack`이 플레이어와 몸이 부딪혔을 때 주는 피해다. 이 몬스터가 쏘는 탄의 피해는 여기가 아니라
+  `ProjectileInfo.csv`의 `iDamage`를 따로 쓴다(2-15) — 몸통 박치기와 원거리 공격력은 서로 다른 값이다.
+  값이 0 이하면(표를 안 채웠거나 `CProtoTest`처럼 손으로 만든 Desc) `CEnemy`의 고정값(체력3/공격력1)으로
+  대체된다 — 예전엔 이 고정값을 전 몬스터가 같이 썼다(2-11-1, 2-14).
+  `CStage_Manager.Tick_Enemy`가 같은 프레임에 여러 몬스터가 동시에 닿으면 **가장 센 공격력**을 쓴다.
 
 ### 2-6-1. 입력 — 키보드 + 가상 조이스틱 (260904)
 `CInputHandler`가 입력을 4방향 하나로 정리해 내보낸다. 어디서 왔는지는 바깥이 몰라도 된다.
@@ -669,13 +675,15 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 | 몽둥이 | ✅ | 260917_**투사체로 옮겼다**(회전탄과 같은 이유 — 그려지지 않았다). `CRunSkillEffect_Club`은 "지금 휘두를 차례인가"(자체 쿨타임)와 반경만 안다. 바라보는 쪽 앞 좌표는 `CPlayer.Try_Get_FacingPoint`가 주고, 거기에 `ProjectileInfo` 22(짧게 커지는 원)를 **레벨 반경만큼 키워**(`Spawn_PlayerShot`의 `fScale`) 띄운다. 피해 · 넉백(`ImpactInfo` 7)은 그 탄이 넣는다. 멈춰 있으면 휘두르지 않는다. 뱀서라이크의 다른 무기와 마찬가지로 버튼 없이 자동 발동한다 — "액티브"는 쿨타임을 가진 효과라는 뜻이지 버튼 여부가 아니다 |
 
 **회전탄/몽둥이를 위해 처음 생긴 것 — 몬스터 HP와 넉백.** 이전까지 몬스터는 전투로
-죽지 않았다(웨이브가 넘어갈 때 회수될 뿐). `CEnemy`에 임시 고정 HP(`DEFAULT_HP=3`,
-CSV 열이 아직 없어 `CStage_Manager.DEFAULT_HIT_DAMAGE`와 같은 자리)와 `Damage(int)`를
-추가했고, 죽으면 Projectile/Web/Soul과 똑같이 **`bCollect`를 세워 Engine이 알아서
-풀로 돌려주게 했다** — 새 회수 경로를 만들지 않았다. `CStage_Manager.Tick_Enemy`가
+죽지 않았다(웨이브가 넘어갈 때 회수될 뿐). `CEnemy`에 HP(당시엔 `DEFAULT_HP=3` 고정값)와
+`Damage(int)`를 추가했고, 죽으면 Projectile/Web/Soul과 똑같이 **`bCollect`를 세워 Engine이
+알아서 풀로 돌려주게 했다** — 새 회수 경로를 만들지 않았다. `CStage_Manager.Tick_Enemy`가
 매 프레임 죽은 몬스터를 목록에서 먼저 걷어낸다(안 그러면 다음 프레임엔 Engine이 이미
 반납해 다른 몬스터로 바뀌어 있을 수 있다). 넉백은 `CEnemyMoveHandler`에 배회/추적과는
 별개인 짧은 강제 이동 구간을 추가하는 방식으로 얹었다.
+
+> 260918_**몬스터별 체력/공격력을 CSV로 뺐다**(2-6 참고). 고정값은 CSV에 값이 없을 때의
+> 폴백으로만 남았다.
 
 > 260917_3지선다 UI 일반화는 끝났다(2-10-1 `CPickOption`). 프리팹은 여전히 `Setup_Assets` 산출물이라(3-1)
 > 클라우드 세션에서는 화면을 확인할 수 없다 — UI를 바꿨으면 로컬에서 Setup Assets 후 Play로 볼 것.
@@ -819,16 +827,13 @@ CPlayer.Heal(iAmount)      MAX_HP를 넘지 않게 회복한다 (전엔 상한�
 CPlayer.OnHpChanged        옛 OnLifeChanged와 같은 자리 — 이름만 HP에 맞췄다
 ```
 
-> 260917_**탄 피해는 이제 `ProjectileInfo.csv`의 `iDamage`를 쓴다**(2-15). 아래는 몬스터 접촉 기준으로 읽을 것.
+> 260917_**탄 피해는 `ProjectileInfo.csv`의 `iDamage`를 쓴다**(2-15). 아래는 몬스터 접촉 기준으로 읽을 것.
+> 260918_**몬스터 접촉 피해도 `EnemyInfo.csv`의 `iAttack`으로 뺐다**(2-6). 예전엔 전 몬스터가
+> `CStage_Manager.DEFAULT_HIT_DAMAGE`(1) 고정값을 같이 썼는데, 이제 몬스터 종류마다 다르게 줄 수 있다 —
+> `Damage()` 쪽은 처음부터 가변 피해량을 받게 만들어 둬서 호출부 구조는 손댈 필요가 없었다.
 
-**이번에 몬스터/탄의 공격력까지 CSV로 뺀 것은 아니다.** `EnemyInfo.csv`·`ProjectileInfo.csv`에
-아직 공격력 열이 없어서, 몬스터 접촉과 탄 피격 둘 다 `CStage_Manager.DEFAULT_HIT_DAMAGE`(1)라는
-임시 고정값을 넘긴다 — 지금까지의 밸런스(목숨 1개 = 피해 1)와 정확히 같은 결과가 나오도록 맞춘
-값이다. `Damage()` 쪽은 이미 가변 피해량을 받을 준비가 됐으니, M4에서 몬스터별 공격력 열이
-생기면 이 상수를 그 값으로 바꿔 끼우기만 하면 된다 — 호출부 구조는 손댈 필요가 없다.
-
-자기 선분을 밟은 즉사(`STEP_RESULT.DEAD`)는 공격력을 가진 몬스터가 없으므로
-`CPlayer.SELF_TRAIL_DAMAGE`(1)라는 별도 고정값을 쓴다. 마찬가지로 예전 동작과 같다.
+자기 선분을 밟은 즉사(`STEP_RESULT.DEAD`)는 특정 몬스터가 준 피해가 아니므로
+`CPlayer.SELF_TRAIL_DAMAGE`(1)라는 별도 고정값을 쓴다. 이건 몬스터 공격력과 무관하게 그대로 남는다.
 
 `MapInfo.csv`의 `iLife` 열은 `iMaxHp`로 이름을 바꿨다 — 값이 의미하는 것이 이제 '시작 목숨
 개수'가 아니라 '시작/최대 체력'이기 때문이다. `UpgradeInfo.csv`/`EquipInfo.csv`의 `HP` 스탯은

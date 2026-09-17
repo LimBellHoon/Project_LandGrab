@@ -33,11 +33,6 @@ namespace Client
         // 규칙 값이 아니라 사고 방지용 상한이라 CSV로 빼지 않는다.
         private const int    MAX_ENEMY          = 32;
 
-        // 260916_목숨 개수 → HP 전환. EnemyInfo/ProjectileInfo에 공격력 열이 아직 없어
-        // 몬스터/탄 피격 모두 임시로 같은 고정 피해량을 쓴다 — M4 보스 작업에서
-        // 몬스터별 공격력이 CSV에 들어오면 이 상수를 그 값으로 대체할 것.
-        private const int    DEFAULT_HIT_DAMAGE = 1;
-
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
         private const float  HOLD_TIME   = 0.9f;     // 드러난 보상을 보여주는 시간
@@ -773,6 +768,8 @@ namespace Client
                 iFireCount      = cInfo.iFireCount,
                 fFireAngle      = cInfo.fFireAngle,
                 fFireInterval   = cInfo.fFireInterval,
+                iHp             = cInfo.iHp,
+                iAttack         = cInfo.iAttack,
             };
 
             GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
@@ -849,6 +846,8 @@ namespace Client
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
             bool bHit = false;
+            // 260918_몬스터별 공격력(EnemyInfo.iAttack) — 여러 마리가 같은 프레임에 닿으면 가장 센 값을 쓴다.
+            int  iHitDamage = 0;
 
             m_bPlayerExposed = bExposed;
 
@@ -875,6 +874,7 @@ namespace Client
                 if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) == CELL_STATE.TRAIL)
                 {
                     bHit = true;
+                    iHitDamage = Mathf.Max(iHitDamage, cEnemy.ATTACK);
                     continue;
                 }
 
@@ -883,11 +883,12 @@ namespace Client
                     && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
                 {
                     bHit = true;
+                    iHitDamage = Mathf.Max(iHitDamage, cEnemy.ATTACK);
                 }
             }
 
             if (bHit == true)
-                m_cPlayer.Damage(DEFAULT_HIT_DAMAGE);
+                m_cPlayer.Damage(iHitDamage);
         }
 
         /// <summary> 점령 판정에 넘길 몬스터 셀 목록. 매 호출마다 버퍼를 재사용해 GC를 만들지 않는다. </summary>

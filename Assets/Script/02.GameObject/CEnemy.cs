@@ -46,13 +46,19 @@ namespace Client
         private float           m_fHitRange;        // 셀
 
         // 260916_런 스킬(회전탄/몽둥이)이 몬스터를 죽일 수 있어야 해서 처음 생긴 HP.
-        // EnemyInfo.csv에 아직 공격력/체력 열이 없어 임시 고정값을 쓴다(2-14의 DEFAULT_HIT_DAMAGE와 같은 자리) —
-        // 몬스터별 수치가 CSV에 들어오면 이 상수를 그 값으로 대체할 것.
-        private const int       DEFAULT_HP = 3;
+        // 260918_EnemyInfo.csv의 iHp/iAttack으로 몬스터별 값을 받는다. 이 상수는 표에 값이 없는
+        // 행(0 이하)이나 CProtoTest처럼 손으로 만든 Desc를 위한 기본값으로만 남았다.
+        private const int       DEFAULT_HP     = 3;
+        private const int       DEFAULT_ATTACK = 1;
         private int             m_iHp;
+        // 260918_플레이어와 몸이 부딪혔을 때 주는 피해. 이 몬스터가 쏘는 탄의 피해는
+        // ProjectileInfo.csv의 iDamage를 따로 쓴다(2-15) — 여기 값과 무관하다.
+        private int             m_iAttack;
 
         /// <summary> 260912_EnemyInfo.csv의 ID. 웨이브가 넘어갈 때 종류별 수를 셀 때 쓴다. </summary>
         public int              ENEMY_ID        => m_iEnemyID;
+        /// <summary> 몸통 박치기 피해. </summary>
+        public int              ATTACK          => m_iAttack;
         public Vector2Int       CUR_CELL        => m_cMoveHandler.CELL;
         public Vector2          POS             => m_cMoveHandler.POS;
         /// <summary> 플레이어와의 충돌 반경(셀). 월드 거리로 쓰려면 CELL_SIZE를 곱한다. </summary>
@@ -100,7 +106,8 @@ namespace Client
 
             m_eGimmick      = cDesc.eGimmick;
             m_fHitRange     = cDesc.fHitRange;
-            m_iHp           = DEFAULT_HP;
+            m_iHp           = cDesc.iHp > 0 ? cDesc.iHp : DEFAULT_HP;
+            m_iAttack       = cDesc.iAttack > 0 ? cDesc.iAttack : DEFAULT_ATTACK;
             m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
             m_bWhiteShown   = false;
             bCollect        = false;   // 풀에서 재사용되므로 지난 판의 죽음이 남지 않게 내려 둔다

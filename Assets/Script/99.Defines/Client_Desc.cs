@@ -64,6 +64,9 @@ namespace Client
         public int              iFireCount      { get; set; }
         public float            fFireAngle      { get; set; }
         public float            fFireInterval   { get; set; }
+        // 260918_몬스터별 체력/공격력(EnemyInfo.csv). 0 이하로 두면 CEnemy가 기존 고정값으로 대체한다.
+        public int              iHp             { get; set; }
+        public int              iAttack         { get; set; }
 
         public override void OnReturn()
         {

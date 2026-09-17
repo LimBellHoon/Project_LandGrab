@@ -38,6 +38,7 @@ namespace Client
             Test_MoveRules();
             Test_BoundaryOnlyMove();
             Test_LineFollow();
+            Test_EnemyTable();
             Test_Enemy();
             Test_EnemyCombat();
             Test_Player();
@@ -390,6 +391,8 @@ namespace Client
             });
 
             Check("생성 직후에는 안 죽었다", cEnemy.IS_DEAD == false);
+            // 260918_Desc에 iHp/iAttack을 안 주면(0) CEnemy의 기존 고정값(체력3/공격력1)으로 대체된다.
+            Check("iAttack 미지정 시 기본값(1)으로 대체", cEnemy.ATTACK, 1);
 
             cEnemy.Damage(1);
             cEnemy.Damage(1);
@@ -402,6 +405,58 @@ namespace Client
             Check("죽은 뒤에는 다시 피해를 받지 않는다", cEnemy.IS_DEAD == true);
 
             Object.DestroyImmediate(goEnemy);
+
+            // 260918_EnemyInfo.csv에서 온 iHp/iAttack이 그대로 적용되는지 — 종류별 난이도의 기반이다.
+            GameObject goCustom = new GameObject("Test_CombatEnemy_Custom");
+            CEnemy cCustom = goCustom.AddComponent<CEnemy>();
+            cCustom.Initialize(new CEnemyDesc
+            {
+                eObjectType     = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName   = "Prefab_Enemy",
+                cGrid           = cGrid,
+                vStartCell      = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir       = Vector2.right,
+                iEnemyID        = 998,
+                eGimmick        = ENEMY_GIMMICK.NONE,
+                fSpeed          = 1f,
+                fChaseSpeed     = 1f,
+                fTurnRate       = 1f,
+                fHitRange       = 0.5f,
+                iHp             = 1,
+                iAttack         = 5,
+            });
+
+            Check("iAttack을 지정하면 그 값이 반영된다", cCustom.ATTACK, 5);
+            cCustom.Damage(1);
+            Check("iHp를 1로 지정하면 한 대에 죽는다", cCustom.IS_DEAD == true);
+
+            Object.DestroyImmediate(goCustom);
+        }
+
+        // 260918_EnemyInfo.csv의 iHp/iAttack — 몬스터별 체력·공격력이 표에서 그대로 나오는지 본다.
+        private static void Test_EnemyTable()
+        {
+            CCSVData_EnemyInfo cTable = Load_CsvTable<CCSVData_EnemyInfo>("EnemyInfo");
+            if (cTable == null || cTable.COUNT < 4)
+            {
+                Check("EnemyInfo.csv 로드", false);
+                return;
+            }
+
+            CEnemyInfo cWanderer = cTable.Get_Info(101);   // 배회자
+            CEnemyInfo cSplitter = cTable.Get_Info(104);   // 분열체
+
+            Check("배회자 정보 로드", cWanderer != null);
+            Check("분열체 정보 로드", cSplitter != null);
+
+            if (cWanderer == null || cSplitter == null)
+                return;
+
+            Check("체력이 0보다 크다", cWanderer.iHp > 0);
+            Check("공격력이 0보다 크다", cWanderer.iAttack > 0);
+            Check("분열체가 배회자보다 단단하다(소환주기가 있어 오래 버텨야 함)",
+                  cSplitter.iHp >= cWanderer.iHp);
+            Check("표에 없는 ID는 null", cTable.Get_Info(99999) == null);
         }
 
         // 260916_목숨 개수(-1 고정) → HP 풀(가변 피해량) 전환 검증

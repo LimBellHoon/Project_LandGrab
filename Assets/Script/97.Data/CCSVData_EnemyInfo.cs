@@ -32,6 +32,12 @@ namespace Client
         public int              iFireCount;         // SPREAD · RING · SPIN의 발 수 / BURST의 연발 수
         public float            fFireAngle;         // SPREAD 부채꼴 전체 각도 / SPIN 한 번에 돌아가는 각도 (도)
         public float            fFireInterval;      // BURST 연발 간격 (초)
+
+        // 260918_몬스터별 체력/공격력. 예전엔 CStage_Manager.DEFAULT_HIT_DAMAGE(1) · CEnemy.DEFAULT_HP(3)
+        // 고정값을 전 몬스터가 같이 썼다 — 종류별 난이도를 못 줬다(2-14/2-11-1에 이미 적어 둔 자리).
+        public int              iHp;
+        // 260918_몸통 박치기 피해. 이 몬스터가 쏘는 탄의 피해는 ProjectileInfo.csv의 iDamage를 따로 쓴다(2-15).
+        public int              iAttack;
     }
 
     /// <summary>
@@ -86,6 +92,8 @@ namespace Client
                 iFireCount      = CCSV_Utility.To_Int(arrField, 14, 1),
                 fFireAngle      = CCSV_Utility.To_Float(arrField, 15),
                 fFireInterval   = CCSV_Utility.To_Float(arrField, 16, 0.12f),
+                iHp             = CCSV_Utility.To_Int(arrField, 17, 3),
+                iAttack         = CCSV_Utility.To_Int(arrField, 18, 1),
             };
 
             if (cInfo.iEnemyID <= 0)
