@@ -84,6 +84,9 @@ namespace Client
         // 260918_수집한 카드(웨이브 보상) 갤러리 — 위 3지선다 팝업(CardPick)과는 다른 화면이다.
         private const string PATH_PREFAB_UI_CARD_GALLERY = DIR_PREFAB + "/Prefab_UI_Card.prefab";
         private const string UI_CARD_GALLERY             = "Prefab_UI_Card";
+        // 260918_카드 크게 보기 (갤러리에서 한 장을 누르면 뜨는 전체 화면 팝업)
+        private const string PATH_PREFAB_UI_CARD_VIEWER  = DIR_PREFAB + "/Prefab_UI_CardViewer.prefab";
+        private const string UI_CARD_VIEWER              = "Prefab_UI_CardViewer";
 
         // 260912_카드 아이콘. CARD_TYPE 이름을 그대로 쓴다 — 표에 종류를 더하면 여기에만 추가하면 된다.
         private static readonly string[] ARR_CARD_ICON =
@@ -185,6 +188,8 @@ namespace Client
                                                  new[] { "m_txtTitle", "m_btnTemplate", "m_trContent", "m_arrIcon", "m_arrRunSkillIcon" });
             iFail += Validate_UIPrefab<CUI_Card>(PATH_PREFAB_UI_CARD_GALLERY, UI_CARD_GALLERY,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
+            iFail += Validate_UIPrefab<CUI_CardViewer>(PATH_PREFAB_UI_CARD_VIEWER, UI_CARD_VIEWER,
+                        new[] { "m_imgPhoto", "m_cFitter", "m_txtCaption", "m_btnPrev", "m_btnNext", "m_btnClose" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -1006,6 +1011,7 @@ namespace Client
             Create_ShopUI();
             Create_InventoryUI();
             Create_PopupUI();
+            Create_CardViewerUI();
             Create_CardPickUI();
             Create_CardUI();
         }
@@ -1065,6 +1071,7 @@ namespace Client
 
             Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD, UI_CARDPICK, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD_GALLERY, UI_CARD_GALLERY, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD_VIEWER, UI_CARD_VIEWER, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
@@ -1720,6 +1727,87 @@ namespace Client
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_POPUP);
             Object.DestroyImmediate(goRoot);
+        }
+
+        // 260918_카드 크게 보기. 화면 전체를 어둡게 덮고 그림은 비율을 지킨 채 가운데에 맞춘다.
+        // 루트의 Dim이 드래그를 받는다(좌우로 밀어 넘기기). 버튼은 그 위에 놓여 먼저 눌린다.
+        private static void Create_CardViewerUI()
+        {
+            GameObject goRoot = Create_UIObject(UI_CARD_VIEWER, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            // 루트에 붙인 Image가 레이캐스트를 받아야 드래그 이벤트가 CUI_CardViewer로 온다.
+            goRoot.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.92f);
+
+            // 그림 영역 — 위 캡션 · 아래 버튼 자리를 뺀 가운데
+            GameObject goArea = Create_UIObject("PhotoArea", goRoot.transform);
+            RectTransform trArea = goArea.GetComponent<RectTransform>();
+            Stretch_Full(trArea);
+            trArea.offsetMin = new Vector2(24f, 260f);
+            trArea.offsetMax = new Vector2(-24f, -200f);
+
+            GameObject goPhoto = Create_UIObject("Img_Photo", goArea.transform);
+            RectTransform trPhoto = goPhoto.GetComponent<RectTransform>();
+            trPhoto.anchorMin = new Vector2(0.5f, 0.5f);
+            trPhoto.anchorMax = new Vector2(0.5f, 0.5f);
+            trPhoto.pivot     = new Vector2(0.5f, 0.5f);
+            RawImage imgPhoto = goPhoto.AddComponent<RawImage>();
+            imgPhoto.raycastTarget = false;     // 드래그는 뒤의 루트가 받는다
+            AspectRatioFitter cFitter = goPhoto.AddComponent<AspectRatioFitter>();
+            cFitter.aspectMode  = AspectRatioFitter.AspectMode.FitInParent;
+            cFitter.aspectRatio = 0.6f;
+
+            GameObject goCaption = Create_UIObject("Txt_Caption", goRoot.transform);
+            RectTransform trCaption = goCaption.GetComponent<RectTransform>();
+            trCaption.anchorMin = new Vector2(0f, 1f);
+            trCaption.anchorMax = new Vector2(1f, 1f);
+            trCaption.pivot     = new Vector2(0.5f, 1f);
+            trCaption.offsetMin = new Vector2(140f, -190f);
+            trCaption.offsetMax = new Vector2(-140f, -40f);
+            Text txtCaption = Make_Text(goCaption, "카드", 36, TextAnchor.MiddleCenter);
+            txtCaption.raycastTarget = false;
+
+            Button cClose = Make_ViewerButton("Btn_Close", goRoot.transform, new Vector2(1f, 1f), new Vector2(-30f, -40f),
+                                              new Vector2(110f, 110f), "X");
+            Button cPrev  = Make_ViewerButton("Btn_Prev", goRoot.transform, new Vector2(0f, 0f), new Vector2(40f, 80f),
+                                              new Vector2(220f, 130f), "< 이전");
+            Button cNext  = Make_ViewerButton("Btn_Next", goRoot.transform, new Vector2(1f, 0f), new Vector2(-40f, 80f),
+                                              new Vector2(220f, 130f), "다음 >");
+
+            CUI_CardViewer cUI = goRoot.AddComponent<CUI_CardViewer>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_imgPhoto").objectReferenceValue   = imgPhoto;
+            cSerialized.FindProperty("m_cFitter").objectReferenceValue    = cFitter;
+            cSerialized.FindProperty("m_txtCaption").objectReferenceValue = txtCaption;
+            cSerialized.FindProperty("m_btnPrev").objectReferenceValue    = cPrev;
+            cSerialized.FindProperty("m_btnNext").objectReferenceValue    = cNext;
+            cSerialized.FindProperty("m_btnClose").objectReferenceValue   = cClose;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_CARD_VIEWER);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        /// <param name="vAnchor"> 모서리 앵커 — 피벗도 같은 자리에 둔다 </param>
+        private static Button Make_ViewerButton(string strName, Transform trParent, Vector2 vAnchor, Vector2 vOffset,
+                                                Vector2 vSize, string strLabel)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform trButton = go.GetComponent<RectTransform>();
+            trButton.anchorMin = vAnchor;
+            trButton.anchorMax = vAnchor;
+            trButton.pivot     = vAnchor;
+            trButton.anchoredPosition = vOffset;
+            trButton.sizeDelta = vSize;
+
+            go.AddComponent<Image>().color = new Color(0.20f, 0.26f, 0.44f, 0.9f);
+            Button cButton = go.AddComponent<Button>();
+
+            GameObject goLabel = Create_UIObject("Label", go.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Make_Text(goLabel, strLabel, 36, TextAnchor.MiddleCenter).raycastTarget = false;
+
+            return cButton;
         }
 
         private static Button Make_PopupButton(string strName, Transform trParent, float fOffsetX, string strLabel)

@@ -48,6 +48,7 @@ namespace Client
             Test_StageProgress();
             Test_CharacterTable();
             Test_Character();
+            Test_CharacterGrantAndViewer();
             Test_Star();
             Test_Currency();
             Test_Skill();
@@ -2612,6 +2613,42 @@ namespace Client
         }
 
         // 260918_보유·조각·레벨업·장착 — CStageProgress 저장/왕복과 CProgress_Manager의 조각 경제·만렙 클램프를 함께 본다.
+        // 260918_캐릭터 시스템 전에 깬 맵의 캐릭터를 챙겨 주는지 · 카드 크게 보기의 넘기기 판정
+        private static void Test_CharacterGrantAndViewer()
+        {
+            // ---- 이미 깬 저장본: 맵 1(리네트를 주는 맵)에 별 3개, 캐릭터는 없음
+            CFakeProgressRepository cRepo = new CFakeProgressRepository();
+            cRepo.STORED.Set_Star(1, 3);
+
+            CProgress_Manager cProgress = new CProgress_Manager();
+            Check("진행도 초기화(소급 지급)", cProgress.Initialize(Load_MapTable(), cRepo));
+            Check("예전에 깬 맵의 캐릭터를 챙겨 준다", cProgress.Has_Character(1));
+            Check("챙겨 준 캐릭터는 1레벨", cProgress.Get_CharacterLevel(1), 1);
+            Check("장착한 캐릭터가 없었으면 장착해 준다", cProgress.EQUIPPED_CHARACTER_ID, 1);
+            Check("조각은 주지 않는다", cProgress.Get_CharacterFragment(1), 0);
+            Check("챙겨 줬으면 저장한다", cRepo.SAVE_COUNT, 1);
+
+            CProgress_Manager cAgain = new CProgress_Manager();
+            cAgain.Initialize(Load_MapTable(), cRepo);
+            Check("이미 가졌으면 다시 저장하지 않는다", cRepo.SAVE_COUNT, 1);
+
+            CFakeProgressRepository cFresh = new CFakeProgressRepository();
+            CProgress_Manager cNew = new CProgress_Manager();
+            cNew.Initialize(Load_MapTable(), cFresh);
+            Check("안 깬 저장본은 캐릭터가 없다", cNew.Has_Character(1) == false);
+
+            Check("리네트를 주는 맵은 1번", cProgress.Find_CharacterMap(1) != null ? cProgress.Find_CharacterMap(1).iMapID : -1, 1);
+            Check("얻을 곳이 없는 캐릭터는 null", cProgress.Find_CharacterMap(2) == null);
+
+            // ---- 카드 크게 보기
+            Check("넘기기 — 목록이 비면 -1", CUI_CardViewer.Clamp_Index(0, 0), -1);
+            Check("넘기기 — 끝에서 더 가지 않는다", CUI_CardViewer.Clamp_Index(5, 3), 2);
+            Check("넘기기 — 처음에서 더 가지 않는다", CUI_CardViewer.Clamp_Index(-1, 3), 0);
+            Check("밀기 — 왼쪽으로 밀면 다음", CUI_CardViewer.Get_SwipeStep(-200f, 1080f), 1);
+            Check("밀기 — 오른쪽으로 밀면 이전", CUI_CardViewer.Get_SwipeStep(200f, 1080f), -1);
+            Check("밀기 — 짧게 스치면 그대로", CUI_CardViewer.Get_SwipeStep(40f, 1080f), 0);
+        }
+
         private static void Test_Character()
         {
             CCSVData_CharacterInfo cTable = Load_CsvTable<CCSVData_CharacterInfo>("CharacterInfo");

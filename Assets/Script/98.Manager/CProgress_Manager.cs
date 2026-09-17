@@ -44,7 +44,13 @@ namespace Client
             m_cProgress   = cRepository.Load();
 
             // 260905_별이 없던 시절의 저장본이면 별 1개짜리 기록으로 옮긴다.
-            if (m_cProgress.Migrate_Legacy() == true)
+            bool bChanged = m_cProgress.Migrate_Legacy();
+
+            // 260918_캐릭터 시스템이 생기기 전에 이미 깬 맵의 캐릭터를 챙겨 준다 —
+            // 얻는 순간이 '클리어'뿐이라, 예전에 깬 맵은 다시 깨기 전까지 캐릭터가 영영 안 들어왔다.
+            bChanged |= Grant_ClearedCharacters();
+
+            if (bChanged == true)
                 m_cRepository.Save(m_cProgress);
 
             return true;
@@ -301,6 +307,43 @@ namespace Client
         // 처음 클리어면 1레벨로 얻고 곧바로 장착한다. 이미 있으면 곧바로 레벨업하지 않고
         // 조각만 쌓는다 — 레벨업은 가방에서 조각을 모아 버튼을 눌러야 한다(Try_LevelUpCharacter).
         /// <returns> 새로 얻었거나 조각을 받았으면 true. 표에 없으면 false. </returns>
+        /// <summary> 260918_이 캐릭터를 주는 맵(MapInfo.csv의 iCharacterID). 없으면 null. </summary>
+        public CMapInfo Find_CharacterMap(int iCharacterID)
+        {
+            if (m_cMapTable == null || iCharacterID <= 0)
+                return null;
+
+            for (int i = 0; i < m_cMapTable.ALL.Count; ++i)
+            {
+                if (m_cMapTable.ALL[i].iCharacterID == iCharacterID)
+                    return m_cMapTable.ALL[i];
+            }
+            return null;
+        }
+
+        /// <returns> 하나라도 새로 챙겼으면 true </returns>
+        private bool Grant_ClearedCharacters()
+        {
+            bool bGranted = false;
+
+            for (int i = 0; i < m_cMapTable.ALL.Count; ++i)
+            {
+                CMapInfo cMap = m_cMapTable.ALL[i];
+                if (cMap.iCharacterID <= 0 || m_cProgress.Is_Cleared(cMap.iMapID) == false
+                    || m_cProgress.Has_Character(cMap.iCharacterID) == true)
+                    continue;
+
+                // 조각은 주지 않는다 — 처음 클리어 보상(1레벨 획득)만 늦게 받는 것이다.
+                m_cProgress.Set_CharacterLevel(cMap.iCharacterID, 1);
+                if (m_cProgress.iEquippedCharacterID <= 0)
+                    m_cProgress.iEquippedCharacterID = cMap.iCharacterID;
+
+                bGranted = true;
+            }
+
+            return bGranted;
+        }
+
         public bool On_CharacterMapCleared(CCSVData_CharacterInfo cTable, int iCharacterID)
         {
             CCharacterInfo cInfo = cTable != null ? cTable.Get_Info(iCharacterID) : null;

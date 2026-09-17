@@ -982,6 +982,11 @@ CUI_Inventory              가방의 [캐릭터] 탭(장착 · 레벨업)
 0이면 캐릭터를 안 주는 잔향/파밍 스테이지다. **처음 클리어하면 1레벨로 얻고 곧바로 장착한다**
 (`CProgress_Manager.On_CharacterMapCleared`) — 안 그러면 그 판을 나가도 이전 캐릭터로 던전에 들어간다.
 
+- 260918_**캐릭터 시스템 전에 이미 깬 맵의 캐릭터는 진행도를 읽을 때 챙겨 준다**(`Grant_ClearedCharacters`).
+  얻는 순간이 '클리어'뿐이라, 안 그러면 예전에 깬 맵을 다시 깨기 전까지 캐릭터가 영영 안 들어온다. 조각은 주지 않는다
+- 260918_**가방 캐릭터 탭은 못 가진 캐릭터도 보여 준다.** 무엇을 모을 수 있는지 보여야 모으고 싶어진다 —
+  못 가진 줄은 `[미보유] <맵 이름> 클리어 시 획득`(`CProgress_Manager.Find_CharacterMap`)만 적고 눌리지 않는다
+
 #### 강화 — 조각 + 가방의 레벨업 버튼 (260918)
 **이미 가진 캐릭터를 각성 스테이지에서 다시 클리어해도 레벨이 자동으로 오르지 않는다.**
 "잔향 조각"(`iFragmentPerClear`, `CharacterInfo.csv`)만 쌓이고, 가방 캐릭터 탭에서
@@ -1050,7 +1055,11 @@ LOBBY_TAB.CARD → CGameManager.Open_TabCard → CUI_Card
   2-7)와 `CMapInfo.Get_RevealTex(iWave)`(2-5)를 그대로 읽어, 별 개수만큼의 웨이브 보상이 이미
   드러난 것으로 본다
 - 썸네일은 `CGameInstance.Get_Texture`로 얻은 텍스처를 `RawImage`로 행마다 런타임에 하나씩
-  붙인다(목록 템플릿에 이미지 자리가 없어서) — 감상용이라 버튼에 클릭 동작을 걸지 않는다
+  붙인다(목록 템플릿에 이미지 자리가 없어서)
+- 260918_**한 장을 누르면 크게 보기**(`CUI_CardViewer`, `Prefab_UI_CardViewer`, Popup 캔버스)가 화면 전체로 뜬다.
+  갤러리 순서 그대로 **좌우로 밀거나 양옆 버튼으로 넘긴다**(화면 너비 8% 넘게 밀어야 넘어간다).
+  끝에서 반대쪽으로 돌아가지 않는다. 여닫기는 `CGameManager.Open_CardViewer`/`Close_CardViewer`(2-7) —
+  갤러리 탭이 닫히면 같이 닫힌다. 판정(`Clamp_Index`/`Get_SwipeStep`)은 static이라 화면 없이 테스트한다
 - `CUI_Upgrade`/`CUI_Shop`과 같은 단일 목록 화면 구조를 그대로 따른다(안쪽 탭 없음)
 
 

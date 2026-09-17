@@ -34,6 +34,7 @@ namespace Client
         private const string PREFAB_UI_CARDPICK     = "Prefab_UI_CardPick";
         // 260918_수집한 카드(웨이브 보상) 갤러리 — 3지선다 팝업(Prefab_UI_CardPick)과는 다른 화면이다.
         private const string PREFAB_UI_CARD         = "Prefab_UI_Card";
+        private const string PREFAB_UI_CARD_VIEWER  = "Prefab_UI_CardViewer";   // 260918_카드 크게 보기
         private const int    CARD_PICK_COUNT        = 3;     // 260912_한 번에 보여 줄 카드 수
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
@@ -81,6 +82,7 @@ namespace Client
         private CCSVData_CharacterInfo  m_cCharacterTable;  // 260917_캐릭터 표(스킨 + 스탯 배율)
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
+        private CUI                 m_cCardViewerUI;    // 260918_카드 크게 보기 (Popup 캔버스)
         private CUI                 m_cInGameUI;
         private CUI                 m_cPopupUI;
         private CUI                 m_cCardUI;      // 260912_카드 3지선다
@@ -385,6 +387,9 @@ namespace Client
 
         private void Close_Tab()
         {
+            // 260918_갤러리가 닫히면 그 위에 띄운 크게 보기도 같이 닫는다
+            Close_CardViewer();
+
             if (m_cTabUI == null)
                 return;
 
@@ -548,11 +553,47 @@ namespace Client
             CUI_CardDesc cDesc = new CUI_CardDesc
             {
                 eObjectType = OBJECT_TYPE.UI_MAIN,
-                cMapTable   = m_cMapTable,
-                cProgress   = m_cProgressManager,
+                cMapTable    = m_cMapTable,
+                cProgress    = m_cProgressManager,
+                OnOpenViewer = Open_CardViewer,
             };
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Card>(cDesc, trParent);
+        }
+
+        // 260918_카드 크게 보기 — 화면 전체를 덮는 팝업. 좌우로 넘기고 닫기 버튼으로 닫는다.
+        private void Open_CardViewer(IReadOnlyList<CCardViewEntry> lstEntry, int iStartIndex)
+        {
+            if (lstEntry == null || lstEntry.Count == 0)
+                return;
+
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_CARD_VIEWER) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_CARD_VIEWER}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            Close_CardViewer();
+
+            CUI_CardViewerDesc cDesc = new CUI_CardViewerDesc
+            {
+                eObjectType = OBJECT_TYPE.UI_POPUP,
+                lstEntry    = new List<CCardViewEntry>(lstEntry),    // 갤러리가 목록을 비워도 흔들리지 않게 복사한다
+                iStartIndex = iStartIndex,
+                OnClose     = Close_CardViewer,
+            };
+
+            m_cCardViewerUI = m_cGameInstance.Open_UI<CUI_CardViewer>(cDesc, m_trUIPopup);
+        }
+
+        private void Close_CardViewer()
+        {
+            if (m_cCardViewerUI == null)
+                return;
+
+            m_cGameInstance.Close_UI(m_cCardViewerUI);
+            m_cCardViewerUI = null;
         }
 
         private void Open_TabShop(Transform trParent)

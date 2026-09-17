@@ -168,12 +168,36 @@ namespace Client
     {
         public CCSVData_MapInfo  cMapTable { get; set; }
         public CProgress_Manager cProgress { get; set; }
+        // 260918_한 장을 누르면 크게 보기를 연다 — 화면을 여는 것은 CGameManager다(2-7)
+        public Action<IReadOnlyList<CCardViewEntry>, int> OnOpenViewer { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
-            cMapTable = null;
-            cProgress = null;
+            cMapTable    = null;
+            cProgress    = null;
+            OnOpenViewer = null;
+        }
+    }
+
+    // 260918_카드 크게 보기 한 장 — 어떤 그림을 무슨 이름으로 보여 줄지
+    public class CCardViewEntry
+    {
+        public string strTexName;
+        public string strCaption;
+    }
+
+    public class CUI_CardViewerDesc : CUIDesc
+    {
+        public IReadOnlyList<CCardViewEntry> lstEntry    { get; set; }
+        public int                           iStartIndex { get; set; }
+        public Action                        OnClose     { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            lstEntry = null;
+            OnClose  = null;
         }
     }
 

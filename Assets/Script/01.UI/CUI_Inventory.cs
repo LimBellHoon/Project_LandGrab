@@ -315,25 +315,33 @@ namespace Client
             }
 
             IReadOnlyList<CCharacterInfo> lstInfo = m_cCharacterTable.ALL;
-            int iOwned = 0;
 
+            // 260918_못 가진 캐릭터도 목록에 보인다 — 무엇을 모을 수 있는지 보여야 모으고 싶어진다.
+            // 못 가진 줄은 어디서 얻는지만 적고 눌리지 않는다.
             for (int i = 0; i < lstInfo.Count; ++i)
             {
                 CCharacterInfo cInfo = lstInfo[i];
-                if (m_cProgress.Has_Character(cInfo.iCharacterID) == false)
-                    continue;       // 각성 스테이지를 깨야 나타난다
-
-                ++iOwned;
+                bool bOwned = m_cProgress.Has_Character(cInfo.iCharacterID);
 
                 Button cButton = Make_Row($"Btn_Character_{cInfo.iCharacterID}");
                 Set_CharacterLabel(cButton.gameObject, cInfo);
+                cButton.interactable = bOwned;
+
+                if (bOwned == false)
+                    continue;
 
                 int iCharacterID = cInfo.iCharacterID;      // 클로저 대비 지역 복사
                 cButton.onClick.AddListener(() => On_ClickCharacter(iCharacterID));
             }
 
-            Set_Title(iOwned > 0 ? "가방 — 캐릭터   (눌러서 장착 / 장착 중이면 레벨업)"
-                                 : "가방 — 캐릭터   (각성 스테이지를 클리어하면 나타납니다)");
+            Set_Title("가방 — 캐릭터   (눌러서 장착 / 장착 중이면 레벨업)");
+        }
+
+        // 260918_이 캐릭터를 주는 맵 — MapInfo.csv의 iCharacterID로 찾는다. 없으면 아직 얻을 곳이 없다.
+        private string Get_CharacterSource(int iCharacterID)
+        {
+            CMapInfo cMap = m_cProgress.Find_CharacterMap(iCharacterID);
+            return cMap != null ? $"{cMap.strMapName} 클리어 시 획득" : "획득처 준비 중";
         }
 
         private void Set_CharacterLabel(GameObject goButton, CCharacterInfo cInfo)
@@ -341,6 +349,13 @@ namespace Client
             Text txtLabel = goButton.GetComponentInChildren<Text>();
             if (txtLabel == null)
                 return;
+
+            // 260918_못 가진 캐릭터 — 이름 · 설명과 어디서 얻는지만 보여 준다
+            if (m_cProgress.Has_Character(cInfo.iCharacterID) == false)
+            {
+                txtLabel.text = $"{cInfo.strName}   [미보유] {Get_CharacterSource(cInfo.iCharacterID)}\n{cInfo.strDesc}";
+                return;
+            }
 
             int  iLevel    = m_cProgress.Get_CharacterLevel(cInfo.iCharacterID);
             bool bEquipped = m_cProgress.EQUIPPED_CHARACTER_ID == cInfo.iCharacterID;

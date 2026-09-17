@@ -23,6 +23,9 @@ namespace Client
         [SerializeField] private Text       m_txtTitle;
 
         private readonly List<Button> m_lstButton = new List<Button>();
+        // 260918_크게 보기에 넘길 목록. 갤러리에 보이는 순서 그대로다
+        private readonly List<CCardViewEntry> m_lstEntry = new List<CCardViewEntry>();
+        private System.Action<IReadOnlyList<CCardViewEntry>, int> m_OnOpenViewer;
 
         private CCSVData_MapInfo  m_cMapTable;
         private CProgress_Manager m_cProgress;
@@ -45,8 +48,9 @@ namespace Client
                 return false;
             }
 
-            m_cMapTable = cDesc.cMapTable;
-            m_cProgress = cDesc.cProgress;
+            m_cMapTable    = cDesc.cMapTable;
+            m_cProgress    = cDesc.cProgress;
+            m_OnOpenViewer = cDesc.OnOpenViewer;
 
             m_btnTemplate.gameObject.SetActive(false);
             Build_List();
@@ -56,8 +60,9 @@ namespace Client
         public override void Hide()
         {
             Clear_List();
-            m_cMapTable = null;
-            m_cProgress = null;
+            m_cMapTable    = null;
+            m_cProgress    = null;
+            m_OnOpenViewer = null;
 
             base.Hide();
         }
@@ -107,14 +112,19 @@ namespace Client
             m_lstButton.Add(cButton);
 
             Text txtLabel = goButton.GetComponentInChildren<Text>();
+            string strCaption = $"{cMapInfo.strMapName}   {iWave}웨이브 보상";
             if (txtLabel != null)
-                txtLabel.text = $"{cMapInfo.strMapName}   {iWave}웨이브 보상";
+                txtLabel.text = strCaption;
 
             Add_Thumbnail(goButton, strTexName);
+
+            // 260918_누르면 크게 보기 — 갤러리 순서 그대로 넘겨 좌우로 넘길 수 있게 한다
+            int iIndex = m_lstEntry.Count;
+            m_lstEntry.Add(new CCardViewEntry { strTexName = strTexName, strCaption = strCaption });
+            cButton.onClick.AddListener(() => m_OnOpenViewer?.Invoke(m_lstEntry, iIndex));
         }
 
         // 260918_템플릿에 이미지 자리가 없어 런타임에 하나 붙인다 — 이 화면만을 위해 프리팹을 새로 만들지 않기 위해서다.
-        // 감상용 갤러리라 버튼에 클릭 동작은 걸지 않는다.
         private static void Add_Thumbnail(GameObject goRow, string strTexName)
         {
             Texture texture = CGameInstance.Instance.Get_Texture(strTexName);
@@ -155,6 +165,7 @@ namespace Client
             }
 
             m_lstButton.Clear();
+            m_lstEntry.Clear();
         }
     }
 }
