@@ -1,0 +1,6 @@
+﻿iGachaID	strName	iCost	fDuplicateRefundRate	NONE
+;== 장비 뽑기 테이블 ==	가방 하단의 뽑기 버튼. 무엇이 나올지는 EquipInfo.csv의 iGachaWeight가 정한다
+;iCost	코인. 코인을 쓰는 곳은 전부 CProgress_Manager.Pay를 지난다(무료 스위치 m_bFreeSpend도 여기 걸린다)
+;fDuplicateRefundRate	이미 가진 장비가 또 나오면 — 만렙 전이면 강화 1레벨, 만렙이면 비용 × 이 비율만큼 코인 환급
+;---	이름	비용	중복환급비율	메모
+1	장비 뽑기	300	0.5	첫 줄을 가방 버튼이 쓴다

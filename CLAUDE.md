@@ -152,6 +152,7 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | `ImpactInfo.csv` | `CCSVData_ImpactInfo` | 맞은 대상에게 남는 효과 (2-15) |
 | `RunSkillInfo.csv` | `CCSVData_RunSkillInfo` | 런 스킬 — 해금 · 레벨 · 투사체 무기 열 (2-11-1, 2-11-2) |
 | `AwakenInfo.csv` | `CCSVData_AwakenInfo` | 런 스킬 각성 — 액티브 + 짝 패시브 (2-11-2) |
+| `GachaInfo.csv` | `CCSVData_GachaInfo` | 장비 뽑기 — 비용 · 중복 환급 비율 (2-17-3) |
 | `CharacterInfo.csv` | `CCSVData_CharacterInfo` | 캐릭터 — 스킨 프리팹 · 레벨별 스탯 배율 (2-17) |
 
 > 표를 추가하면 `CProtoSetup`의 **`ARR_CSV`와 `ARR_CSV_TYPE` 두 곳 모두**에 넣을 것.
@@ -1041,6 +1042,35 @@ CProgress_Manager.Try_UpgradeEquip  코인을 내고 레벨을 올린다. Get_Eq
   버튼을 하나로 합치면 "장착했다가 또 눌러 강화"처럼 두 가지 뜻이 겹쳐 캐릭터 탭의 패턴을 못 쓴다.
   템플릿에 그 버튼 자리가 없어 `CUI_Card`의 썸네일처럼 런타임에 하나 더 복제해 붙였다 — 프리팹을
   새로 만들지 않기 위해서다
+
+### 2-17-3. 가방 화면 — 네 구역 + 장비 뽑기 (260918)
+레퍼런스 게임의 가방 배치를 따라 `CUI_Inventory`를 다시 짰다. 프리팹은 `CProtoSetup.Create_InventoryUI`가 처음부터 만든다.
+
+```
+┌ 위 패널 ───────────────────────────┐  A  가운데 — 장착 캐릭터 그림 + 이름 · 레벨 (누르면 캐릭터 탭)
+│ B 신발   A 장착 캐릭터   B 목걸이   │  B  부위별 장착 장비 — 신발 · 가방 / 목걸이 · 소모품
+│ B 가방                   B 소모품   │      (비었으면 장비 탭, 끼고 있으면 그 장비 상세)
+└────────────────────────────────────┘
+┌ C 보유 목록 (5열 격자, 스크롤) ─────┐  C  칸마다 아이콘 · 이름 · Lv. 장착한 칸은 왼쪽 위 'E'
+└────────────────────────────────────┘
+ D [장비] [캐릭터] [펫]     [뽑기]       D  목록 탭(INVENTORY_TAB) + 장비 뽑기(BM, 금색)
+```
+
+- **스킬 탭은 뺐다.** 스킬은 판 안에서만 얻는 런 스킬(2-11-1)이라 가방에서 고를 것이 아니다. 펫은 자리만 있다(준비 중)
+- **장착 · 강화 · 레벨업은 칸을 눌러 뜨는 상세 팝업에서 한다.** 가방은 `CUI_PopupDesc`만 만들어 `OnRequestPopup`으로 올리고,
+  `CGameManager.Open_LobbyPopup`이 띄운다(2-7). 어느 버튼이든 **먼저 닫고 동작한다** — 동작이 없는 버튼은 닫기만 한다
+- 장비 칸 아이콘은 부위별 하나(`Tex_Equip_<EQUIP_SLOT>`, 흰색)다. 같은 부위 장비는 이름으로 가른다 — 장비별 아트가 오면 표에 아이콘 열을 늘릴 것
+- 캐릭터 그림은 그 캐릭터 스킨 프리팹(`strPrefabName`)의 몸 스프라이트, 없으면 기본 몸(`Tex_PlayerBody`)이다 — 스테이지의 대체 규칙(2-17)과 같다
+- 목록 칸과 B 슬롯은 같은 모양(`Img_Icon` · `Txt_Label` · `Badge_Equip`)이라 `Paint_Cell` 하나로 칠한다
+
+#### 장비 뽑기 (`GachaInfo.csv`)
+```
+CProgress_Manager.Try_Gacha → Pay(iCost) → EquipInfo.iGachaWeight로 하나 → 결과(GACHA_RESULT)
+```
+- 무엇이 나올지는 **`EquipInfo.csv`의 `iGachaWeight`** 열이다. 0이면 안 나온다 — 소모품(보호막)은 뺐다
+- **이미 가진 장비가 나오면 버리지 않는다** — 만렙 전이면 강화 +1(`LEVEL_UP`), 만렙이면 비용 × `fDuplicateRefundRate` 코인 환급(`REFUND`)
+- 뽑을 것이 없으면 코인을 받지 않는다. 코인은 `Pay`를 지나므로 무료 스위치(`m_bFreeSpend`, 2-9)도 걸린다
+- 가방 버튼은 표의 **첫 줄**을 쓴다. 유료 재화 · 기간 한정 뽑기는 줄을 늘리고 버튼을 붙이면 된다
 
 ### 2-17-2. 카드 갤러리 — 로비의 별도 탭 (260918)
 수집한 카드(웨이브 보상 이미지)는 가방이 아니라 **로비 하단 탭바의 독립된 탭**(`LOBBY_TAB.CARD`,

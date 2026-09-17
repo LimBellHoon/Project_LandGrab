@@ -48,6 +48,7 @@ namespace Client
             Test_StageProgress();
             Test_CharacterTable();
             Test_Character();
+            Test_Gacha();
             Test_CharacterGrantAndViewer();
             Test_Star();
             Test_Currency();
@@ -2613,6 +2614,64 @@ namespace Client
         }
 
         // 260918_보유·조각·레벨업·장착 — CStageProgress 저장/왕복과 CProgress_Manager의 조각 경제·만렙 클램프를 함께 본다.
+        // 260918_장비 뽑기 — 코인 차감 · 가중치 0은 안 나옴 · 중복은 강화 → 만렙이면 환급 · 코인 부족이면 아무 일도 없음
+        private static void Test_Gacha()
+        {
+            CCSVData_EquipInfo cEquipTable = Load_EquipTable();
+            CCSVData_GachaInfo cGachaTable = Load_CsvTable<CCSVData_GachaInfo>("GachaInfo");
+            Check("GachaInfo.csv 로드", cGachaTable != null && cGachaTable.DEFAULT != null);
+            if (cEquipTable == null || cGachaTable == null || cGachaTable.DEFAULT == null)
+                return;
+
+            CGachaInfo cGacha = cGachaTable.DEFAULT;
+            Check("보호막(소모품)은 뽑기에서 뺐다", cEquipTable.Get_Info(401).iGachaWeight, 0);
+
+            CFakeProgressRepository cRepo = new CFakeProgressRepository();
+            CProgress_Manager cProgress = new CProgress_Manager();
+            cProgress.Initialize(Load_MapTable(), cRepo, cEquipTable);
+            cProgress.Set_FreeSpend(false);
+
+            Check("코인이 없으면 실패", cProgress.Try_Gacha(cGacha, out CEquipInfo _, out int _) == GACHA_RESULT.FAIL);
+            Check("실패하면 아무것도 안 생긴다", cProgress.Has_Item(101) == false && cProgress.Has_Item(102) == false);
+
+            cProgress.Add_Coin(cGacha.iCost);
+            GACHA_RESULT eFirst = cProgress.Try_Gacha(cGacha, out CEquipInfo cFirst, out int _);
+            Check("첫 뽑기는 새 장비", eFirst == GACHA_RESULT.NEW && cFirst != null && cProgress.Has_Item(cFirst.iEquipID));
+            Check("뽑으면 비용만큼 코인이 준다", cProgress.COIN, 0);
+
+            // 계속 뽑으면 — 새 장비 → 강화 → 만렙이면 환급 순으로 흘러가야 한다
+            bool bSawLevelUp = false, bSawRefund = false, bConsumable = false, bFail = false;
+            int iRefund = -1;
+            for (int n = 0; n < 400; ++n)
+            {
+                cProgress.Add_Coin(cGacha.iCost);
+                GACHA_RESULT eResult = cProgress.Try_Gacha(cGacha, out CEquipInfo cEquip, out int iGot);
+                if (eResult == GACHA_RESULT.FAIL) bFail = true;
+                if (eResult == GACHA_RESULT.LEVEL_UP) bSawLevelUp = true;
+                if (eResult == GACHA_RESULT.REFUND) { bSawRefund = true; iRefund = iGot; }
+                if (cEquip != null && cEquip.IS_CONSUMABLE == true) bConsumable = true;
+            }
+            Check("코인이 있으면 실패하지 않는다", bFail == false);
+            Check("중복이면 강화 +1", bSawLevelUp);
+            Check("만렙 중복이면 환급", bSawRefund);
+            Check("환급은 비용 × 비율", iRefund, cGacha.REFUND);
+            Check("가중치 0(소모품)은 안 나온다", bConsumable == false);
+
+            bool bAllMax = true;
+            for (int i = 0; i < cEquipTable.ALL.Count; ++i)
+            {
+                CEquipInfo cInfo = cEquipTable.ALL[i];
+                if (cInfo.iGachaWeight > 0 && cProgress.Get_EquipLevel(cInfo.iEquipID) < cInfo.iMaxLevel)
+                    bAllMax = false;
+            }
+            Check("충분히 뽑으면 뽑기 장비가 전부 만렙", bAllMax);
+
+            cProgress.Set_FreeSpend(true);
+            int iCoinBefore = cProgress.COIN;
+            cProgress.Try_Gacha(cGacha, out CEquipInfo _, out int iFreeRefund);
+            Check("무료 스위치면 코인을 쓰지 않는다(환급만 더해진다)", cProgress.COIN, iCoinBefore + iFreeRefund);
+        }
+
         // 260918_캐릭터 시스템 전에 깬 맵의 캐릭터를 챙겨 주는지 · 카드 크게 보기의 넘기기 판정
         private static void Test_CharacterGrantAndViewer()
         {

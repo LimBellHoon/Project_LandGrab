@@ -38,7 +38,7 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
@@ -46,7 +46,7 @@ namespace Client
             typeof(CCSVData_EnemyInfo), typeof(CCSVData_MapInfo), typeof(CCSVData_UpgradeInfo),
             typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
             typeof(CCSVData_RunSkillInfo), typeof(CCSVData_ProjectileInfo), typeof(CCSVData_ImpactInfo),
-            typeof(CCSVData_AwakenInfo), typeof(CCSVData_CharacterInfo),
+            typeof(CCSVData_AwakenInfo), typeof(CCSVData_CharacterInfo), typeof(CCSVData_GachaInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -94,6 +94,12 @@ namespace Client
             "Tex_Card_SHIELD", "Tex_Card_HEAL", "Tex_Card_SPEED", "Tex_Card_EVASION", "Tex_Card_SLOW",
         };
         private const string TEX_CARD_GLOW = "Tex_CardGlow";
+        // 260918_장비 부위 아이콘. EQUIP_SLOT 순서(NONE 빼고) — 가방의 B 슬롯과 장비 칸이 같이 쓴다.
+        private static readonly string[] ARR_EQUIP_ICON =
+        {
+            "Tex_Equip_SHOES", "Tex_Equip_BAG", "Tex_Equip_NECKLACE", "Tex_Equip_CONSUMABLE",
+        };
+        private const int EQUIP_ICON_KIND_START = 100;      // Is_IconInk에서 카드 · 런 스킬 모양 다음
         // 260917_런 스킬 아이콘. RUN_SKILL_TYPE 순서(NONE 빼고)를 그대로 따른다 — CUI_CardPick이 (int)타입 - 1로 찾는다.
         // 흰색으로 구워 두고 분류(액티브/패시브) 색은 런타임에 칠한다.
         private static readonly string[] ARR_RUN_SKILL_ICON =
@@ -183,7 +189,9 @@ namespace Client
             iFail += Validate_UIPrefab<CUI_Shop>(PATH_PREFAB_UI_SHOP, UI_SHOP,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
             iFail += Validate_UIPrefab<CUI_Inventory>(PATH_PREFAB_UI_INVEN, UI_INVENTORY,
-                                                 new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton" });
+                        new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton", "m_btnGacha",
+                                "m_btnCharacter", "m_imgCharacter", "m_txtCharacter", "m_spDefaultCharacter",
+                                "m_arrSlotButton", "m_arrSlotIcon" });
             iFail += Validate_UIPrefab<CUI_CardPick>(PATH_PREFAB_UI_CARD, UI_CARDPICK,
                                                  new[] { "m_txtTitle", "m_btnTemplate", "m_trContent", "m_arrIcon", "m_arrRunSkillIcon" });
             iFail += Validate_UIPrefab<CUI_Card>(PATH_PREFAB_UI_CARD_GALLERY, UI_CARD_GALLERY,
@@ -652,6 +660,14 @@ namespace Client
                 Import_AsSprite(strPath, 100);
             }
 
+            // 260918_장비 부위 아이콘 (흰색 — 가방이 상태에 따라 색을 곱한다)
+            for (int i = 0; i < ARR_EQUIP_ICON.Length; ++i)
+            {
+                string strPath = $"{DIR_ART}/{ARR_EQUIP_ICON[i]}.png";
+                Write_Png(strPath, Make_CardIcon(ICON, EQUIP_ICON_KIND_START + i));
+                Import_AsSprite(strPath, 100);
+            }
+
             // 테두리 발광 — 9슬라이스로 늘려 쓰므로 가운데는 비워 둔다.
             string strGlow = $"{DIR_ART}/{TEX_CARD_GLOW}.png";
             Write_Png(strGlow, Make_CardGlow(64));
@@ -724,7 +740,41 @@ namespace Client
                     return fAbsU < Mathf.Abs(fV) * 0.68f + 0.05f;
 
                 default:
+                    if (iKind >= EQUIP_ICON_KIND_START)
+                        return Is_EquipInk(iKind - EQUIP_ICON_KIND_START, fU, fV);
                     return Is_RunSkillInk(iKind - RUN_SKILL_ICON_KIND_START, fU, fV);
+            }
+        }
+
+        // 260918_장비 부위 넷 — 신발 · 가방 · 목걸이 · 소모품
+        private static bool Is_EquipInk(int iSlot, float fU, float fV)
+        {
+            float fAbsU = Mathf.Abs(fU);
+            float fDist = Mathf.Sqrt(fU * fU + fV * fV);
+
+            switch (iSlot)
+            {
+                case 0:     // 신발 — 세로 발목 + 가로 발바닥
+                    return (fU > -0.45f && fU < -0.05f && fV > -0.35f && fV < 0.65f)
+                        || (fU > -0.45f && fU < 0.62f && fV > -0.62f && fV < -0.25f);
+
+                case 1:     // 가방 — 몸통 + 위 손잡이 고리
+                {
+                    bool bBody   = fAbsU < 0.58f && fV > -0.62f && fV < 0.28f;
+                    float fHandle = Mathf.Sqrt(fU * fU + (fV - 0.3f) * (fV - 0.3f));
+                    bool bHandle = fV >= 0.28f && fHandle > 0.2f && fHandle < 0.34f;
+                    return bBody || bHandle;
+                }
+
+                case 2:     // 목걸이 — 위가 열린 줄 + 아래 보석
+                {
+                    bool bChain = fDist > 0.5f && fDist < 0.6f && fV < 0.35f;
+                    float fGem = Mathf.Abs(fU) + Mathf.Abs(fV + 0.55f);
+                    return bChain || fGem < 0.22f;
+                }
+
+                default:    // 소모품 — 카드 보호막 모양을 그대로 쓴다
+                    return Is_IconInk(0, fU, fV);
             }
         }
 
@@ -1340,55 +1390,239 @@ namespace Client
         // 260905_인벤토리. 공용 목록 위에 안쪽 탭(장비/스킬) 두 개를 얹는다.
         private static void Create_InventoryUI()
         {
-            Create_ListUI<CUI_Inventory>(UI_INVENTORY, PATH_PREFAB_UI_INVEN, "\uac00\ubc29", 130f);
+            // 260918_네 구역으로 다시 짰다 — 위 패널(A 장착 캐릭터 + B 부위별 슬롯) · C 보유 격자 · D 탭 + 뽑기.
+            // 로비 Content 안에 깔리므로 세로 기준 약 1590px 높이를 전제로 위아래를 고정 픽셀로 나눈다.
+            GameObject goRoot = Create_UIObject(UI_INVENTORY, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
 
-            // 저장된 프리팹을 다시 열어 탭 줄을 붙인다 —
-            // 공용 빌더를 건드리지 않고 이 화면에만 더하기 위해서다.
-            GameObject goRoot = PrefabUtility.LoadPrefabContents(PATH_PREFAB_UI_INVEN);
+            Color cPanel = new Color(0.10f, 0.12f, 0.20f, 1f);
 
-            Transform trContent = goRoot.transform.Find("Content");
-            RectTransform trContentRect = trContent as RectTransform;
-            trContentRect.offsetMax = new Vector2(-32f, -200f);   // 탭 줄 자리를 비운다
+            // ---------------- 위 패널 (A + B) ----------------
+            GameObject goTop = Create_UIObject("Panel_Top", goRoot.transform);
+            RectTransform trTop = goTop.GetComponent<RectTransform>();
+            trTop.anchorMin = new Vector2(0f, 1f);
+            trTop.anchorMax = new Vector2(1f, 1f);
+            trTop.pivot     = new Vector2(0.5f, 1f);
+            trTop.offsetMin = new Vector2(24f, -600f);
+            trTop.offsetMax = new Vector2(-24f, -16f);
+            goTop.AddComponent<Image>().color = cPanel;
 
-            GameObject goTabBar = Create_UIObject("InnerTabBar", goRoot.transform);
+            // A — 가운데 캐릭터
+            GameObject goChar = Create_UIObject("Btn_Character", goTop.transform);
+            RectTransform trChar = goChar.GetComponent<RectTransform>();
+            trChar.anchorMin = new Vector2(0.28f, 0.04f);
+            trChar.anchorMax = new Vector2(0.72f, 0.96f);
+            trChar.offsetMin = Vector2.zero;
+            trChar.offsetMax = Vector2.zero;
+            goChar.AddComponent<Image>().color = new Color(0.16f, 0.19f, 0.30f, 1f);
+            Button cCharButton = goChar.AddComponent<Button>();
+
+            GameObject goCharImg = Create_UIObject("Img_Character", goChar.transform);
+            RectTransform trCharImg = goCharImg.GetComponent<RectTransform>();
+            trCharImg.anchorMin = new Vector2(0.1f, 0.2f);
+            trCharImg.anchorMax = new Vector2(0.9f, 0.95f);
+            trCharImg.offsetMin = Vector2.zero;
+            trCharImg.offsetMax = Vector2.zero;
+            Image imgChar = goCharImg.AddComponent<Image>();
+            imgChar.preserveAspect = true;
+            imgChar.raycastTarget  = false;
+
+            GameObject goCharTxt = Create_UIObject("Txt_Character", goChar.transform);
+            RectTransform trCharTxt = goCharTxt.GetComponent<RectTransform>();
+            trCharTxt.anchorMin = new Vector2(0f, 0f);
+            trCharTxt.anchorMax = new Vector2(1f, 0.2f);
+            trCharTxt.offsetMin = Vector2.zero;
+            trCharTxt.offsetMax = Vector2.zero;
+            Text txtChar = Make_Text(goCharTxt, "캐릭터", 30, TextAnchor.MiddleCenter);
+            txtChar.raycastTarget = false;
+
+            // B — 왼쪽(신발 · 가방) / 오른쪽(목걸이 · 소모품). EQUIP_SLOT 순서로 배열에 담는다.
+            Vector2[] arrSlotMin = { new Vector2(0.02f, 0.52f), new Vector2(0.02f, 0.04f),
+                                     new Vector2(0.74f, 0.52f), new Vector2(0.74f, 0.04f) };
+            Button[] arrSlot = new Button[ARR_EQUIP_ICON.Length];
+            for (int i = 0; i < arrSlot.Length; ++i)
+            {
+                GameObject goSlot = Make_InventoryCell($"Btn_Slot_{i}", goTop.transform, false);
+                RectTransform trSlot = goSlot.GetComponent<RectTransform>();
+                trSlot.anchorMin = arrSlotMin[i];
+                trSlot.anchorMax = arrSlotMin[i] + new Vector2(0.24f, 0.44f);
+                trSlot.offsetMin = Vector2.zero;
+                trSlot.offsetMax = Vector2.zero;
+                arrSlot[i] = goSlot.GetComponent<Button>();
+            }
+
+            // ---------------- C — 보유 목록 ----------------
+            GameObject goList = Create_UIObject("Panel_List", goRoot.transform);
+            RectTransform trList = goList.GetComponent<RectTransform>();
+            trList.anchorMin = new Vector2(0f, 0f);
+            trList.anchorMax = new Vector2(1f, 1f);
+            trList.offsetMin = new Vector2(24f, 150f);
+            trList.offsetMax = new Vector2(-24f, -620f);
+            goList.AddComponent<Image>().color = cPanel;
+
+            GameObject goTitle = Create_UIObject("Txt_Title", goList.transform);
+            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
+            trTitle.anchorMin = new Vector2(0f, 1f);
+            trTitle.anchorMax = new Vector2(1f, 1f);
+            trTitle.pivot     = new Vector2(0.5f, 1f);
+            trTitle.offsetMin = new Vector2(24f, -80f);
+            trTitle.offsetMax = new Vector2(-24f, 0f);
+            Text txtTitle = Make_Text(goTitle, "장비", 32, TextAnchor.MiddleLeft);
+
+            GameObject goViewport = Create_UIObject("Viewport", goList.transform);
+            RectTransform trViewport = goViewport.GetComponent<RectTransform>();
+            trViewport.anchorMin = new Vector2(0f, 0f);
+            trViewport.anchorMax = new Vector2(1f, 1f);
+            trViewport.offsetMin = new Vector2(16f, 16f);
+            trViewport.offsetMax = new Vector2(-16f, -86f);
+            goViewport.AddComponent<RectMask2D>();
+            goViewport.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.01f);     // 드래그를 받을 자리
+
+            GameObject goGrid = Create_UIObject("Content", goViewport.transform);
+            RectTransform trGrid = goGrid.GetComponent<RectTransform>();
+            trGrid.anchorMin = new Vector2(0f, 1f);
+            trGrid.anchorMax = new Vector2(1f, 1f);
+            trGrid.pivot     = new Vector2(0.5f, 1f);
+            trGrid.offsetMin = Vector2.zero;
+            trGrid.offsetMax = Vector2.zero;
+            GridLayoutGroup cGrid = goGrid.AddComponent<GridLayoutGroup>();
+            cGrid.cellSize        = new Vector2(180f, 220f);
+            cGrid.spacing         = new Vector2(16f, 16f);
+            cGrid.constraint      = GridLayoutGroup.Constraint.FixedColumnCount;
+            cGrid.constraintCount = 5;
+            cGrid.childAlignment  = TextAnchor.UpperCenter;
+            ContentSizeFitter cFitter = goGrid.AddComponent<ContentSizeFitter>();
+            cFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            ScrollRect cScroll = goList.AddComponent<ScrollRect>();
+            cScroll.content    = trGrid;
+            cScroll.viewport   = trViewport;
+            cScroll.horizontal = false;
+            cScroll.vertical   = true;
+            cScroll.movementType = ScrollRect.MovementType.Clamped;
+
+            GameObject goTemplate = Make_InventoryCell("Btn_Template", goGrid.transform, true);
+            goTemplate.SetActive(false);        // 템플릿은 항상 꺼 둔다
+
+            // ---------------- D — 탭 + 뽑기 ----------------
+            GameObject goTabBar = Create_UIObject("Panel_Tabs", goRoot.transform);
             RectTransform trTabBar = goTabBar.GetComponent<RectTransform>();
-            trTabBar.anchorMin = new Vector2(0f, 1f);
-            trTabBar.anchorMax = new Vector2(1f, 1f);
-            trTabBar.pivot     = new Vector2(0.5f, 1f);
-            trTabBar.offsetMin = new Vector2(32f, -190f);
-            trTabBar.offsetMax = new Vector2(-32f, -110f);
-
+            trTabBar.anchorMin = new Vector2(0f, 0f);
+            trTabBar.anchorMax = new Vector2(1f, 0f);
+            trTabBar.pivot     = new Vector2(0.5f, 0f);
+            trTabBar.offsetMin = new Vector2(24f, 16f);
+            trTabBar.offsetMax = new Vector2(-24f, 136f);
             HorizontalLayoutGroup cLayout = goTabBar.AddComponent<HorizontalLayoutGroup>();
-            cLayout.spacing = 10f;
+            cLayout.spacing = 12f;
             cLayout.childForceExpandWidth  = true;
             cLayout.childForceExpandHeight = true;
             cLayout.childControlWidth      = true;
             cLayout.childControlHeight     = true;
 
-            // 260918_INVENTORY_TAB \uc21c\uc11c(\uc7a5\ube44/\uc2a4\ud0ac/\uce90\ub9ad\ud130)\uc640 1:1\ub85c \ub9de\ucd98\ub2e4. \uce74\ub4dc\ub294 \ub85c\ube44\uc758 \ubcc4\ub3c4 \ud0ed\uc73c\ub85c \ube90\ub2e4.
-            string[] arrTabName = { "\uc7a5\ube44", "\uc2a4\ud0ac", "\uce90\ub9ad\ud130" };
+            // INVENTORY_TAB 순서(장비/캐릭터/펫)와 1:1
+            string[] arrTabName = { "장비", "캐릭터", "펫" };
             Button[] arrTabButton = new Button[arrTabName.Length];
-
             for (int i = 0; i < arrTabName.Length; ++i)
-            {
-                GameObject goTab = Create_UIObject($"Btn_InnerTab_{i}", goTabBar.transform);
-                goTab.AddComponent<Image>().color = new Color(0.13f, 0.16f, 0.26f, 1f);
-                arrTabButton[i] = goTab.AddComponent<Button>();
+                arrTabButton[i] = Make_TabButton($"Btn_InnerTab_{i}", goTabBar.transform, arrTabName[i],
+                                                 new Color(0.13f, 0.16f, 0.26f, 1f));
 
-                GameObject goTabLabel = Create_UIObject("Label", goTab.transform);
-                Stretch_Full(goTabLabel.GetComponent<RectTransform>());
-                Make_Text(goTabLabel, arrTabName[i], 30, TextAnchor.MiddleCenter).raycastTarget = false;
-            }
+            // 뽑기는 BM 자리라 색을 달리해 한눈에 구분한다
+            Button cGacha = Make_TabButton("Btn_Gacha", goTabBar.transform, "뽑기", new Color(0.85f, 0.62f, 0.15f, 1f));
 
-            SerializedObject cSerialized = new SerializedObject(goRoot.GetComponent<CUI_Inventory>());
-            SerializedProperty cArray = cSerialized.FindProperty("m_arrTabButton");
-            cArray.arraySize = arrTabButton.Length;
-            for (int i = 0; i < arrTabButton.Length; ++i)
-                cArray.GetArrayElementAtIndex(i).objectReferenceValue = arrTabButton[i];
+            // ---------------- 연결 ----------------
+            CUI_Inventory cUI = goRoot.AddComponent<CUI_Inventory>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_trContent").objectReferenceValue    = trGrid;
+            cSerialized.FindProperty("m_btnTemplate").objectReferenceValue  = goTemplate.GetComponent<Button>();
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue     = txtTitle;
+            cSerialized.FindProperty("m_btnGacha").objectReferenceValue     = cGacha;
+            cSerialized.FindProperty("m_btnCharacter").objectReferenceValue = cCharButton;
+            cSerialized.FindProperty("m_imgCharacter").objectReferenceValue = imgChar;
+            cSerialized.FindProperty("m_txtCharacter").objectReferenceValue = txtChar;
+            cSerialized.FindProperty("m_spDefaultCharacter").objectReferenceValue = AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_PLAYER);
+
+            Set_ObjectArray(cSerialized, "m_arrTabButton", arrTabButton);
+            Set_ObjectArray(cSerialized, "m_arrSlotButton", arrSlot);
+
+            Sprite[] arrIcon = new Sprite[ARR_EQUIP_ICON.Length];
+            for (int i = 0; i < arrIcon.Length; ++i)
+                arrIcon[i] = AssetDatabase.LoadAssetAtPath<Sprite>($"{DIR_ART}/{ARR_EQUIP_ICON[i]}.png");
+            Set_ObjectArray(cSerialized, "m_arrSlotIcon", arrIcon);
+
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INVEN);
-            PrefabUtility.UnloadPrefabContents(goRoot);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        // 260918_가방 칸 하나 — 목록 격자와 B 슬롯이 같은 모양을 쓴다(CUI_Inventory.Paint_Cell이 이름으로 찾는다).
+        /// <param name="bUseBadge"> 목록 칸만 왼쪽 위 'E' 배지를 단다 </param>
+        private static GameObject Make_InventoryCell(string strName, Transform trParent, bool bUseBadge)
+        {
+            GameObject goCell = Create_UIObject(strName, trParent);
+            goCell.AddComponent<Image>().color = new Color(0.20f, 0.23f, 0.36f, 1f);
+            goCell.AddComponent<Button>();
+
+            GameObject goIcon = Create_UIObject("Img_Icon", goCell.transform);
+            RectTransform trIcon = goIcon.GetComponent<RectTransform>();
+            trIcon.anchorMin = new Vector2(0.15f, 0.36f);
+            trIcon.anchorMax = new Vector2(0.85f, 0.92f);
+            trIcon.offsetMin = Vector2.zero;
+            trIcon.offsetMax = Vector2.zero;
+            Image imgIcon = goIcon.AddComponent<Image>();
+            imgIcon.preserveAspect = true;
+            imgIcon.raycastTarget  = false;
+
+            GameObject goLabel = Create_UIObject("Txt_Label", goCell.transform);
+            RectTransform trLabel = goLabel.GetComponent<RectTransform>();
+            trLabel.anchorMin = new Vector2(0f, 0f);
+            trLabel.anchorMax = new Vector2(1f, 0.36f);
+            trLabel.offsetMin = new Vector2(4f, 2f);
+            trLabel.offsetMax = new Vector2(-4f, 0f);
+            Text txtLabel = Make_Text(goLabel, "Lv.0", 22, TextAnchor.MiddleCenter);
+            txtLabel.raycastTarget = false;
+            txtLabel.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+            if (bUseBadge == true)
+            {
+                GameObject goBadge = Create_UIObject("Badge_Equip", goCell.transform);
+                RectTransform trBadge = goBadge.GetComponent<RectTransform>();
+                trBadge.anchorMin = new Vector2(0f, 1f);
+                trBadge.anchorMax = new Vector2(0f, 1f);
+                trBadge.pivot     = new Vector2(0f, 1f);
+                trBadge.anchoredPosition = new Vector2(6f, -6f);
+                trBadge.sizeDelta = new Vector2(48f, 48f);
+                Image imgBadge = goBadge.AddComponent<Image>();
+                imgBadge.color = new Color(0.95f, 0.70f, 0.20f, 1f);
+                imgBadge.raycastTarget = false;
+
+                GameObject goE = Create_UIObject("Txt_E", goBadge.transform);
+                Stretch_Full(goE.GetComponent<RectTransform>());
+                Make_Text(goE, "E", 30, TextAnchor.MiddleCenter).raycastTarget = false;
+                goBadge.SetActive(false);
+            }
+
+            return goCell;
+        }
+
+        private static Button Make_TabButton(string strName, Transform trParent, string strLabel, Color cColor)
+        {
+            GameObject goTab = Create_UIObject(strName, trParent);
+            goTab.AddComponent<Image>().color = cColor;
+            Button cButton = goTab.AddComponent<Button>();
+
+            GameObject goLabel = Create_UIObject("Label", goTab.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Make_Text(goLabel, strLabel, 30, TextAnchor.MiddleCenter).raycastTarget = false;
+            return cButton;
+        }
+
+        private static void Set_ObjectArray(SerializedObject cSerialized, string strProperty, Object[] arrObject)
+        {
+            SerializedProperty cArray = cSerialized.FindProperty(strProperty);
+            cArray.arraySize = arrObject.Length;
+            for (int i = 0; i < arrObject.Length; ++i)
+                cArray.GetArrayElementAtIndex(i).objectReferenceValue = arrObject[i];
         }
 
 

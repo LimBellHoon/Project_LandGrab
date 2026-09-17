@@ -9,31 +9,57 @@ using Engine;
 namespace Client
 {
     // 260905_인벤토리 (로비의 가방 탭)
-    // 260918_안쪽 탭에 [캐릭터]를 추가했다(INVENTORY_TAB). 카드 갤러리는 장착 개념이 없어
-    // 로비의 별도 탭(LOBBY_TAB.CARD, CUI_Card)으로 뺐다.
+    // 260918_네 구역으로 다시 짰다 — 레퍼런스 게임의 가방 화면과 같은 배치다.
     /// <summary>
-    /// 안쪽에 탭이 셋 있다 — [장비] / [스킬] / [캐릭터].
-    /// 장비는 슬롯당 하나, 스킬은 통틀어 하나, 캐릭터도 스테이지 진입용으로 하나만 장착한다.
-    /// 목록은 표를 훑어 만들되 '보유한 것'만 보여 준다 — 얻어야(구매/클리어) 여기 나타난다.
+    /// <code>
+    /// ┌──────────── 위 패널 ────────────┐
+    /// │ B 슬롯   A 장착 캐릭터   B 슬롯 │   A: 지금 장착한 캐릭터 그림 (누르면 캐릭터 탭)
+    /// └─────────────────────────────────┘   B: 부위별 장착 장비 (누르면 그 장비 상세)
+    /// ┌──────────── C 목록 ─────────────┐   C: 보유 목록 격자. 장착한 칸은 왼쪽 위에 'E'
+    /// └─────────────────────────────────┘
+    ///   D: [장비] [캐릭터] [펫]  [뽑기]      D: 목록 탭 + 장비 뽑기(BM)
+    /// </code>
+    /// 장착 · 강화 · 레벨업은 칸을 눌러 뜨는 상세 팝업에서 한다. 팝업을 여는 것은 CGameManager다(2-7) —
+    /// 여기서는 무엇을 보여 줄지(CUI_PopupDesc)만 만들어 넘긴다.
+    /// 목록은 표를 훑어 만들되 장비는 '보유한 것'만, 캐릭터는 못 가진 것도 잠긴 채로 보여 준다.
     /// </summary>
     public class CUI_Inventory : CUI
     {
-        private static readonly Color COLOR_TAB_ON  = new Color(0.24f, 0.52f, 0.86f, 1f);
-        private static readonly Color COLOR_TAB_OFF = new Color(0.13f, 0.16f, 0.26f, 1f);
+        private static readonly Color COLOR_TAB_ON      = new Color(0.24f, 0.52f, 0.86f, 1f);
+        private static readonly Color COLOR_TAB_OFF     = new Color(0.13f, 0.16f, 0.26f, 1f);
+        private static readonly Color COLOR_SLOT_EMPTY  = new Color(1f, 1f, 1f, 0.18f);
+        private static readonly Color COLOR_LOCKED      = new Color(0.45f, 0.45f, 0.5f, 1f);
 
-        [SerializeField] private Transform  m_trContent;
-        [SerializeField] private Button     m_btnTemplate;      // 복제 원본 (항상 비활성)
-        [SerializeField] private Text       m_txtTitle;
+        // 260918_부위 이름. EQUIP_SLOT 순서(NONE 빼고)와 같다 — m_arrSlotButton · m_arrSlotIcon도 같은 순서다.
+        private static readonly string[] ARR_SLOT_NAME = { "신발", "가방", "목걸이", "소모품" };
+
+        [Header("C — 목록")]
+        [SerializeField] private Transform  m_trContent;        // 격자 (GridLayoutGroup)
+        [SerializeField] private Button     m_btnTemplate;      // 칸 복제 원본 (항상 비활성). 자식: Img_Icon · Txt_Label · Badge_Equip
+        [SerializeField] private Text       m_txtTitle;         // 목록 머리 (탭 이름 · 안내)
+
+        [Header("D — 탭 · 뽑기")]
         [SerializeField] private Button[]   m_arrTabButton;     // INVENTORY_TAB 순서와 1:1
+        [SerializeField] private Button     m_btnGacha;
+
+        [Header("A — 장착 캐릭터")]
+        [SerializeField] private Button     m_btnCharacter;
+        [SerializeField] private Image      m_imgCharacter;
+        [SerializeField] private Text       m_txtCharacter;
+        [SerializeField] private Sprite     m_spDefaultCharacter;   // 캐릭터 프리팹이 없을 때 쓸 기본 몸 (Prefab_Player와 같은 그림)
+
+        [Header("B — 부위별 장착 장비")]
+        [SerializeField] private Button[]   m_arrSlotButton;    // EQUIP_SLOT - 1 순서
+        [SerializeField] private Sprite[]   m_arrSlotIcon;      // EQUIP_SLOT - 1 순서. 장비 아이콘으로도 쓴다
 
         private readonly List<Button> m_lstButton = new List<Button>();
 
         private CCSVData_EquipInfo     m_cEquipTable;
-        private CCSVData_SkillInfo     m_cSkillTable;
-        // 260918_캐릭터(스킨/레벨업) 탭
         private CCSVData_CharacterInfo m_cCharacterTable;
+        private CCSVData_GachaInfo     m_cGachaTable;
         private CProgress_Manager      m_cProgress;
         private Action                 m_OnChanged;
+        private Action<CUI_PopupDesc>  m_OnRequestPopup;
         private INVENTORY_TAB          m_eTab;
 
         #region Engine.CUI
@@ -50,19 +76,20 @@ namespace Client
             if (m_trContent == null || m_btnTemplate == null
                 || m_arrTabButton == null || m_arrTabButton.Length == 0)
             {
-                Debug.LogError("[CUI_Inventory] 프리팹에 Content / 템플릿 / 탭 버튼이 연결돼 있지 않습니다. "
+                Debug.LogError("[CUI_Inventory] 프리팹에 목록 / 템플릿 / 탭 버튼이 연결돼 있지 않습니다. "
                              + "Tools/LandGrab/Setup Assets 를 실행하세요.");
                 return false;
             }
 
             m_cEquipTable     = cDesc.cEquipTable;
-            m_cSkillTable     = cDesc.cSkillTable;
             m_cCharacterTable = cDesc.cCharacterTable;
+            m_cGachaTable     = cDesc.cGachaTable;
             m_cProgress       = cDesc.cProgress;
             m_OnChanged       = cDesc.OnChanged;
+            m_OnRequestPopup  = cDesc.OnRequestPopup;
 
             m_btnTemplate.gameObject.SetActive(false);
-            Bind_TabButtons();
+            Bind_Buttons();
             Select_Tab(INVENTORY_TAB.EQUIP);
             return true;
         }
@@ -71,36 +98,41 @@ namespace Client
         {
             Clear_List();
 
-            for (int i = 0; i < m_arrTabButton.Length; ++i)
-            {
-                if (m_arrTabButton[i] != null)
-                    m_arrTabButton[i].onClick.RemoveAllListeners();
-            }
+            Unbind(m_arrTabButton);
+            Unbind(m_arrSlotButton);
+            Unbind(m_btnGacha);
+            Unbind(m_btnCharacter);
 
             m_cEquipTable     = null;
-            m_cSkillTable     = null;
             m_cCharacterTable = null;
+            m_cGachaTable     = null;
             m_cProgress       = null;
             m_OnChanged       = null;
+            m_OnRequestPopup  = null;
 
             base.Hide();
         }
         #endregion Engine.CUI
 
-        private void Bind_TabButtons()
+        private void Bind_Buttons()
         {
             for (int i = 0; i < m_arrTabButton.Length; ++i)
             {
-                Button cButton = m_arrTabButton[i];
-                if (cButton == null)
-                    continue;
-
-                // 클로저가 반복 변수를 잡지 않도록 지역에 복사해 둔다.
-                INVENTORY_TAB eTab = (INVENTORY_TAB)i;
-
-                cButton.onClick.RemoveAllListeners();
-                cButton.onClick.AddListener(() => Select_Tab(eTab));
+                INVENTORY_TAB eTab = (INVENTORY_TAB)i;      // 클로저가 반복 변수를 잡지 않도록 지역 복사
+                Bind(m_arrTabButton[i], () => Select_Tab(eTab));
             }
+
+            if (m_arrSlotButton != null)
+            {
+                for (int i = 0; i < m_arrSlotButton.Length; ++i)
+                {
+                    EQUIP_SLOT eSlot = (EQUIP_SLOT)(i + 1);
+                    Bind(m_arrSlotButton[i], () => On_ClickSlot(eSlot));
+                }
+            }
+
+            Bind(m_btnCharacter, () => Select_Tab(INVENTORY_TAB.CHARACTER));
+            Bind(m_btnGacha, On_ClickGacha);
         }
 
         private void Select_Tab(INVENTORY_TAB eTab)
@@ -109,30 +141,110 @@ namespace Client
 
             for (int i = 0; i < m_arrTabButton.Length; ++i)
             {
-                if (m_arrTabButton[i] == null)
-                    continue;
-
-                Image imgTab = m_arrTabButton[i].GetComponent<Image>();
+                Image imgTab = m_arrTabButton[i] != null ? m_arrTabButton[i].GetComponent<Image>() : null;
                 if (imgTab != null)
                     imgTab.color = (INVENTORY_TAB)i == m_eTab ? COLOR_TAB_ON : COLOR_TAB_OFF;
             }
 
-            Build_List();
+            Refresh();
         }
 
-        private void Build_List()
+        /// <summary> 위 패널(A · B)과 목록(C)을 지금 진행도로 다시 그린다. 무엇이든 바뀌면 이것 하나를 부른다. </summary>
+        private void Refresh()
         {
-            Clear_List();
+            Refresh_Character();
+            Refresh_Slots();
+            Refresh_Gacha();
 
+            Clear_List();
             switch (m_eTab)
             {
-                case INVENTORY_TAB.SKILL:     Build_SkillList();     break;
                 case INVENTORY_TAB.CHARACTER: Build_CharacterList(); break;
+                case INVENTORY_TAB.PET:       Set_Title("펫   (준비 중)"); break;
                 default:                      Build_EquipList();     break;
             }
         }
 
-        #region 장비 탭
+        private void Notify_Changed()
+        {
+            Refresh();
+            m_OnChanged?.Invoke();
+        }
+
+        #region A — 장착 캐릭터
+        private void Refresh_Character()
+        {
+            CCharacterInfo cInfo = m_cCharacterTable != null && m_cProgress.EQUIPPED_CHARACTER_ID > 0
+                                 ? m_cCharacterTable.Get_Info(m_cProgress.EQUIPPED_CHARACTER_ID) : null;
+
+            if (m_imgCharacter != null)
+            {
+                m_imgCharacter.sprite = Get_CharacterSprite(cInfo);
+                m_imgCharacter.preserveAspect = true;
+            }
+
+            if (m_txtCharacter != null)
+            {
+                m_txtCharacter.text = cInfo != null
+                                    ? $"{cInfo.strName}  Lv.{m_cProgress.Get_CharacterLevel(cInfo.iCharacterID)}"
+                                    : "기본 캐릭터";
+            }
+        }
+
+        // 260918_캐릭터 그림은 그 캐릭터 스킨 프리팹의 몸 스프라이트다. 스킨 프리팹이 아직 없으면
+        // 스테이지가 Prefab_Player로 대신 들어가므로(2-17) 화면도 같은 기본 몸을 보여 준다.
+        private Sprite Get_CharacterSprite(CCharacterInfo cInfo)
+        {
+            if (cInfo != null && string.IsNullOrEmpty(cInfo.strPrefabName) == false
+                && CGameInstance.Instance != null && CGameInstance.Instance.Has_Prefab(cInfo.strPrefabName) == true)
+            {
+                GameObject goPrefab = CGameInstance.Instance.Get_Prefab(cInfo.strPrefabName);
+                SpriteRenderer srBody = goPrefab != null ? goPrefab.GetComponentInChildren<SpriteRenderer>() : null;
+                if (srBody != null && srBody.sprite != null)
+                    return srBody.sprite;
+            }
+
+            return m_spDefaultCharacter;
+        }
+        #endregion A — 장착 캐릭터
+
+        #region B — 부위별 장착 장비
+        private void Refresh_Slots()
+        {
+            if (m_arrSlotButton == null)
+                return;
+
+            for (int i = 0; i < m_arrSlotButton.Length; ++i)
+            {
+                Button cButton = m_arrSlotButton[i];
+                if (cButton == null)
+                    continue;
+
+                EQUIP_SLOT eSlot    = (EQUIP_SLOT)(i + 1);
+                CEquipInfo cEquip   = m_cProgress.Get_Equipped(eSlot);
+                string     strName  = i < ARR_SLOT_NAME.Length ? ARR_SLOT_NAME[i] : eSlot.ToString();
+
+                Paint_Cell(cButton.gameObject, Get_SlotIcon(eSlot), cEquip != null ? Color.white : COLOR_SLOT_EMPTY,
+                           cEquip != null ? $"{strName}\n{Get_EquipShortText(cEquip)}" : $"{strName}\n비어 있음",
+                           false);
+            }
+        }
+
+        // 비어 있으면 장비 탭으로, 끼고 있으면 그 장비 상세를 연다.
+        private void On_ClickSlot(EQUIP_SLOT eSlot)
+        {
+            CEquipInfo cEquip = m_cProgress.Get_Equipped(eSlot);
+            if (cEquip == null)
+            {
+                Select_Tab(INVENTORY_TAB.EQUIP);
+                return;
+            }
+
+            Open_EquipDetail(cEquip);
+        }
+        #endregion B — 부위별 장착 장비
+
+        #region C — 장비 목록
         private void Build_EquipList()
         {
             if (m_cEquipTable == null)
@@ -152,160 +264,95 @@ namespace Client
 
                 ++iOwned;
 
-                Button cButton = Make_Row($"Btn_Equip_{cInfo.iEquipID}");
-                Set_EquipLabel(cButton.gameObject, cInfo);
+                Button cButton = Make_Cell($"Btn_Equip_{cInfo.iEquipID}");
+                Paint_Cell(cButton.gameObject, Get_SlotIcon(cInfo.eSlot), Color.white,
+                           $"{cInfo.strName}\n{Get_EquipShortText(cInfo)}", m_cProgress.Is_Equipped(cInfo.iEquipID));
 
-                // 260905_소모품도 슬롯에 넣는다 — 전투에 무엇을 들고 갈지 고르는 것이다.
-                cButton.interactable = true;
-
-                int iEquipID = cInfo.iEquipID;      // 클로저 대비 지역 복사
-                cButton.onClick.AddListener(() => On_ClickEquip(iEquipID));
-
-                // 260918_소모품은 강화 대상이 아니다(EquipInfo.iMaxLevel 0) — 버튼 자체를 안 만든다.
-                if (cInfo.IS_CONSUMABLE == false)
-                    Add_UpgradeButton(cButton.gameObject, iEquipID);
+                CEquipInfo cPicked = cInfo;         // 클로저 대비 지역 복사
+                cButton.onClick.AddListener(() => Open_EquipDetail(cPicked));
             }
 
-            Set_Title(iOwned > 0 ? "가방 — 장비" : "가방 — 장비   (상점에서 먼저 구매하세요)");
+            Set_Title(iOwned > 0 ? "장비   (눌러서 장착 · 강화)" : "장비   (뽑기나 상점에서 얻으세요)");
         }
 
-        private void Set_EquipLabel(GameObject goButton, CEquipInfo cInfo)
-        {
-            Text txtLabel = goButton.GetComponentInChildren<Text>();
-            if (txtLabel == null)
-                return;
+        private string Get_EquipShortText(CEquipInfo cInfo)
+            => cInfo.IS_CONSUMABLE == true ? $"x{m_cProgress.Get_ItemCount(cInfo.iEquipID)}"
+                                           : $"Lv.{m_cProgress.Get_EquipLevel(cInfo.iEquipID)}";
 
-            string strState;
+        // 260918_장비 상세 — 오른쪽(주) 버튼이 강화, 왼쪽(보조)이 장착/해제다. 소모품은 강화가 없어 장착/해제만 있다.
+        private void Open_EquipDetail(CEquipInfo cInfo)
+        {
+            bool bEquipped = m_cProgress.Is_Equipped(cInfo.iEquipID);
+            string strEquip = bEquipped == true ? "해제" : "장착";
+            int iEquipID = cInfo.iEquipID;
+
             if (cInfo.IS_CONSUMABLE == true)
             {
-                strState = $"{(m_cProgress.Is_Equipped(cInfo.iEquipID) == true ? "[장착 중] " : "")}보유 {m_cProgress.Get_ItemCount(cInfo.iEquipID)}";
-            }
-            else
-            {
-                string strEquip = m_cProgress.Is_Equipped(cInfo.iEquipID) == true ? "[장착 중]" : "장착하기";
-                strState = $"{strEquip}   Lv.{m_cProgress.Get_EquipLevel(cInfo.iEquipID)}/{cInfo.iMaxLevel}";
+                Request_Popup(new CUI_PopupDesc
+                {
+                    strTitle   = cInfo.strName,
+                    strBody    = $"{cInfo.strDesc}\n보유 {m_cProgress.Get_ItemCount(iEquipID)}개",
+                    strPrimary = strEquip,
+                    OnPrimary  = () => Toggle_Equip(iEquipID),
+                    strSecondary = "닫기",
+                });
+                return;
             }
 
-            txtLabel.text = $"{cInfo.strName}   {strState}\n{cInfo.strDesc}";
+            int iLevel = m_cProgress.Get_EquipLevel(iEquipID);
+            int iCost  = m_cProgress.Get_EquipUpgradeCost(iEquipID);
+            bool bMax  = iCost <= 0;
+
+            Request_Popup(new CUI_PopupDesc
+            {
+                strTitle     = $"{cInfo.strName}  Lv.{iLevel}/{cInfo.iMaxLevel}",
+                strBody      = $"{cInfo.strDesc}\n지금 {Format_Stat(cInfo, iLevel)}"
+                             + (bMax == true ? "   (최대 강화)" : $"  →  다음 {Format_Stat(cInfo, iLevel + 1)}")
+                             + $"\n코인 {m_cProgress.COIN}",
+                strPrimary   = bMax == true ? "닫기" : $"강화 ({iCost})",
+                OnPrimary    = bMax == true ? (Action)null : () => Upgrade_Equip(iEquipID),
+                strSecondary = strEquip,
+                OnSecondary  = () => Toggle_Equip(iEquipID),
+            });
         }
 
-        private void On_ClickEquip(int iEquipID)
+        private static string Format_Stat(CEquipInfo cInfo, int iLevel)
         {
-            // 이미 낀 것을 다시 누르면 벗는다 — 버튼 하나로 토글한다.
+            float fValue = cInfo.Get_StatValue(iLevel);
+            switch (cInfo.eStat)
+            {
+                case STAT_TYPE.SPEED:   return $"이동 속도 +{fValue * 100f:0.#}%";
+                case STAT_TYPE.EVASION: return $"회피 +{fValue * 100f:0.#}%";
+                case STAT_TYPE.HP:      return $"최대 체력 +{fValue:0.#}";
+                default:                return string.Empty;
+            }
+        }
+
+        // 이미 낀 것이면 벗고, 아니면 낀다 — 같은 부위의 다른 장비는 Try_Equip이 알아서 뺀다.
+        private void Toggle_Equip(int iEquipID)
+        {
             if (m_cProgress.Is_Equipped(iEquipID) == true)
                 m_cProgress.Unequip(iEquipID);
             else if (m_cProgress.Try_Equip(iEquipID) == false)
                 return;
 
-            Build_List();
-            m_OnChanged?.Invoke();
+            Notify_Changed();
         }
 
-        // 260918_장비 강화 — 행 전체를 누르면 장착/해제이므로, 강화는 오른쪽에 작은 버튼을 하나 더 붙인다.
-        // 템플릿에 그 자리가 없어 이 탭에서만 런타임에 복제해 붙인다 — 프리팹을 새로 만들지 않기 위해서다.
-        // 부모 행이 Clear_List에서 파괴될 때 같이 사라지므로 별도 목록에 담지 않는다.
-        private void Add_UpgradeButton(GameObject goRow, int iEquipID)
-        {
-            GameObject goUpgrade = Instantiate(m_btnTemplate.gameObject, goRow.transform);
-            goUpgrade.name = "Btn_Upgrade";
-            goUpgrade.SetActive(true);
-
-            RectTransform trUpgrade = goUpgrade.GetComponent<RectTransform>();
-            trUpgrade.anchorMin        = new Vector2(1f, 0.5f);
-            trUpgrade.anchorMax        = new Vector2(1f, 0.5f);
-            trUpgrade.pivot            = new Vector2(1f, 0.5f);
-            trUpgrade.anchoredPosition = new Vector2(-8f, 0f);
-            trUpgrade.sizeDelta        = new Vector2(160f, 64f);
-
-            Text txtLabel = goUpgrade.GetComponentInChildren<Text>();
-            if (txtLabel != null)
-            {
-                int iCost = m_cProgress.Get_EquipUpgradeCost(iEquipID);
-                txtLabel.text = iCost > 0 ? $"강화\n{iCost}" : "MAX";
-            }
-
-            Button cButton = goUpgrade.GetComponent<Button>();
-            cButton.onClick.RemoveAllListeners();
-            cButton.onClick.AddListener(() => On_ClickUpgradeEquip(iEquipID));
-        }
-
-        // 260918_코인이 모자라거나 만렙이면 Try_UpgradeEquip이 조용히 실패한다 —
-        // On_ClickSkill/On_ClickCharacter처럼 버튼을 따로 잠그지 않고 시도-실패로 막는다.
-        private void On_ClickUpgradeEquip(int iEquipID)
+        // 코인이 모자라면 Try_UpgradeEquip이 조용히 실패한다 — 안내를 띄워 왜 안 됐는지 알려 준다.
+        private void Upgrade_Equip(int iEquipID)
         {
             if (m_cProgress.Try_UpgradeEquip(iEquipID) == false)
-                return;
-
-            Build_List();
-            m_OnChanged?.Invoke();
-        }
-        #endregion 장비 탭
-
-        #region 스킬 탭
-        private void Build_SkillList()
-        {
-            if (m_cSkillTable == null)
             {
-                Set_Title("SkillInfo.csv를 읽지 못했습니다");
+                Request_Popup(new CUI_PopupDesc { strTitle = "강화할 수 없습니다", strBody = "코인이 모자랍니다." });
                 return;
             }
 
-            Set_Title("가방 — 스킬   (하나만 장착)");
-
-            IReadOnlyList<CSkillInfo> lstInfo = m_cSkillTable.ALL;
-
-            for (int i = 0; i < lstInfo.Count; ++i)
-            {
-                CSkillInfo cInfo = lstInfo[i];
-
-                Button cButton = Make_Row($"Btn_Skill_{cInfo.iSkillID}");
-                Set_SkillLabel(cButton.gameObject, cInfo);
-
-                int iSkillID = cInfo.iSkillID;      // 클로저 대비 지역 복사
-                cButton.onClick.AddListener(() => On_ClickSkill(iSkillID));
-            }
+            Notify_Changed();
         }
+        #endregion C — 장비 목록
 
-        private void Set_SkillLabel(GameObject goButton, CSkillInfo cInfo)
-        {
-            Text txtLabel = goButton.GetComponentInChildren<Text>();
-            if (txtLabel == null)
-                return;
-
-            int  iLevel    = m_cProgress.Get_SkillLevel(cInfo.eType);
-            int  iCost     = cInfo.Get_Cost(iLevel);
-            bool bMax      = iLevel >= cInfo.iMaxLevel;
-
-            bool bEquipped = m_cProgress.EQUIPPED_SKILL_ID == cInfo.iSkillID;
-
-            // 260905_한 줄에 장착 상태와 강화 정보를 함께 보여 준다.
-            // 분류(액티브/패시브)를 적어 줘야 인게임 버튼이 왜 안 뜨는지 헷갈리지 않는다.
-            string strKind  = cInfo.IS_PASSIVE == true ? "패시브" : "액티브";
-            string strLevel = bMax == true ? $"Lv.{iLevel} (MAX)" : $"Lv.{iLevel} → {iLevel + 1}  {iCost} 코인";
-
-            txtLabel.text = $"{cInfo.strName}   {(bEquipped == true ? "[장착 중]" : "장착하기")}   {strKind}\n"
-                          + $"{strLevel}   {cInfo.strDesc}";
-        }
-
-        // 260905_장착되지 않은 스킬을 누르면 장착, 이미 장착한 스킬을 누르면 강화한다.
-        // 버튼이 하나뿐이라 상태에 따라 뜻을 바꿨다 — 라벨에 다음 동작이 그대로 적혀 있다.
-        private void On_ClickSkill(int iSkillID)
-        {
-            if (m_cProgress.EQUIPPED_SKILL_ID != iSkillID)
-            {
-                m_cProgress.Set_EquippedSkill(iSkillID);
-            }
-            else if (m_cProgress.Try_UpgradeSkill(m_cSkillTable.Get_Info(iSkillID)) == false)
-            {
-                return;     // 코인이 모자라거나 만렙
-            }
-
-            Build_List();
-            m_OnChanged?.Invoke();
-        }
-        #endregion 스킬 탭
-
-        #region 캐릭터 탭 (260918_스킨/레벨업 — 스테이지 진입 캐릭터를 여기서 바꾼다)
+        #region C — 캐릭터 목록
         private void Build_CharacterList()
         {
             if (m_cCharacterTable == null)
@@ -314,100 +361,173 @@ namespace Client
                 return;
             }
 
-            IReadOnlyList<CCharacterInfo> lstInfo = m_cCharacterTable.ALL;
-
             // 260918_못 가진 캐릭터도 목록에 보인다 — 무엇을 모을 수 있는지 보여야 모으고 싶어진다.
-            // 못 가진 줄은 어디서 얻는지만 적고 눌리지 않는다.
+            IReadOnlyList<CCharacterInfo> lstInfo = m_cCharacterTable.ALL;
             for (int i = 0; i < lstInfo.Count; ++i)
             {
                 CCharacterInfo cInfo = lstInfo[i];
                 bool bOwned = m_cProgress.Has_Character(cInfo.iCharacterID);
 
-                Button cButton = Make_Row($"Btn_Character_{cInfo.iCharacterID}");
-                Set_CharacterLabel(cButton.gameObject, cInfo);
-                cButton.interactable = bOwned;
+                Button cButton = Make_Cell($"Btn_Character_{cInfo.iCharacterID}");
+                Paint_Cell(cButton.gameObject, Get_CharacterSprite(cInfo), bOwned == true ? Color.white : COLOR_LOCKED,
+                           bOwned == true ? $"{cInfo.strName}\nLv.{m_cProgress.Get_CharacterLevel(cInfo.iCharacterID)}"
+                                          : $"{cInfo.strName}\n미보유",
+                           m_cProgress.EQUIPPED_CHARACTER_ID == cInfo.iCharacterID);
 
-                if (bOwned == false)
-                    continue;
-
-                int iCharacterID = cInfo.iCharacterID;      // 클로저 대비 지역 복사
-                cButton.onClick.AddListener(() => On_ClickCharacter(iCharacterID));
+                CCharacterInfo cPicked = cInfo;
+                cButton.onClick.AddListener(() => Open_CharacterDetail(cPicked));
             }
 
-            Set_Title("가방 — 캐릭터   (눌러서 장착 / 장착 중이면 레벨업)");
+            Set_Title("캐릭터   (눌러서 장착 · 레벨업)");
         }
 
-        // 260918_이 캐릭터를 주는 맵 — MapInfo.csv의 iCharacterID로 찾는다. 없으면 아직 얻을 곳이 없다.
-        private string Get_CharacterSource(int iCharacterID)
+        // 260918_캐릭터 상세 — 못 가졌으면 어디서 얻는지만, 가졌으면 레벨업(주) · 장착(보조).
+        private void Open_CharacterDetail(CCharacterInfo cInfo)
         {
-            CMapInfo cMap = m_cProgress.Find_CharacterMap(iCharacterID);
-            return cMap != null ? $"{cMap.strMapName} 클리어 시 획득" : "획득처 준비 중";
-        }
+            int iCharacterID = cInfo.iCharacterID;
 
-        private void Set_CharacterLabel(GameObject goButton, CCharacterInfo cInfo)
-        {
-            Text txtLabel = goButton.GetComponentInChildren<Text>();
-            if (txtLabel == null)
-                return;
-
-            // 260918_못 가진 캐릭터 — 이름 · 설명과 어디서 얻는지만 보여 준다
-            if (m_cProgress.Has_Character(cInfo.iCharacterID) == false)
+            if (m_cProgress.Has_Character(iCharacterID) == false)
             {
-                txtLabel.text = $"{cInfo.strName}   [미보유] {Get_CharacterSource(cInfo.iCharacterID)}\n{cInfo.strDesc}";
+                CMapInfo cMap = m_cProgress.Find_CharacterMap(iCharacterID);
+                Request_Popup(new CUI_PopupDesc
+                {
+                    strTitle = $"{cInfo.strName}   (미보유)",
+                    strBody  = $"{cInfo.strDesc}\n{(cMap != null ? $"{cMap.strMapName} 클리어 시 획득" : "획득처 준비 중")}",
+                });
                 return;
             }
 
-            int  iLevel    = m_cProgress.Get_CharacterLevel(cInfo.iCharacterID);
-            bool bEquipped = m_cProgress.EQUIPPED_CHARACTER_ID == cInfo.iCharacterID;
-            bool bMax      = iLevel >= cInfo.iMaxLevel;
+            int  iLevel    = m_cProgress.Get_CharacterLevel(iCharacterID);
+            int  iCost     = m_cProgress.Get_CharacterLevelUpCost(m_cCharacterTable, iCharacterID);
+            bool bMax      = iCost <= 0;
+            bool bEquipped = m_cProgress.EQUIPPED_CHARACTER_ID == iCharacterID;
 
-            string strState;
-            if (bEquipped == false)
-                strState = "장착하기";
-            else if (bMax == true)
-                strState = "[장착 중] MAX";
-            else
-                strState = $"[장착 중] 레벨업 {m_cProgress.Get_CharacterFragment(cInfo.iCharacterID)}"
-                          + $"/{m_cProgress.Get_CharacterLevelUpCost(m_cCharacterTable, cInfo.iCharacterID)} 조각";
+            // 성급은 아직 틀뿐이다 — 몇 성인지만 보여 주고 실제 효과는 걸지 않는다(2-17).
+            int    iTier   = cInfo.Get_StarTier(iLevel);
+            string strStar = new string('★', iTier) + new string('☆', Mathf.Max(0, cInfo.lstStarLevel.Count - iTier));
 
-            // 260918_성급은 아직 틀뿐이다 — 화면에 몇 성인지만 보여 주고 실제 효과는 걸지 않는다(CLAUDE.md 2-17).
-            int    iTier    = cInfo.Get_StarTier(iLevel);
-            string strStar  = new string('★', iTier)
-                            + new string('☆', Mathf.Max(0, cInfo.lstStarLevel.Count - iTier));
-
-            txtLabel.text = $"{cInfo.strName}   {strState}\n"
-                          + $"Lv.{iLevel}/{cInfo.iMaxLevel}   {strStar} (준비 중)\n{cInfo.strDesc}";
+            Request_Popup(new CUI_PopupDesc
+            {
+                strTitle     = $"{cInfo.strName}  Lv.{iLevel}/{cInfo.iMaxLevel}  {strStar}",
+                strBody      = $"{cInfo.strDesc}\n"
+                             + (bMax == true ? "최대 레벨"
+                                             : $"레벨업 조각 {m_cProgress.Get_CharacterFragment(iCharacterID)}/{iCost}"),
+                strPrimary   = bMax == true ? "닫기" : "레벨업",
+                OnPrimary    = bMax == true ? (Action)null : () => LevelUp_Character(iCharacterID),
+                strSecondary = bEquipped == true ? string.Empty : "장착",
+                OnSecondary  = () => Equip_Character(iCharacterID),
+            });
         }
 
-        // 260918_장착되지 않은 캐릭터를 누르면 장착, 이미 장착한 캐릭터를 누르면 조각으로 레벨업한다 —
-        // On_ClickSkill과 같은 '버튼 하나가 상태에 따라 뜻을 바꾸는' 패턴이다.
-        private void On_ClickCharacter(int iCharacterID)
+        private void Equip_Character(int iCharacterID)
         {
-            if (m_cProgress.EQUIPPED_CHARACTER_ID != iCharacterID)
+            if (m_cProgress.Try_EquipCharacter(iCharacterID) == true)
+                Notify_Changed();
+        }
+
+        private void LevelUp_Character(int iCharacterID)
+        {
+            if (m_cProgress.Try_LevelUpCharacter(m_cCharacterTable, iCharacterID) == false)
             {
-                m_cProgress.Try_EquipCharacter(iCharacterID);
-            }
-            else if (m_cProgress.Try_LevelUpCharacter(m_cCharacterTable, iCharacterID) == false)
-            {
-                return;     // 조각이 모자라거나 만렙
+                Request_Popup(new CUI_PopupDesc { strTitle = "레벨업할 수 없습니다",
+                                                  strBody  = "조각이 모자랍니다. 캐릭터를 주는 맵을 다시 깨면 모입니다." });
+                return;
             }
 
-            Build_List();
-            m_OnChanged?.Invoke();
+            Notify_Changed();
         }
-        #endregion 캐릭터 탭
+        #endregion C — 캐릭터 목록
+
+        #region D — 장비 뽑기
+        private void Refresh_Gacha()
+        {
+            if (m_btnGacha == null)
+                return;
+
+            CGachaInfo cGacha = m_cGachaTable != null ? m_cGachaTable.DEFAULT : null;
+            m_btnGacha.gameObject.SetActive(cGacha != null);
+
+            Text txtLabel = m_btnGacha.GetComponentInChildren<Text>();
+            if (txtLabel != null && cGacha != null)
+                txtLabel.text = $"뽑기\n{cGacha.iCost}";
+        }
+
+        private void On_ClickGacha()
+        {
+            CGachaInfo cGacha = m_cGachaTable != null ? m_cGachaTable.DEFAULT : null;
+            if (cGacha == null)
+                return;
+
+            GACHA_RESULT eResult = m_cProgress.Try_Gacha(cGacha, out CEquipInfo cEquip, out int iRefund);
+            if (eResult == GACHA_RESULT.FAIL)
+            {
+                Request_Popup(new CUI_PopupDesc { strTitle = cGacha.strName, strBody = $"코인이 모자랍니다. ({cGacha.iCost} 필요)" });
+                return;
+            }
+
+            string strBody;
+            switch (eResult)
+            {
+                case GACHA_RESULT.LEVEL_UP: strBody = $"이미 가진 장비라 강화 +1\n{cEquip.strName}  {Get_EquipShortText(cEquip)}"; break;
+                case GACHA_RESULT.REFUND:   strBody = $"이미 최대 강화라 코인 {iRefund}을 돌려받았습니다\n{cEquip.strName}"; break;
+                default:                    strBody = $"새 장비!\n{cEquip.strName}\n{cEquip.strDesc}"; break;
+            }
+
+            Notify_Changed();
+            Request_Popup(new CUI_PopupDesc
+            {
+                strTitle     = cGacha.strName,
+                strBody      = strBody,
+                strPrimary   = $"한 번 더 ({cGacha.iCost})",
+                OnPrimary    = On_ClickGacha,
+                strSecondary = "닫기",
+            });
+        }
+        #endregion D — 장비 뽑기
 
         #region 공용
-        private Button Make_Row(string strName)
+        private Sprite Get_SlotIcon(EQUIP_SLOT eSlot)
         {
-            GameObject goButton = Instantiate(m_btnTemplate.gameObject, m_trContent);
-            goButton.name = strName;
-            goButton.SetActive(true);
+            int iIndex = (int)eSlot - 1;
+            return m_arrSlotIcon != null && iIndex >= 0 && iIndex < m_arrSlotIcon.Length ? m_arrSlotIcon[iIndex] : null;
+        }
 
-            Button cButton = goButton.GetComponent<Button>();
+        private Button Make_Cell(string strName)
+        {
+            GameObject goCell = Instantiate(m_btnTemplate.gameObject, m_trContent);
+            goCell.name = strName;
+            goCell.SetActive(true);
+
+            Button cButton = goCell.GetComponent<Button>();
+            cButton.onClick.RemoveAllListeners();
             m_lstButton.Add(cButton);
             return cButton;
         }
+
+        // 칸 하나 칠하기 — 목록 칸과 B 슬롯이 같은 모양(Img_Icon · Txt_Label · Badge_Equip)을 쓴다.
+        private static void Paint_Cell(GameObject goCell, Sprite spIcon, Color cTint, string strLabel, bool bEquipped)
+        {
+            Transform trIcon = goCell.transform.Find("Img_Icon");
+            Image imgIcon = trIcon != null ? trIcon.GetComponent<Image>() : null;
+            if (imgIcon != null)
+            {
+                imgIcon.sprite = spIcon;
+                imgIcon.color  = cTint;
+                imgIcon.enabled = spIcon != null;
+                imgIcon.preserveAspect = true;
+            }
+
+            Transform trLabel = goCell.transform.Find("Txt_Label");
+            Text txtLabel = trLabel != null ? trLabel.GetComponent<Text>() : null;
+            if (txtLabel != null)
+                txtLabel.text = strLabel;
+
+            Transform trBadge = goCell.transform.Find("Badge_Equip");
+            if (trBadge != null)
+                trBadge.gameObject.SetActive(bEquipped);
+        }
+
+        private void Request_Popup(CUI_PopupDesc cDesc) => m_OnRequestPopup?.Invoke(cDesc);
 
         private void Set_Title(string strTitle)
         {
@@ -422,12 +542,35 @@ namespace Client
                 if (m_lstButton[i] == null)
                     continue;
 
-                // 리스너를 끊지 않으면 파괴된 뒤에도 콜백이 남는다.
                 m_lstButton[i].onClick.RemoveAllListeners();
                 Destroy(m_lstButton[i].gameObject);
             }
 
             m_lstButton.Clear();
+        }
+
+        private static void Bind(Button cButton, UnityEngine.Events.UnityAction fnClick)
+        {
+            if (cButton == null)
+                return;
+
+            cButton.onClick.RemoveAllListeners();
+            cButton.onClick.AddListener(fnClick);
+        }
+
+        private static void Unbind(Button cButton)
+        {
+            if (cButton != null)
+                cButton.onClick.RemoveAllListeners();
+        }
+
+        private static void Unbind(Button[] arrButton)
+        {
+            if (arrButton == null)
+                return;
+
+            for (int i = 0; i < arrButton.Length; ++i)
+                Unbind(arrButton[i]);
         }
         #endregion 공용
     }

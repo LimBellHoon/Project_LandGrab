@@ -499,6 +499,46 @@ namespace Client
             return iCost > 0 && Can_Pay(iCost);
         }
 
+        // 260918_장비 뽑기 (가방의 BM 자리). 코인을 내고 EquipInfo.iGachaWeight로 하나를 얻는다.
+        // 이미 가진 장비가 나오면 버리지 않는다 — 만렙 전이면 강화 1레벨, 만렙이면 코인을 일부 돌려준다.
+        /// <param name="cEquip"> 뽑힌 장비. 실패하면 null </param>
+        /// <param name="iRefund"> 돌려받은 코인 (REFUND일 때만) </param>
+        public GACHA_RESULT Try_Gacha(CGachaInfo cGacha, out CEquipInfo cEquip, out int iRefund)
+        {
+            cEquip  = null;
+            iRefund = 0;
+
+            if (cGacha == null || m_cEquipTable == null)
+                return GACHA_RESULT.FAIL;
+
+            List<CEquipInfo> lstPick = CWeightedPick_Utility.Pick(m_cEquipTable.ALL, cInfo => cInfo.iGachaWeight, 1);
+            if (lstPick.Count == 0 || Pay(cGacha.iCost) == false)
+                return GACHA_RESULT.FAIL;       // 뽑을 것이 없으면 돈을 받지 않는다
+
+            cEquip = lstPick[0];
+            GACHA_RESULT eResult;
+
+            if (m_cProgress.Has_Item(cEquip.iEquipID) == false || cEquip.IS_CONSUMABLE == true)
+            {
+                m_cProgress.Add_Item(cEquip.iEquipID, 1);
+                eResult = GACHA_RESULT.NEW;
+            }
+            else if (m_cProgress.Get_EquipLevel(cEquip.iEquipID) < cEquip.iMaxLevel)
+            {
+                m_cProgress.Set_EquipLevel(cEquip.iEquipID, m_cProgress.Get_EquipLevel(cEquip.iEquipID) + 1);
+                eResult = GACHA_RESULT.LEVEL_UP;
+            }
+            else
+            {
+                iRefund = cGacha.REFUND;
+                m_cProgress.Add_Coin(iRefund);
+                eResult = GACHA_RESULT.REFUND;
+            }
+
+            m_cRepository.Save(m_cProgress);
+            return eResult;
+        }
+
         /// <summary> 코인이 모자라거나 소모품이거나 만렙이면 아무 일도 없다. </summary>
         public bool Try_UpgradeEquip(int iEquipID)
         {

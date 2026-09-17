@@ -75,6 +75,7 @@ namespace Client
         private CCSVData_SkillInfo  m_cSkillTable;      // 260905_스킬 표
         private CCSVData_EquipInfo  m_cEquipTable;      // 260905_장비 표
         private CCSVData_CardInfo   m_cCardTable;       // 260912_카드 표
+        private CCSVData_GachaInfo  m_cGachaTable;      // 260918_장비 뽑기 표
         private CCSVData_ProjectileInfo m_cProjectileTable; // 260917_탄 표
         private CCSVData_RunSkillInfo   m_cRunSkillTable;   // 260917_런 스킬 표 — 3지선다에 카드와 섞는다
         private CCSVData_AwakenInfo     m_cAwakenTable;     // 260917_각성 표 — 없으면 각성 후보가 안 나온다
@@ -305,6 +306,8 @@ namespace Client
             m_cEquipTable = m_cGameInstance.Get_CSVData(CCSVData_EquipInfo.CSV_KEY) as CCSVData_EquipInfo;
             // 260912_카드 표가 없으면 카드만 안 나오고 나머지는 그대로 돈다.
             m_cCardTable  = m_cGameInstance.Get_CSVData(CCSVData_CardInfo.CSV_KEY) as CCSVData_CardInfo;
+            // 260918_뽑기 표가 없으면 가방의 뽑기 버튼만 감춰진다.
+            m_cGachaTable = m_cGameInstance.Get_CSVData(CCSVData_GachaInfo.CSV_KEY) as CCSVData_GachaInfo;
             // 260917_런 스킬 표가 없으면 3지선다에 카드만 나온다.
             m_cRunSkillTable   = m_cGameInstance.Get_CSVData(CCSVData_RunSkillInfo.CSV_KEY) as CCSVData_RunSkillInfo;
             m_cAwakenTable     = m_cGameInstance.Get_CSVData(CCSVData_AwakenInfo.CSV_KEY) as CCSVData_AwakenInfo;
@@ -530,11 +533,12 @@ namespace Client
             {
                 eObjectType     = OBJECT_TYPE.UI_MAIN,
                 cEquipTable     = m_cEquipTable,
-                cSkillTable     = m_cSkillTable,
                 // 260918_캐릭터 탭(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다)이 참고할 표
                 cCharacterTable = m_cCharacterTable,
+                cGachaTable     = m_cGachaTable,
                 cProgress       = m_cProgressManager,
                 OnChanged       = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
+                OnRequestPopup  = Open_LobbyPopup,
             };
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Inventory>(cDesc, trParent);
@@ -881,6 +885,21 @@ namespace Client
             Close_Popup();
             (m_cInGameUI as CUI_InGame)?.Set_Interactable(true);
             m_cStageManager.Set_Pause(false);
+        }
+
+        // 260918_로비 화면(가방 상세 · 뽑기 결과)이 띄우는 팝업. 어느 버튼을 누르든 먼저 닫고 그 동작을 한다 —
+        // 동작이 다음 팝업(뽑기 한 번 더)을 여는 경우에도 겹치지 않는다. 동작이 없는 버튼은 닫기만 한다.
+        private void Open_LobbyPopup(CUI_PopupDesc cDesc)
+        {
+            if (cDesc == null)
+                return;
+
+            Action fnPrimary   = cDesc.OnPrimary;
+            Action fnSecondary = cDesc.OnSecondary;
+            cDesc.OnPrimary    = () => { Close_Popup(); fnPrimary?.Invoke(); };
+            cDesc.OnSecondary  = () => { Close_Popup(); fnSecondary?.Invoke(); };
+
+            Open_Popup(cDesc);
         }
 
         private void Open_Popup(CUI_PopupDesc cDesc)

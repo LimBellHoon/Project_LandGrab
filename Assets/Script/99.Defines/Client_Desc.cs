@@ -143,21 +143,25 @@ namespace Client
     public class CUI_InventoryDesc : CUIDesc
     {
         public CCSVData_EquipInfo     cEquipTable     { get; set; }
-        public CCSVData_SkillInfo     cSkillTable     { get; set; }
         // 260918_캐릭터 탭(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다)이 쓴다.
         public CCSVData_CharacterInfo cCharacterTable { get; set; }
+        // 260918_장비 뽑기(가방 하단 BM 자리). 없으면 뽑기 버튼을 감춘다.
+        public CCSVData_GachaInfo     cGachaTable     { get; set; }
         public CProgress_Manager      cProgress       { get; set; }
-        /// <summary> 장착 상태가 바뀌었을 때 </summary>
+        /// <summary> 장착 · 강화 · 뽑기로 코인이나 장착 상태가 바뀌었을 때 </summary>
         public Action                 OnChanged       { get; set; }
+        /// <summary> 260918_상세 · 뽑기 결과 팝업을 띄워 달라 — 화면을 여는 것은 CGameManager다(2-7) </summary>
+        public Action<CUI_PopupDesc>  OnRequestPopup  { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
             cEquipTable     = null;
-            cSkillTable     = null;
             cCharacterTable = null;
+            cGachaTable     = null;
             cProgress       = null;
             OnChanged       = null;
+            OnRequestPopup  = null;
         }
     }
 

@@ -26,6 +26,7 @@ namespace Client
         public int          iCostBase;
         public int          iCostAdd;
         public float        fStatValuePerLevel;
+        public int          iGachaWeight;   // 260918_장비 뽑기에서 나올 가중치. 0이면 안 나온다
 
         public bool IS_CONSUMABLE => eSlot == EQUIP_SLOT.CONSUMABLE;
 
@@ -102,6 +103,7 @@ namespace Client
                 iCostBase          = CCSV_Utility.To_Int(arrField, 9, 100),
                 iCostAdd           = CCSV_Utility.To_Int(arrField, 10),
                 fStatValuePerLevel = CCSV_Utility.To_Float(arrField, 11),
+                iGachaWeight       = CCSV_Utility.To_Int(arrField, 12),
             };
 
             if (cInfo.iEquipID <= 0 || cInfo.eSlot == EQUIP_SLOT.NONE)

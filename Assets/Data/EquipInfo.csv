@@ -1,4 +1,4 @@
-﻿iEquipID	eSlot	strName	strDesc	eStat	fStatValue	iPrice	eConsume	iMaxLevel	iCostBase	iCostAdd	fStatValuePerLevel	NONE
+﻿iEquipID	eSlot	strName	strDesc	eStat	fStatValue	iPrice	eConsume	iMaxLevel	iCostBase	iCostAdd	fStatValuePerLevel	iGachaWeight	NONE
 ;== 장비 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
 ;eSlot : Client_Enum.EQUIP_SLOT 이름과 같아야 한다 (SHOES / BAG / NECKLACE / CONSUMABLE)
 ;eStat : Client_Enum.STAT_TYPE 이름과 같아야 한다. 강화와 같은 늨을 올린다
@@ -6,10 +6,11 @@
 ;fStatValuePerLevel : 강화 1레벨당 fStatValue에 더하는 값. 소모품은 강화하지 않으므로 0
 ;iMaxLevel/iCostBase/iCostAdd : 장비 강화 상한 · 비용(코인). CUpgradeInfo.Get_Cost와 같은 형태 — CProgress_Manager.Try_UpgradeEquip이 쓴다
 ;소모품은 eStat을 NONE으로 두고 효과를 따로 처리한다. 강화 대상이 아니다(iMaxLevel 0)
-;---	슬롯	이름	설명	능력치	수치	가격	소모효과	강화상한	강화비용	강화비용/Lv	강화수치/Lv	메모
-101	SHOES	가벼운 신발	이동 속도 +8%	SPEED	0.08	200	NONE	5	100	50	0.01	기본 신발
-102	SHOES	질주화	이동 속도 +18%	SPEED	0.18	700	NONE	5	150	80	0.02
-201	BAG	낡은 가방	회피 +6%	EVASION	0.06	250	NONE	5	100	50	0.01
-202	BAG	바람가방	회피 +12%	EVASION	0.12	800	NONE	5	150	80	0.015
-301	NECKLACE	수호 목걸이	최대 체력 +1	HP	1	900	NONE	5	150	60	1
-401	CONSUMABLE	보호막	피격 1회 무효	NONE	0	120	SHIELD	0	0	0	0	1회성
+;iGachaWeight : 가방의 장비 뽑기(GachaInfo.csv)에서 나올 가중치. 0이면 안 나온다 — 소모품은 뽑기에서 빼 두었다
+;---	슬롯	이름	설명	능력치	수치	가격	소모효과	강화상한	강화비용	강화비용/Lv	강화수치/Lv	뽑기가중치	메모
+101	SHOES	가벼운 신발	이동 속도 +8%	SPEED	0.08	200	NONE	5	100	50	0.01	30	기본 신발
+102	SHOES	질주화	이동 속도 +18%	SPEED	0.18	700	NONE	5	150	80	0.02	10
+201	BAG	낡은 가방	회피 +6%	EVASION	0.06	250	NONE	5	100	50	0.01	30
+202	BAG	바람가방	회피 +12%	EVASION	0.12	800	NONE	5	150	80	0.015	10
+301	NECKLACE	수호 목걸이	최대 체력 +1	HP	1	900	NONE	5	150	60	1	15
+401	CONSUMABLE	보호막	피격 1회 무효	NONE	0	120	SHIELD	0	0	0	0	0	1회성
