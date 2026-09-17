@@ -16,11 +16,30 @@ namespace Client
         public string       strDesc;
 
         public STAT_TYPE    eStat;          // 올려 주는 능력치. 소모품은 NONE
-        public float        fStatValue;     // SPEED는 배율, EVASION은 확률, HP는 목숨 개수
+        public float        fStatValue;     // SPEED는 배율, EVASION은 확률, HP는 목숨 개수. 강화 전(레벨 0) 기준값
         public int          iPrice;         // 상점 가격 (코인)
         public CONSUME_EFFECT eConsume;     // 소모품이 주는 효과. 장비는 NONE
 
+        // 260918_장비 강화 — CUpgradeInfo.Get_Cost/Get_Value와 같은 형태다. 소모품은 iMaxLevel 0이라
+        // Get_Cost가 항상 0을 돌려주고(만렙 취급), CProgress_Manager.Try_UpgradeEquip도 IS_CONSUMABLE로 한 번 더 막는다.
+        public int          iMaxLevel;
+        public int          iCostBase;
+        public int          iCostAdd;
+        public float        fStatValuePerLevel;
+
         public bool IS_CONSUMABLE => eSlot == EQUIP_SLOT.CONSUMABLE;
+
+        /// <summary> 다음 레벨로 올리는 데 드는 코인. 만렙이면 0. </summary>
+        public int Get_Cost(int iCurLevel)
+        {
+            if (iCurLevel >= iMaxLevel)
+                return 0;
+
+            return iCostBase + iCostAdd * Mathf.Max(0, iCurLevel);
+        }
+
+        /// <summary> 지금 레벨에서 실제로 적용되는 수치. </summary>
+        public float Get_StatValue(int iLevel) => fStatValue + fStatValuePerLevel * Mathf.Clamp(iLevel, 0, iMaxLevel);
     }
 
     /// <summary>
@@ -79,6 +98,10 @@ namespace Client
                 fStatValue  = CCSV_Utility.To_Float(arrField, 5),
                 iPrice      = CCSV_Utility.To_Int(arrField, 6),
                 eConsume    = CCSV_Utility.To_Enum(arrField, 7, CONSUME_EFFECT.NONE),
+                iMaxLevel          = CCSV_Utility.To_Int(arrField, 8),
+                iCostBase          = CCSV_Utility.To_Int(arrField, 9, 100),
+                iCostAdd           = CCSV_Utility.To_Int(arrField, 10),
+                fStatValuePerLevel = CCSV_Utility.To_Float(arrField, 11),
             };
 
             if (cInfo.iEquipID <= 0 || cInfo.eSlot == EQUIP_SLOT.NONE)

@@ -672,6 +672,26 @@ namespace Client
             // 스킬 장착
             cManager.Set_EquippedSkill(1);
             Check("스킬 장착", cManager.EQUIPPED_SKILL_ID, 1);
+
+            // 260918_장비 강화 — 코인을 쓰고 레벨이 오르면 실제 적용되는 스탯도 같이 오른다.
+            int iCostLv0 = cManager.Get_EquipUpgradeCost(102);     // 지금 장착 중인 상위 신발(질주화)
+            Check("강화 비용이 있다", iCostLv0 > 0);
+            Check("코인이 없으면 강화 불가 판정", cManager.Can_UpgradeEquip(102) == false);
+            Check("코인이 없으면 강화 시도도 실패", cManager.Try_UpgradeEquip(102) == false);
+
+            cManager.Add_Coin(iCostLv0);
+            Check("코인이 있으면 강화 가능 판정", cManager.Can_UpgradeEquip(102));
+
+            int iCoinBefore = cManager.COIN;
+            Check("강화 성공", cManager.Try_UpgradeEquip(102));
+            Check("강화 후 레벨 1", cManager.Get_EquipLevel(102), 1);
+            Check("강화하면 코인을 그만큼 쓴다", cManager.COIN, iCoinBefore - iCostLv0);
+            Check("강화하면 실제 스탯도 오른다",
+                  Mathf.RoundToInt(cManager.Get_EquipStat(STAT_TYPE.SPEED) * 100f), 20);   // 18 + 강화 2%p
+
+            // 소모품은 강화 대상이 아니다
+            Check("소모품은 강화 비용이 없다", cManager.Get_EquipUpgradeCost(401), 0);
+            Check("소모품은 강화할 수 없다", cManager.Try_UpgradeEquip(401) == false);
         }
 
 

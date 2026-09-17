@@ -36,6 +36,8 @@ namespace Client
     {
         public int iEquipID;
         public int iCount;
+        // 260918_장비 강화 레벨. 소모품은 항상 0(스택 개수만 의미가 있다) — 새 리스트를 만들지 않고 같은 키에 얹었다.
+        public int iLevel;
     }
 
     // 260917_캐릭터 보유·강화 기록. 각성 스테이지를 다시 클리어하면(잔향 조각) 레벨만 오른다 —
@@ -217,6 +219,23 @@ namespace Client
                 lstItem.Remove(cRecord);
 
             return true;
+        }
+
+        // 260918_장비 강화 레벨. 소모품이 아니고 이미 보유(Add_Item으로 만들어진 레코드)한 장비만 대상이다 —
+        // 갖고 있지 않은 장비의 레벨을 매기면 뜻이 없으므로 여기서 새로 만들지 않는다.
+        public int Get_EquipLevel(int iEquipID)
+        {
+            CItemRecord cRecord = Find_Item(iEquipID);
+            return cRecord != null ? cRecord.iLevel : 0;
+        }
+
+        public void Set_EquipLevel(int iEquipID, int iLevel)
+        {
+            CItemRecord cRecord = Find_Item(iEquipID);
+            if (cRecord == null || iLevel < 0)
+                return;
+
+            cRecord.iLevel = iLevel;
         }
 
         public bool Is_Equipped(int iEquipID) => lstEquipped.Contains(iEquipID);

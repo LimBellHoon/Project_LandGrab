@@ -32,6 +32,8 @@ namespace Client
         private const string PREFAB_UI_SHOP         = "Prefab_UI_Shop";
         private const string PREFAB_UI_INVENTORY    = "Prefab_UI_Inventory";
         private const string PREFAB_UI_CARDPICK     = "Prefab_UI_CardPick";
+        // 260918_수집한 카드(웨이브 보상) 갤러리 — 3지선다 팝업(Prefab_UI_CardPick)과는 다른 화면이다.
+        private const string PREFAB_UI_CARD         = "Prefab_UI_Card";
         private const int    CARD_PICK_COUNT        = 3;     // 260912_한 번에 보여 줄 카드 수
 
         // 필드 이름을 바꾸면 씬에 저장된 참조가 끊긴다 — 이름은 그대로 두고 역할만 정리했다.
@@ -405,6 +407,7 @@ namespace Client
                 case LOBBY_TAB.UPGRADE: Open_TabUpgrade(trContent); break;
                 case LOBBY_TAB.INVENTORY: Open_TabInventory(trContent); break;
                 case LOBBY_TAB.SHOP:    Open_TabShop(trContent);    break;
+                case LOBBY_TAB.CARD:    Open_TabCard(trContent);    break;
 
                 // 260905_아직 없는 화면은 빈 탭으로 둔다. 버튼은 눌리고 자리만 잡아 둔다.
                 default:
@@ -523,14 +526,33 @@ namespace Client
                 eObjectType     = OBJECT_TYPE.UI_MAIN,
                 cEquipTable     = m_cEquipTable,
                 cSkillTable     = m_cSkillTable,
-                // 260918_캐릭터(스킨/레벨업) · 카드(웨이브 보상 갤러리) 탭이 참고할 표
+                // 260918_캐릭터 탭(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다)이 참고할 표
                 cCharacterTable = m_cCharacterTable,
-                cMapTable       = m_cMapTable,
                 cProgress       = m_cProgressManager,
                 OnChanged       = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
             };
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Inventory>(cDesc, trParent);
+        }
+
+        // 260918_수집한 카드(웨이브 보상 이미지) 갤러리. 가방과 달리 장착 개념이 없어 별도 로비 탭이다.
+        private void Open_TabCard(Transform trParent)
+        {
+            if (m_cGameInstance.Has_Prefab(PREFAB_UI_CARD) == false)
+            {
+                Debug.LogError($"[CGameManager] '{PREFAB_UI_CARD}' 프리팹이 없습니다. "
+                             + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                return;
+            }
+
+            CUI_CardDesc cDesc = new CUI_CardDesc
+            {
+                eObjectType = OBJECT_TYPE.UI_MAIN,
+                cMapTable   = m_cMapTable,
+                cProgress   = m_cProgressManager,
+            };
+
+            m_cTabUI = m_cGameInstance.Open_UI<CUI_Card>(cDesc, trParent);
         }
 
         private void Open_TabShop(Transform trParent)

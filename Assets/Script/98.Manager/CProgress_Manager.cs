@@ -427,11 +427,52 @@ namespace Client
             {
                 CEquipInfo cInfo = m_cEquipTable.Get_Info(m_cProgress.lstEquipped[i]);
                 if (cInfo != null && cInfo.eStat == eStat)
-                    fSum += cInfo.fStatValue;
+                    fSum += cInfo.Get_StatValue(m_cProgress.Get_EquipLevel(cInfo.iEquipID));
             }
 
             return fSum;
         }
+
+        #region 260918_장비 강화 (가방 — CUpgradeInfo.Get_Cost와 같은 형태, 코인을 쓴다)
+        public int Get_EquipLevel(int iEquipID) => m_cProgress.Get_EquipLevel(iEquipID);
+
+        /// <summary> 다음 레벨에 드는 코인. 소모품이거나 표에 없거나 만렙이면 0. </summary>
+        public int Get_EquipUpgradeCost(int iEquipID)
+        {
+            CEquipInfo cInfo = Get_EquipInfo(iEquipID);
+            if (cInfo == null || cInfo.IS_CONSUMABLE == true)
+                return 0;
+
+            return cInfo.Get_Cost(m_cProgress.Get_EquipLevel(iEquipID));
+        }
+
+        /// <summary> 강화 버튼을 켤지 정할 때 쓴다. </summary>
+        public bool Can_UpgradeEquip(int iEquipID)
+        {
+            if (m_cProgress.Has_Item(iEquipID) == false)
+                return false;
+
+            int iCost = Get_EquipUpgradeCost(iEquipID);
+            return iCost > 0 && Can_Pay(iCost);
+        }
+
+        /// <summary> 코인이 모자라거나 소모품이거나 만렙이면 아무 일도 없다. </summary>
+        public bool Try_UpgradeEquip(int iEquipID)
+        {
+            CEquipInfo cInfo = Get_EquipInfo(iEquipID);
+            if (cInfo == null || cInfo.IS_CONSUMABLE == true || m_cProgress.Has_Item(iEquipID) == false)
+                return false;
+
+            int iLevel = m_cProgress.Get_EquipLevel(iEquipID);
+            int iCost  = cInfo.Get_Cost(iLevel);
+            if (iCost <= 0 || Pay(iCost) == false)
+                return false;
+
+            m_cProgress.Set_EquipLevel(iEquipID, iLevel + 1);
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+        #endregion 260918_장비 강화
 
         /// <summary> 강화 + 장비 + 패시브 스킬을 합친 최종 수치. 스테이지에 넣을 값은 이것 하나뿐이다. </summary>
         public float Get_TotalStat(CCSVData_UpgradeInfo cUpgradeTable, STAT_TYPE eStat,

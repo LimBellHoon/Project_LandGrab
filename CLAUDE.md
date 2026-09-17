@@ -939,7 +939,7 @@ CharacterInfo.csv          프리팹 · 최대레벨 · 레벨당 속도/체력 
 CStageProgress             보유 캐릭터 + 레벨 + 조각 + 지금 장착한 캐릭터(스킬 레벨과 같은 자리)
 CProgress_Manager          On_CharacterMapCleared / Try_LevelUpCharacter / Try_EquipCharacter
 CStage_Manager.Set_Character  CGameManager가 장착 캐릭터 정보를 넘긴다 → Spawn_Player가 반영
-CUI_Inventory              가방의 [캐릭터] 탭(장착·레벨업) / [카드] 탭(웨이브 보상 갤러리)
+CUI_Inventory              가방의 [캐릭터] 탭(장착 · 레벨업)
 ```
 
 #### 획득 — 각성 스테이지 클리어
@@ -973,20 +973,50 @@ CUI_Inventory              가방의 [캐릭터] 탭(장착·레벨업) / [카�
 않는다 — `Spawn_Player`가 `Has_Prefab`으로 먼저 확인하고 없으면 기본 `Prefab_Player`로
 대체하며 경고만 남긴다(3장 "프리팹 누락" 결정과 같은 자리). 스탯 배율은 스킨과 무관하게 그대로 적용된다.
 
-#### 가방 — 캐릭터 탭 / 카드 탭 (260918)
-`CUI_Inventory`에 `INVENTORY_TAB.CHARACTER`/`CARD`를 추가했다. 기존 [장비]/[스킬] 탭과 같은
+#### 가방 — 캐릭터 탭 (260918)
+`CUI_Inventory`에 `INVENTORY_TAB.CHARACTER`를 추가했다. 기존 [장비]/[스킬] 탭과 같은
 목록형 UI(`Make_Row`)를 그대로 재사용한다 — 이 화면만을 위한 새 프리팹 레이아웃을 만들지 않았다.
-- **캐릭터 탭**이 스테이지 진입 캐릭터를 바꾸는 자리다. 보유한 캐릭터만 나열하고, 행 버튼이
-  장착/레벨업을 겸한다(위 "강화" 참고)
-- **카드 탭**은 지금까지 웨이브를 깨서 드러낸 보상 이미지를 훑어보는 갤러리다. **새 저장 데이터를
-  만들지 않았다** — `CProgress_Manager.Get_Star(iMapID)`(별 = 달성한 웨이브 수, 2-7)와
-  `CMapInfo.Get_RevealTex(iWave)`(2-5)를 그대로 읽어, 별 개수만큼의 웨이브 보상이 이미 드러난
-  것으로 본다. 썸네일은 `CGameInstance.Get_Texture`로 얻은 텍스처를 `RawImage`로 행마다
-  런타임에 하나씩 붙인다(템플릿에 이미지 자리가 없어서) — 장착 개념이 없어 누를 일도 없다
-- 스크린샷 레퍼런스(초상화 + 캐러셀 + 성급 게이지가 있는 전용 캐릭터 화면)와 달리 지금은
-  **같은 정보를 리스트 한 줄에 욱여넣은 상태**다. 클라우드 세션은 Unity 프리팹을 만들 수 없어
-  코드만 먼저 준비해 둔 것 — 전용 레이아웃(초상화 패널 + 하단 캐릭터 스트립)은 로컬에서
-  `Setup Assets`로 새 프리팹 구조를 짤 때 다시 붙일 것
+캐릭터 탭이 스테이지 진입 캐릭터를 바꾸는 자리다. 보유한 캐릭터만 나열하고, 행 버튼이
+장착/레벨업을 겸한다(위 "강화" 참고).
+
+스크린샷 레퍼런스(초상화 + 캐러셀 + 성급 게이지가 있는 전용 캐릭터 화면)와 달리 지금은
+**같은 정보를 리스트 한 줄에 욱여넣은 상태**다. 클라우드 세션은 Unity 프리팹을 만들 수 없어
+코드만 먼저 준비해 둔 것 — 전용 레이아웃(초상화 패널 + 하단 캐릭터 스트립)은 로컬에서
+`Setup Assets`로 새 프리팹 구조를 짤 때 다시 붙일 것.
+
+### 2-17-1. 장비 강화 (260918)
+장비도 캐릭터처럼 레벨을 갖는다 — `EquipInfo.csv`에 `iMaxLevel`/`iCostBase`/`iCostAdd`/
+`fStatValuePerLevel`을 추가했다. 형태는 `CUpgradeInfo.Get_Cost`/`Get_Value`와 같다(레벨 0부터
+시작, 만렙이면 비용 0). 레벨은 `CStageProgress.CItemRecord`에 필드 하나(`iLevel`)만 얹었다 —
+이미 그 장비를 보유하고 있다는 레코드가 있으니 새 리스트를 만들 이유가 없었다.
+
+```
+CEquipInfo.Get_Cost(iCurLevel)      다음 레벨 코인 비용. 만렙이면 0
+CEquipInfo.Get_StatValue(iLevel)    fStatValue + fStatValuePerLevel * 레벨 — 실제 적용 수치
+CProgress_Manager.Try_UpgradeEquip  코인을 내고 레벨을 올린다. Get_EquipStat이 이 레벨을 바로 반영한다
+```
+
+- **소모품은 강화 대상이 아니다**(`iMaxLevel` 0). `IS_CONSUMABLE`로 한 번 더 막아 표를 잘못 적어도 안전하다
+- 가방 장비 탭의 각 줄은 **행 전체(장착/해제) + 오른쪽 작은 강화 버튼**으로 나뉜다. 행 버튼과 강화
+  버튼을 하나로 합치면 "장착했다가 또 눌러 강화"처럼 두 가지 뜻이 겹쳐 캐릭터 탭의 패턴을 못 쓴다.
+  템플릿에 그 버튼 자리가 없어 `CUI_Card`의 썸네일처럼 런타임에 하나 더 복제해 붙였다 — 프리팹을
+  새로 만들지 않기 위해서다
+
+### 2-17-2. 카드 갤러리 — 로비의 별도 탭 (260918)
+수집한 카드(웨이브 보상 이미지)는 가방이 아니라 **로비 하단 탭바의 독립된 탭**(`LOBBY_TAB.CARD`,
+`CUI_Card`)이다. 장착이라는 개념이 없는 순수 감상용 화면이라 장착/강화를 다루는 가방과 성격이
+달라 처음부터 분리했다.
+
+```
+LOBBY_TAB.CARD → CGameManager.Open_TabCard → CUI_Card
+```
+
+- **새 저장 데이터를 만들지 않았다** — `CProgress_Manager.Get_Star(iMapID)`(별 = 달성한 웨이브 수,
+  2-7)와 `CMapInfo.Get_RevealTex(iWave)`(2-5)를 그대로 읽어, 별 개수만큼의 웨이브 보상이 이미
+  드러난 것으로 본다
+- 썸네일은 `CGameInstance.Get_Texture`로 얻은 텍스처를 `RawImage`로 행마다 런타임에 하나씩
+  붙인다(목록 템플릿에 이미지 자리가 없어서) — 감상용이라 버튼에 클릭 동작을 걸지 않는다
+- `CUI_Upgrade`/`CUI_Shop`과 같은 단일 목록 화면 구조를 그대로 따른다(안쪽 탭 없음)
 
 
 ---

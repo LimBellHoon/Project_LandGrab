@@ -136,14 +136,13 @@ namespace Client
         }
     }
 
-    /// <summary> 인벤토리. 안쪽 탭(장비/스킬/캐릭터/카드)은 UI가 스스로 관리한다. </summary>
+    /// <summary> 인벤토리. 안쪽 탭(장비/스킬/캐릭터)은 UI가 스스로 관리한다. </summary>
     public class CUI_InventoryDesc : CUIDesc
     {
         public CCSVData_EquipInfo     cEquipTable     { get; set; }
         public CCSVData_SkillInfo     cSkillTable     { get; set; }
-        // 260918_캐릭터 탭(스킨/레벨업)과 카드 탭(웨이브 보상 갤러리)이 쓴다.
+        // 260918_캐릭터 탭(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다)이 쓴다.
         public CCSVData_CharacterInfo cCharacterTable { get; set; }
-        public CCSVData_MapInfo       cMapTable       { get; set; }
         public CProgress_Manager      cProgress       { get; set; }
         /// <summary> 장착 상태가 바뀌었을 때 </summary>
         public Action                 OnChanged       { get; set; }
@@ -154,9 +153,24 @@ namespace Client
             cEquipTable     = null;
             cSkillTable     = null;
             cCharacterTable = null;
-            cMapTable       = null;
             cProgress       = null;
             OnChanged       = null;
+        }
+    }
+
+
+    // 260918_카드 갤러리(로비의 별도 탭 — LOBBY_TAB.CARD). 장착 개념이 없어 가방과 따로 뺐다.
+    /// <summary> 지금까지 웨이브를 깨서 드러낸 보상 이미지를 훑어보는 화면. 새 저장 데이터 없이 별 기록 + MapInfo를 읽는다. </summary>
+    public class CUI_CardDesc : CUIDesc
+    {
+        public CCSVData_MapInfo  cMapTable { get; set; }
+        public CProgress_Manager cProgress { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cMapTable = null;
+            cProgress = null;
         }
     }
 

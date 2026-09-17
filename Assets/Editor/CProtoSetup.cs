@@ -81,6 +81,9 @@ namespace Client
         private const string PATH_PREFAB_UI_CARD    = DIR_PREFAB + "/Prefab_UI_CardPick.prefab";
         private const string UI_INVENTORY           = "Prefab_UI_Inventory";
         private const string UI_CARDPICK            = "Prefab_UI_CardPick";
+        // 260918_수집한 카드(웨이브 보상) 갤러리 — 위 3지선다 팝업(CardPick)과는 다른 화면이다.
+        private const string PATH_PREFAB_UI_CARD_GALLERY = DIR_PREFAB + "/Prefab_UI_Card.prefab";
+        private const string UI_CARD_GALLERY             = "Prefab_UI_Card";
 
         // 260912_카드 아이콘. CARD_TYPE 이름을 그대로 쓴다 — 표에 종류를 더하면 여기에만 추가하면 된다.
         private static readonly string[] ARR_CARD_ICON =
@@ -180,6 +183,8 @@ namespace Client
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_CardPick>(PATH_PREFAB_UI_CARD, UI_CARDPICK,
                                                  new[] { "m_txtTitle", "m_btnTemplate", "m_trContent", "m_arrIcon", "m_arrRunSkillIcon" });
+            iFail += Validate_UIPrefab<CUI_Card>(PATH_PREFAB_UI_CARD_GALLERY, UI_CARD_GALLERY,
+                                                 new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
             iFail += Validate_UIPrefab<CUI_Popup>(PATH_PREFAB_UI_POPUP, UI_POPUP,
                         new[] { "m_txtTitle", "m_txtBody", "m_btnPrimary", "m_btnSecondary" });
 
@@ -1002,6 +1007,7 @@ namespace Client
             Create_InventoryUI();
             Create_PopupUI();
             Create_CardPickUI();
+            Create_CardUI();
         }
 
         /// <summary> 스프라이트 1장 + CGameObject 파생 컴포넌트 1개로 이루어진 프리팹을 만든다. </summary>
@@ -1058,6 +1064,7 @@ namespace Client
                                TEX_CARD_GLOW, CAddressableLabel.TEXTURE);
 
             Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD, UI_CARDPICK, CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD_GALLERY, UI_CARD_GALLERY, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_POPUP, UI_POPUP, CAddressableLabel.PREFAB);
 
             // 260904_웨이브 이미지 스택과 모양 마스크. 주소를 파일명과 맞춰야 CSV에 적은 이름으로 찾을 수 있다.
@@ -1228,7 +1235,8 @@ namespace Client
             cTabLayout.childControlWidth      = true;
             cTabLayout.childControlHeight     = true;
 
-            string[] arrTabName = { "\uc804\ud22c", "\uac15\ud654", "\uac00\ubc29", "\uc0c1\uc810" };
+            // 260918_LOBBY_TAB \uc21c\uc11c(\uc804\ud22c/\uac15\ud654/\uac00\ubc29/\uc0c1\uc810/\uce74\ub4dc)\uc640 1:1\ub85c \ub9de\ucd98\ub2e4.
+            string[] arrTabName = { "\uc804\ud22c", "\uac15\ud654", "\uac00\ubc29", "\uc0c1\uc810", "\uce74\ub4dc" };
             Button[] arrTabButton = new Button[arrTabName.Length];
 
             for (int i = 0; i < arrTabName.Length; ++i)
@@ -1350,8 +1358,8 @@ namespace Client
             cLayout.childControlWidth      = true;
             cLayout.childControlHeight     = true;
 
-            // 260918_INVENTORY_TAB \uc21c\uc11c(\uc7a5\ube44/\uc2a4\ud0ac/\uce90\ub9ad\ud130/\uce74\ub4dc)\uc640 1:1\ub85c \ub9de\ucd98\ub2e4.
-            string[] arrTabName = { "\uc7a5\ube44", "\uc2a4\ud0ac", "\uce90\ub9ad\ud130", "\uce74\ub4dc" };
+            // 260918_INVENTORY_TAB \uc21c\uc11c(\uc7a5\ube44/\uc2a4\ud0ac/\uce90\ub9ad\ud130)\uc640 1:1\ub85c \ub9de\ucd98\ub2e4. \uce74\ub4dc\ub294 \ub85c\ube44\uc758 \ubcc4\ub3c4 \ud0ed\uc73c\ub85c \ube90\ub2e4.
+            string[] arrTabName = { "\uc7a5\ube44", "\uc2a4\ud0ac", "\uce90\ub9ad\ud130" };
             Button[] arrTabButton = new Button[arrTabName.Length];
 
             for (int i = 0; i < arrTabName.Length; ++i)
@@ -1381,6 +1389,12 @@ namespace Client
         private static void Create_ShopUI()
         {
             Create_ListUI<CUI_Shop>(UI_SHOP, PATH_PREFAB_UI_SHOP, "\uc0c1\uc810", 130f);
+        }
+
+        // 260918_\uc218\uc9d1\ud55c \uce74\ub4dc(\uc6e8\uc774\ube0c \ubcf4\uc0c1) \uac24\ub7ec\ub9ac. \ubaa9\ub85d\uc740 MapInfo.csv + \ubcc4 \uae30\ub85d\uc744 \ubcf4\uace0 \ub7f0\ud0c0\uc784\uc5d0 \ub9cc\ub4e0\ub2e4.
+        private static void Create_CardUI()
+        {
+            Create_ListUI<CUI_Card>(UI_CARD_GALLERY, PATH_PREFAB_UI_CARD_GALLERY, "\uce74\ub4dc", 130f);
         }
 
 
