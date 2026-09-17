@@ -47,6 +47,7 @@ namespace Client
         private float   m_fTravelled;       // 월드
         private float   m_fHitStopTimer;
         private float   m_fScaleRate = 1f;  // 특성(SCALE_OVER_TIME)이 곱하는 크기
+        private float   m_fSpawnScale = 1f; // 260917_쏜 쪽이 곱하는 크기(몽둥이 레벨). 특성이 매 프레임 덮는 값과 따로 둔다
         private int     m_iDurability;
         private int     m_iHitCount;        // 260917_새로 맞힌 횟수. 플레이어 탄이 몬스터를 때렸는지 스테이지가 센다(분노 게이지)
         private bool    m_bExpired;
@@ -71,7 +72,7 @@ namespace Client
         public float            SPEED           => m_cInfo.fSpeed * m_fCellSize;
         public float            ELAPSED         => m_fElapsed;
         public float            LIFE_TIME       => m_cInfo.fLifeTime;
-        public float            SCALE           => m_cInfo.fScale * m_fScaleRate;
+        public float            SCALE           => m_cInfo.fScale * m_fScaleRate * m_fSpawnScale;
         public int              DURABILITY      => m_iDurability;
         public int              HIT_COUNT       => m_iHitCount;
         public int              SERIAL          => m_iSerial;
@@ -108,6 +109,7 @@ namespace Client
             m_fTravelled    = 0f;
             m_fHitStopTimer = 0f;
             m_fScaleRate    = 1f;
+            m_fSpawnScale   = 1f;
             m_iDurability   = cInfo.iDurability == 0 ? 1 : cInfo.iDurability;
             m_iHitCount     = 0;
             m_iSerial       = ++s_iSerial;
@@ -352,6 +354,8 @@ namespace Client
         }
 
         public void Set_ScaleRate(float fRate) => m_fScaleRate = Mathf.Max(0.01f, fRate);
+
+        public void Set_SpawnScale(float fScale) => m_fSpawnScale = Mathf.Max(0.01f, fScale);
 
         public void Hit_Stop(float fTime) => m_fHitStopTimer = Mathf.Max(m_fHitStopTimer, fTime);
 

@@ -28,3 +28,4 @@
 19	끝없는 튕김탄	POINT	STRAIGHT	REBOUND	8	10	0	0.7	1.2	1	12	-	-	각성: 튕기는 탄+월보. 11번 튕기고 12번째에 사라진다
 20	회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:180|CANCEL_SHOT:1	런 스킬 회전탄. 수명 0 = 스킬이 거둘 때까지. 닿은 적탄을 지운다
 21	광란 회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:360|CANCEL_SHOT:1	각성 광란의 칼바람 — 분노가 터진 동안 두 배로 빨리 돈다
+22	몽둥이	BLAST	NONE	-	0	0.3	0	0.8	1	1	-1	7	BLAST_GROW:0.1|BLAST_SCALE:1.25	런 스킬 몽둥이. 휘두른 자리에서 짧게 커지는 원. 크기는 스킬 레벨이 곱한다(1레벨 반경 1칸)

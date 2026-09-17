@@ -81,14 +81,6 @@ namespace Client
         /// <summary> 회전탄/몽둥이가 몬스터를 때렸을 때 CPlayer가 모든 효과에 알린다(분노 게이지용). </summary>
         public virtual void On_MonsterHit() { }
 
-        // 260916_몽둥이 — "지금 휘두를 차례인가"만 판단한다. 실제 위치 계산(플레이어 위치 +
-        // 바라보는 방향)은 마찬가지로 CPlayer가 한다.
-        /// <returns> 이번 프레임에 휘둘렀으면 true(그 즉시 쿨타임이 다시 찬다). fRadiusCells에 판정 반경(셀). </returns>
-        public virtual bool Consume_Swing(out float fRadiusCells)
-        {
-            fRadiusCells = 0f;
-            return false;
-        }
     }
 
     /// <summary> 월보 — 점령지 내부(이미지 위)도 통과할 수 있게 된다. 레벨 개념 없이 on/off뿐이다. </summary>
@@ -380,24 +372,29 @@ namespace Client
     /// 몽둥이 — 바라보는 방향으로 주기적으로 휘둘러 맞은 몬스터를 넉백시킨다. 레벨업마다
     /// 판정 반경이 커진다. 뱀서라이크의 다른 무기들처럼 버튼 없이 자동으로 발동한다 —
     /// "액티브"는 버튼 여부가 아니라 쿨타임을 가진 효과라는 뜻이다(패시브는 상시 적용).
+    ///
+    /// 260917_판정을 투사체로 옮겼다(회전탄과 같은 이유 — 아무것도 그려지지 않았다). 휘두르면 앞쪽에
+    /// ProjectileInfo 22(짧게 커지는 원)를 레벨 반경만큼 키워 띄우고, 피해 · 넉백(ImpactInfo 7)은 그 탄이 넣는다.
+    /// 여기는 '지금 휘두를 차례인가'와 반경만 안다.
     /// </summary>
     public class CRunSkillEffect_Club : CRunSkillEffect
     {
         private const float SWING_INTERVAL = 1.2f;     // 초
 
-        /// <summary> 넉백 밀리는 거리(셀). CStage_Manager가 세계 좌표로 환산해 쓴다. </summary>
-        public const float KNOCKBACK_DISTANCE_CELLS = 1.5f;
-        /// <summary> 넉백 지속 시간(초). </summary>
-        public const float KNOCKBACK_DURATION = 0.25f;
-        /// <summary> 플레이어 앞으로 얼마나 나가서 판정할지(셀). </summary>
+        /// <summary> 플레이어 앞으로 얼마나 나가서 휘두를지(셀). </summary>
         public const float SWING_OFFSET_CELLS = 1f;
 
+        private IRunSkillHost m_cHost;
+        private CRunSkillInfo m_cInfo;
         private float m_fSwingTimer;
         private float m_fRadiusCells;
+
+        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
 
         public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
         {
             base.On_LevelChanged(cInfo, iLevel);
+            m_cInfo        = cInfo;
             m_fRadiusCells = cInfo.Get_Value(iLevel);
         }
 
@@ -410,18 +407,31 @@ namespace Client
                 m_cOwner.OnEvade += On_OwnerEvade;
         }
 
-        public float RADIUS_CELLS => m_fRadiusCells * (IS_AWAKENED == true ? m_cAwaken.Get_Param("RADIUS_RATE", 1f) : 1f);
-        public bool  IS_READY     => m_fSwingTimer <= 0f;
+        public int   PROJECTILE_ID => m_cInfo != null ? m_cInfo.iProjectileID : 0;
+        public float RADIUS_CELLS  => m_fRadiusCells * (IS_AWAKENED == true ? m_cAwaken.Get_Param("RADIUS_RATE", 1f) : 1f);
+        public bool  IS_READY      => m_fSwingTimer <= 0f;
 
         private void On_OwnerEvade() => m_fSwingTimer = 0f;
 
         public override void Tick(float fDeltaTime)
         {
             if (m_fSwingTimer > 0f)
+            {
                 m_fSwingTimer -= fDeltaTime;
+                return;
+            }
+
+            // 멈춰 있으면 휘두를 곳이 없다 — 쿨을 찬 채로 기다린다.
+            if (m_cHost == null || m_cOwner == null || PROJECTILE_ID <= 0
+                || m_cOwner.Try_Get_FacingPoint(SWING_OFFSET_CELLS, out Vector2 vPoint, out Vector2 vDir) == false)
+                return;
+
+            if (Consume_Swing(out float fRadiusCells) == true)
+                m_cHost.Spawn_PlayerShot(PROJECTILE_ID, vPoint, vDir, fRadiusCells);
         }
 
-        public override bool Consume_Swing(out float fRadiusCells)
+        /// <returns> 휘둘렀으면 true(그 즉시 쿨이 다시 찬다). fRadiusCells에 판정 반경(셀) — 탄 크기에 곱한다 </returns>
+        public bool Consume_Swing(out float fRadiusCells)
         {
             fRadiusCells = RADIUS_CELLS;
 

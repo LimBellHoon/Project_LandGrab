@@ -85,10 +85,13 @@ namespace Client
         public Vector2                          vDir        { get; set; }
         public PROJECTILE_SIDE                  eSide       { get; set; }
         public IImpactTarget                    cOwner      { get; set; }
+        // 260917_표의 크기에 곱하는 배율. 1이면 표 그대로
+        public float                            fScale      { get; set; } = 1f;
 
         public override void OnReturn()
         {
             base.OnReturn();
+            fScale    = 1f;
             cInfo     = null;
             lstImpact = null;
             cHost     = null;

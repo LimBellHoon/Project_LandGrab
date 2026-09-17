@@ -665,7 +665,7 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 | 분노조절못해 | ✅ | 달릴 때(`CPlayer.IS_MOVING`) · 맞을 때(`OnDamaged`) · 몬스터를 때릴 때(`CPlayer.On_MonsterHit`, 회전탄/몽둥이가 명중하면 `CStage_Manager`가 불러 준다) 셋 다 게이지가 오른다 |
 | 영혼 수집가 | ✅ | `CSoul`(신규 픽업 오브젝트, `CWeb`과 같은 자리 — 제자리에 머무르다 수명이 다하면 사라짐)을 `IRunSkillHost.Spawn_Soul()`로 요청하면 `CStage_Manager`가 무작위 미점령 칸에 놓고 수명·습득 판정까지 한곳에서 본다. 습득 범위는 `SOUL_PICKUP_RADIUS_BASE`(기본) + 자석 보너스. 속도 증가는 `CPlayer.Add_CardSpeed`를 그대로 탄다 — "판이 끝날 때까지 유지되는 영구 가산"이 카드 속도가 이미 하는 일과 같아서 필드를 새로 만들지 않았다 |
 | 회전탄 | ✅ | 260917_**투사체로 옮겼다.** 예전엔 좌표만 계산해 스테이지가 판정했는데 **아무것도 그려지지 않았고**, 반경 안 몬스터를 매 프레임 때려 즉사시켰다. 이제 `CRunSkillEffect_Orbit`이 `ProjectileInfo` 20(ORBIT 이동 · 수명 0 · `CANCEL_SHOT:1`)을 레벨 수만큼 띄워 붙잡아 둔다. 피해는 닿는 순간만, 적탄 지우기는 `CStage_Manager.Cancel_EnemyShots`가 탄 속성으로 본다. 수가 바뀌면 전부 거두고 같은 간격으로 다시 띄운다. 붙잡은 탄은 `CProjectileCore.SERIAL`로 풀 재사용을 가린다 |
-| 몽둥이 | ✅ | `CRunSkillEffect_Club`은 "지금 휘두를 차례인가"(자체 쿨타임)와 반경만 안다. 실제 타격점(플레이어 위치 + 바라보는 방향)은 `CPlayer.Try_ConsumeClubSwing`이, 판정·넉백은 `CStage_Manager.Tick_Club`이 한다. 뱀서라이크의 다른 무기와 마찬가지로 버튼 없이 자동 발동한다 — "액티브"는 쿨타임을 가진 효과라는 뜻이지 버튼 여부가 아니다 |
+| 몽둥이 | ✅ | 260917_**투사체로 옮겼다**(회전탄과 같은 이유 — 그려지지 않았다). `CRunSkillEffect_Club`은 "지금 휘두를 차례인가"(자체 쿨타임)와 반경만 안다. 바라보는 쪽 앞 좌표는 `CPlayer.Try_Get_FacingPoint`가 주고, 거기에 `ProjectileInfo` 22(짧게 커지는 원)를 **레벨 반경만큼 키워**(`Spawn_PlayerShot`의 `fScale`) 띄운다. 피해 · 넉백(`ImpactInfo` 7)은 그 탄이 넣는다. 멈춰 있으면 휘두르지 않는다. 뱀서라이크의 다른 무기와 마찬가지로 버튼 없이 자동 발동한다 — "액티브"는 쿨타임을 가진 효과라는 뜻이지 버튼 여부가 아니다 |
 
 **회전탄/몽둥이를 위해 처음 생긴 것 — 몬스터 HP와 넉백.** 이전까지 몬스터는 전투로
 죽지 않았다(웨이브가 넘어갈 때 회수될 뿐). `CEnemy`에 임시 고정 HP(`DEFAULT_HP=3`,

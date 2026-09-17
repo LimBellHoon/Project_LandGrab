@@ -38,10 +38,6 @@ namespace Client
         // 몬스터별 공격력이 CSV에 들어오면 이 상수를 그 값으로 대체할 것.
         private const int    DEFAULT_HIT_DAMAGE = 1;
 
-        // 260916_런 스킬(회전탄/몽둥이)이 몬스터에게 주는 피해. 무기별 수치를 낼 CSV가
-        // 아직 없어 위와 같은 이유로 임시 고정값을 쓴다.
-        private const int    PLAYER_ATTACK_DAMAGE = 1;
-
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
         private const float  HOLD_TIME   = 0.9f;     // 드러난 보상을 보여주는 시간
@@ -326,7 +322,6 @@ namespace Client
             }
 
             Tick_EnemySlow(fDeltaTime);
-            Tick_Club();
             Tick_Enemy();
             Tick_DevAutoFire(fDeltaTime);
             Tick_Projectile(fDeltaTime);
@@ -1102,7 +1097,7 @@ namespace Client
             => Spawn_Projectile(iProjectileID, vPos, vDir, eSide, null);
 
         private CProjectileCore Spawn_Projectile(int iProjectileID, Vector2 vPos, Vector2 vDir, PROJECTILE_SIDE eSide,
-                                                 IImpactTarget cOwner)
+                                                 IImpactTarget cOwner, float fScale = 1f)
         {
             if (m_cProjectileTable == null || Has_Prefab(PREFAB_PROJECTILE) == false)
                 return null;
@@ -1127,6 +1122,7 @@ namespace Client
                 vDir            = vDir,
                 eSide           = eSide,
                 cOwner          = cOwner,
+                fScale          = fScale,
             };
 
             GameObject goProjectile = CGameInstance.Instance.Reuse_Object(cDesc);
@@ -1200,8 +1196,8 @@ namespace Client
         public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
             => CTargetFinder_Utility.Find(m_lstEnemy, vFrom, eFind);
 
-        public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
-            => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer);
+        public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f)
+            => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer, fScale);
 
         private void Tick_Soul()
         {
@@ -1230,40 +1226,8 @@ namespace Client
         }
         #endregion 런 스킬 소환물 (IRunSkillHost)
 
-        #region 런 스킬 전투 (몽둥이)
-        // 260916_플레이어가 만드는 판정이지만 몬스터 목록을 아는 곳이 여기뿐이라
-        // 위 기믹 소환물과 같은 이유로 CStage_Manager가 충돌만 대신 봐 준다.
-        // 260917_회전탄은 투사체(ProjectileInfo 20)로 옮겼다 — 그려지지 않았고, 반경 안의 몬스터를 매 프레임 때려 즉사시켰다.
-        private void Tick_Club()
-        {
-            if (m_cPlayer == null
-                || m_cPlayer.Try_ConsumeClubSwing(out Vector2 vHitPoint, out float fHitRadius) == false)
-                return;
-
-            for (int i = 0; i < m_lstEnemy.Count; ++i)
-            {
-                CEnemy cEnemy = m_lstEnemy[i];
-                if (cEnemy == null || cEnemy.IS_DEAD == true)
-                    continue;
-
-                if (Vector2.Distance(cEnemy.POS, vHitPoint) > fHitRadius)
-                    continue;
-
-                cEnemy.Damage(PLAYER_ATTACK_DAMAGE);
-                m_cPlayer.On_MonsterHit();
-                if (cEnemy.IS_DEAD == true)
-                    continue;
-
-                Vector2 vKnockDir = cEnemy.POS - vHitPoint;
-                if (vKnockDir.sqrMagnitude <= Mathf.Epsilon)
-                    vKnockDir = UnityEngine.Random.insideUnitCircle;
-
-                cEnemy.Add_Knockback(vKnockDir,
-                                     CRunSkillEffect_Club.KNOCKBACK_DISTANCE_CELLS * m_cGrid.CELL_SIZE,
-                                     CRunSkillEffect_Club.KNOCKBACK_DURATION);
-            }
-        }
-        #endregion 런 스킬 전투 (회전탄 / 몽둥이)
+        // 260917_회전탄 · 몽둥이는 투사체(ProjectileInfo 20 · 22)로 옮겼다. 둘 다 그려지지 않았고,
+        // 회전탄은 반경 안의 몬스터를 매 프레임 때려 즉사시켰다. 피해 · 넉백 · 적탄 지우기는 이제 Tick_Projectile이 본다.
 
         #region 콜백
         private void On_PlayerCapture(int iCapturedCount)

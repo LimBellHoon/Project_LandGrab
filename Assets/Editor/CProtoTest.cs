@@ -356,6 +356,7 @@ namespace Client
             CRunSkillEffect_Club cClub = new CRunSkillEffect_Club();
             cClub.On_LevelChanged(cClubInfo, 1);
 
+            Check("몽둥이는 탄 22를 휘두른다", cClub.PROJECTILE_ID, 22);
             Check("몽둥이는 처음엔 바로 휘두른다", cClub.Consume_Swing(out float fRadius1) == true);
             Check("쿨타임 동안은 다시 못 휘두른다", cClub.Consume_Swing(out float _) == false);
 
@@ -1375,6 +1376,9 @@ namespace Client
             cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.EVASION));
             CRunSkillEffect_Club cClub = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.CLUB) as CRunSkillEffect_Club;
             float fRadiusBefore = cClub != null ? cClub.RADIUS_CELLS : 0f;
+            int iClubShotBefore = cHost.lstShotID.Count;
+            cClub?.Tick(0.01f);
+            Check("몽둥이 — 멈춰 있으면 휘두르지 않는다", cHost.lstShotID.Count, iClubShotBefore);
             cPlayer.Awaken_RunSkill(cAwakenTable.Get_Info(2));
             Check("반격의 몽둥이 — 범위 1.3배", cClub != null && Mathf.Approximately(cClub.RADIUS_CELLS, fRadiusBefore * 1.3f));
             Check("반격의 몽둥이 — 한 번 휘두르면", cClub != null && cClub.Consume_Swing(out float _) == true);
@@ -1399,6 +1403,16 @@ namespace Client
             }, 0.1f);
             Check("탄이 새로 맞힌 수", cCore.HIT_COUNT, 2);
 
+            // 몽둥이 탄 — 쏜 쪽이 곱한 크기만큼 판정이 커진다 (1레벨 반경 1칸 = 0.8 × 다 커진 1.25배)
+            CProjectileCore cSwing = new CProjectileCore();
+            cSwing.Initialize(cProjectileTable.Get_Info(22), null, new CFakeProjectileHost(), 1f, new Vector2(5f, 5f),
+                              Vector2.up, PROJECTILE_SIDE.PLAYER_SHOT, null);
+            cSwing.Set_SpawnScale(2f);
+            cSwing.Tick(0.1f);
+            Check("몽둥이 탄 — 크기 2배면 반경 2칸",
+                  cSwing.SHAPE.Is_Overlap(new Vector2(6.95f, 5f), 0f) == true
+                  && cSwing.SHAPE.Is_Overlap(new Vector2(7.1f, 5f), 0f) == false);
+
             Object.DestroyImmediate(goPlayer);
         }
 
@@ -1416,7 +1430,7 @@ namespace Client
                 => CTargetFinder_Utility.Find(lstEnemy, vFrom, eFind);
 
             // 표가 있으면 진짜 탄 본체를 만들어 돌려준다 — 회전탄이 붙잡고 거두는 길을 그대로 탄다
-            public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir)
+            public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f)
             {
                 lstShotID.Add(iProjectileID);
                 lstShotDir.Add(vDir.normalized);
@@ -1427,6 +1441,7 @@ namespace Client
 
                 CProjectileCore cCore = new CProjectileCore();
                 cCore.Initialize(cInfo, null, new CFakeProjectileHost(), 1f, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, null);
+                cCore.Set_SpawnScale(fScale);
                 lstCore.Add(cCore);
                 return cCore;
             }

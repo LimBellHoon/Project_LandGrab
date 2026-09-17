@@ -382,29 +382,21 @@ namespace Client
         }
 
         // 260916_몽둥이. 서 있는 방향이 없으면(멈춰 있으면) 휘두를 곳이 없다.
-        /// <summary> 이번 프레임에 휘둘렀으면 세계 좌표 타격점과 반경을 채우고 true. </summary>
-        public bool Try_ConsumeClubSwing(out Vector2 vHitPoint, out float fHitRadius)
+        // 260917_판정을 투사체로 옮기면서 '어디를 때리나'만 남겼다 — 그리드(셀 크기)를 아는 곳이 여기라서다.
+        /// <summary> 바라보는 방향으로 fOffsetCells칸 앞의 월드 좌표. 멈춰 있으면 false. </summary>
+        public bool Try_Get_FacingPoint(float fOffsetCells, out Vector2 vPoint, out Vector2 vDir)
         {
-            vHitPoint  = Vector2.zero;
-            fHitRadius = 0f;
+            vPoint = POS;
+            vDir   = Vector2.zero;
 
             MOVE_DIR eFacing = m_cMoveHandler.CUR_DIR;
             if (eFacing == MOVE_DIR.NONE || m_cGrid == null)
                 return false;
 
-            for (int i = 0; i < m_lstRunSkillEffect.Count; ++i)
-            {
-                if (m_lstRunSkillEffect[i].Consume_Swing(out float fRadiusCells) == false)
-                    continue;
-
-                Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(eFacing);
-                vHitPoint  = (Vector2)transform.position
-                           + new Vector2(vOffset.x, vOffset.y) * CRunSkillEffect_Club.SWING_OFFSET_CELLS * m_cGrid.CELL_SIZE;
-                fHitRadius = fRadiusCells * m_cGrid.CELL_SIZE;
-                return true;
-            }
-
-            return false;
+            Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(eFacing);
+            vDir   = new Vector2(vOffset.x, vOffset.y);
+            vPoint = POS + vDir * fOffsetCells * m_cGrid.CELL_SIZE;
+            return true;
         }
 
         private void Tick_RunSkill(float fDeltaTime)

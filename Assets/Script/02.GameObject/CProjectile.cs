@@ -53,6 +53,7 @@ namespace Client
                 return false;
             }
 
+            m_cCore.Set_SpawnScale(cDesc.fScale);
             if (m_srBody != null && m_spCircle == null)
                 m_spCircle = m_srBody.sprite;
 
