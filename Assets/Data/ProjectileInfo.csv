@@ -30,3 +30,4 @@
 21	광란 회전탄	POINT	ORBIT	-	0	0	0	0.5	1	1	-1	-	ORBIT_RADIUS:1.5|ORBIT_SPEED:360|CANCEL_SHOT:1	각성 광란의 칼바람 — 분노가 터진 동안 두 배로 빨리 돈다
 22	몽둥이	BLAST	NONE	-	0	0.3	0	0.8	1	1	-1	7	BLAST_GROW:0.1|BLAST_SCALE:1.25	런 스킬 몽둥이. 휘두른 자리에서 짧게 커지는 원. 크기는 스킬 레벨이 곱한다(1레벨 반경 1칸)
 23	체인 라이트닝	POINT	STRAIGHT	CHAIN	7	4	0	0.6	1	1	4	-	CHAIN_STUN_TIME:0.6|CHAIN_RANGE:3	맞으면 기절, 3칸 안의 안 맞은 적 쪽으로 방향을 틀어 튄다. 4번 맞으면(내구도) 사라진다
+23	마비탄	POINT	TRACE	ENTER_STUN|WHITE_OUT	7	3	0	0.6	1	0	1	-	TRACE_TURN:3|STUN_TIME:1.5|WHITE_TIME:0.2	런 스킬 마비탄. 피해 없이 1.5초 세운다

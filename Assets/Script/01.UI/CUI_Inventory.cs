@@ -17,7 +17,7 @@ namespace Client
     /// └─────────────────────────────────┘   B: 부위별 장착 장비 (누르면 그 장비 상세)
     /// ┌──────────── C 목록 ─────────────┐   C: 보유 목록 격자. 장착한 칸은 왼쪽 위에 'E'
     /// └─────────────────────────────────┘
-    ///   D: [장비] [캐릭터] [펫]  [뽑기]      D: 목록 탭 + 장비 뽑기(BM)
+    ///   D: [장비] [캐릭터] [펫]              D: 목록 탭 (장비 뽑기는 상점으로 옮겼다 — CUI_Shop)
     /// </code>
     /// 장착 · 강화 · 레벨업은 칸을 눌러 뜨는 상세 팝업에서 한다. 팝업을 여는 것은 CGameManager다(2-7) —
     /// 여기서는 무엇을 보여 줄지(CUI_PopupDesc)만 만들어 넘긴다.
@@ -38,9 +38,8 @@ namespace Client
         [SerializeField] private Button     m_btnTemplate;      // 칸 복제 원본 (항상 비활성). 자식: Img_Icon · Txt_Label · Badge_Equip
         [SerializeField] private Text       m_txtTitle;         // 목록 머리 (탭 이름 · 안내)
 
-        [Header("D — 탭 · 뽑기")]
+        [Header("D — 탭")]
         [SerializeField] private Button[]   m_arrTabButton;     // INVENTORY_TAB 순서와 1:1
-        [SerializeField] private Button     m_btnGacha;
 
         [Header("A — 장착 캐릭터")]
         [SerializeField] private Button     m_btnCharacter;
@@ -56,7 +55,6 @@ namespace Client
 
         private CCSVData_EquipInfo     m_cEquipTable;
         private CCSVData_CharacterInfo m_cCharacterTable;
-        private CCSVData_GachaInfo     m_cGachaTable;
         private CProgress_Manager      m_cProgress;
         private Action                 m_OnChanged;
         private Action<CUI_PopupDesc>  m_OnRequestPopup;
@@ -83,7 +81,6 @@ namespace Client
 
             m_cEquipTable     = cDesc.cEquipTable;
             m_cCharacterTable = cDesc.cCharacterTable;
-            m_cGachaTable     = cDesc.cGachaTable;
             m_cProgress       = cDesc.cProgress;
             m_OnChanged       = cDesc.OnChanged;
             m_OnRequestPopup  = cDesc.OnRequestPopup;
@@ -100,12 +97,10 @@ namespace Client
 
             Unbind(m_arrTabButton);
             Unbind(m_arrSlotButton);
-            Unbind(m_btnGacha);
             Unbind(m_btnCharacter);
 
             m_cEquipTable     = null;
             m_cCharacterTable = null;
-            m_cGachaTable     = null;
             m_cProgress       = null;
             m_OnChanged       = null;
             m_OnRequestPopup  = null;
@@ -132,7 +127,6 @@ namespace Client
             }
 
             Bind(m_btnCharacter, () => Select_Tab(INVENTORY_TAB.CHARACTER));
-            Bind(m_btnGacha, On_ClickGacha);
         }
 
         private void Select_Tab(INVENTORY_TAB eTab)
@@ -154,7 +148,6 @@ namespace Client
         {
             Refresh_Character();
             Refresh_Slots();
-            Refresh_Gacha();
 
             Clear_List();
             switch (m_eTab)
@@ -272,7 +265,7 @@ namespace Client
                 cButton.onClick.AddListener(() => Open_EquipDetail(cPicked));
             }
 
-            Set_Title(iOwned > 0 ? "장비   (눌러서 장착 · 강화)" : "장비   (뽑기나 상점에서 얻으세요)");
+            Set_Title(iOwned > 0 ? "장비   (눌러서 장착 · 강화)" : "장비   (상점에서 얻으세요)");
         }
 
         private string Get_EquipShortText(CEquipInfo cInfo)
@@ -323,7 +316,7 @@ namespace Client
             {
                 case STAT_TYPE.SPEED:   return $"이동 속도 +{fValue * 100f:0.#}%";
                 case STAT_TYPE.EVASION: return $"회피 +{fValue * 100f:0.#}%";
-                case STAT_TYPE.HP:      return $"최대 체력 +{fValue:0.#}";
+                case STAT_TYPE.HP:      return $"목숨 +{Mathf.RoundToInt(fValue)}";
                 default:                return string.Empty;
             }
         }
@@ -437,53 +430,6 @@ namespace Client
             Notify_Changed();
         }
         #endregion C — 캐릭터 목록
-
-        #region D — 장비 뽑기
-        private void Refresh_Gacha()
-        {
-            if (m_btnGacha == null)
-                return;
-
-            CGachaInfo cGacha = m_cGachaTable != null ? m_cGachaTable.DEFAULT : null;
-            m_btnGacha.gameObject.SetActive(cGacha != null);
-
-            Text txtLabel = m_btnGacha.GetComponentInChildren<Text>();
-            if (txtLabel != null && cGacha != null)
-                txtLabel.text = $"뽑기\n{cGacha.iCost}";
-        }
-
-        private void On_ClickGacha()
-        {
-            CGachaInfo cGacha = m_cGachaTable != null ? m_cGachaTable.DEFAULT : null;
-            if (cGacha == null)
-                return;
-
-            GACHA_RESULT eResult = m_cProgress.Try_Gacha(cGacha, out CEquipInfo cEquip, out int iRefund);
-            if (eResult == GACHA_RESULT.FAIL)
-            {
-                Request_Popup(new CUI_PopupDesc { strTitle = cGacha.strName, strBody = $"코인이 모자랍니다. ({cGacha.iCost} 필요)" });
-                return;
-            }
-
-            string strBody;
-            switch (eResult)
-            {
-                case GACHA_RESULT.LEVEL_UP: strBody = $"이미 가진 장비라 강화 +1\n{cEquip.strName}  {Get_EquipShortText(cEquip)}"; break;
-                case GACHA_RESULT.REFUND:   strBody = $"이미 최대 강화라 코인 {iRefund}을 돌려받았습니다\n{cEquip.strName}"; break;
-                default:                    strBody = $"새 장비!\n{cEquip.strName}\n{cEquip.strDesc}"; break;
-            }
-
-            Notify_Changed();
-            Request_Popup(new CUI_PopupDesc
-            {
-                strTitle     = cGacha.strName,
-                strBody      = strBody,
-                strPrimary   = $"한 번 더 ({cGacha.iCost})",
-                OnPrimary    = On_ClickGacha,
-                strSecondary = "닫기",
-            });
-        }
-        #endregion D — 장비 뽑기
 
         #region 공용
         private Sprite Get_SlotIcon(EQUIP_SLOT eSlot)

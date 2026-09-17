@@ -13,6 +13,8 @@ namespace Client
     /// 목록은 EquipInfo.csv를 그대로 훑어 만든다 — 상품이 늘어도 UI 코드는 손대지 않는다.
     /// 장비는 한 번만 살 수 있고, 소모품은 여러 번 살 수 있다.
     /// 버튼 템플릿을 복제해 쓰는 방식은 CUI_StageSelect / CUI_Upgrade와 같다.
+    ///
+    /// 260918_목록 맨 위는 장비 뽑기(BM)다. 가방에 있던 것을 옮겼다 — 코인을 쓰는 곳을 상점 한곳에 모은다.
     /// </summary>
     public class CUI_Shop : CUI
     {
@@ -23,6 +25,8 @@ namespace Client
         private readonly List<Button> m_lstButton = new List<Button>();
 
         private CCSVData_EquipInfo  m_cEquipTable;
+        private CCSVData_GachaInfo  m_cGachaTable;
+        private Action<CUI_PopupDesc> m_OnRequestPopup;
         private CProgress_Manager   m_cProgress;
         private Action              m_OnPurchased;
 
@@ -44,9 +48,11 @@ namespace Client
                 return false;
             }
 
-            m_cEquipTable = cDesc.cEquipTable;
-            m_cProgress   = cDesc.cProgress;
-            m_OnPurchased = cDesc.OnPurchased;
+            m_cEquipTable    = cDesc.cEquipTable;
+            m_cGachaTable    = cDesc.cGachaTable;
+            m_cProgress      = cDesc.cProgress;
+            m_OnPurchased    = cDesc.OnPurchased;
+            m_OnRequestPopup = cDesc.OnRequestPopup;
 
             m_btnTemplate.gameObject.SetActive(false);
             Build_List();
@@ -56,9 +62,11 @@ namespace Client
         public override void Hide()
         {
             Clear_List();
-            m_cEquipTable = null;
-            m_cProgress   = null;
-            m_OnPurchased = null;
+            m_cEquipTable    = null;
+            m_cGachaTable    = null;
+            m_cProgress      = null;
+            m_OnPurchased    = null;
+            m_OnRequestPopup = null;
 
             base.Hide();
         }
@@ -78,6 +86,8 @@ namespace Client
 
             if (m_txtTitle != null)
                 m_txtTitle.text = $"상점      코인 {m_cProgress.COIN}";
+
+            Add_GachaRow();
 
             IReadOnlyList<CEquipInfo> lstInfo = m_cEquipTable.ALL;
 
@@ -101,6 +111,72 @@ namespace Client
                 m_lstButton.Add(cButton);
             }
         }
+
+        #region 장비 뽑기 (260918_가방에서 옮겨 왔다)
+        private void Add_GachaRow()
+        {
+            CGachaInfo cGacha = m_cGachaTable != null ? m_cGachaTable.DEFAULT : null;
+            if (cGacha == null)
+                return;
+
+            GameObject goButton = Instantiate(m_btnTemplate.gameObject, m_trContent);
+            goButton.name = $"Btn_Gacha_{cGacha.iGachaID}";
+            goButton.SetActive(true);
+
+            // BM 자리라 색을 달리해 한눈에 구분한다
+            Image imgButton = goButton.GetComponent<Image>();
+            if (imgButton != null)
+                imgButton.color = new Color(0.62f, 0.44f, 0.10f, 1f);
+
+            Text txtLabel = goButton.GetComponentInChildren<Text>();
+            if (txtLabel != null)
+                txtLabel.text = $"{cGacha.strName}   {cGacha.iCost} 코인\n장비 하나를 무작위로 얻는다. 이미 가진 장비면 강화 +1";
+
+            Button cButton = goButton.GetComponent<Button>();
+            cButton.interactable = m_cProgress.Can_Pay(cGacha.iCost);
+            cButton.onClick.AddListener(On_ClickGacha);
+            m_lstButton.Add(cButton);
+        }
+
+        private void On_ClickGacha()
+        {
+            CGachaInfo cGacha = m_cGachaTable != null ? m_cGachaTable.DEFAULT : null;
+            if (cGacha == null)
+                return;
+
+            GACHA_RESULT eResult = m_cProgress.Try_Gacha(cGacha, out CEquipInfo cEquip, out int iRefund);
+            if (eResult == GACHA_RESULT.FAIL)
+            {
+                m_OnRequestPopup?.Invoke(new CUI_PopupDesc { strTitle = cGacha.strName,
+                                                             strBody  = $"코인이 모자랍니다. ({cGacha.iCost} 필요)" });
+                return;
+            }
+
+            string strBody;
+            switch (eResult)
+            {
+                case GACHA_RESULT.LEVEL_UP:
+                    strBody = $"이미 가진 장비라 강화 +1\n{cEquip.strName}  Lv.{m_cProgress.Get_EquipLevel(cEquip.iEquipID)}"; break;
+                case GACHA_RESULT.REFUND:
+                    strBody = $"이미 최대 강화라 코인 {iRefund}을 돌려받았습니다\n{cEquip.strName}"; break;
+                default:
+                    strBody = $"새 장비!\n{cEquip.strName}\n{cEquip.strDesc}"; break;
+            }
+
+            // 코인과 보유 상태가 바뀌었다 — 목록과 로비 재화를 먼저 갱신하고 결과를 띄운다
+            Build_List();
+            m_OnPurchased?.Invoke();
+
+            m_OnRequestPopup?.Invoke(new CUI_PopupDesc
+            {
+                strTitle     = cGacha.strName,
+                strBody      = strBody,
+                strPrimary   = $"한 번 더 ({cGacha.iCost})",
+                OnPrimary    = On_ClickGacha,
+                strSecondary = "닫기",
+            });
+        }
+        #endregion 장비 뽑기
 
         private void Set_Label(GameObject goButton, CEquipInfo cInfo)
         {

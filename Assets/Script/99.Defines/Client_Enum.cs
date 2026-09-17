@@ -39,7 +39,7 @@
         NONE = 0,
         SPEED,      // 플레이어 이동 속도 배율
         EVASION,    // 피격 회피 확률
-        HP,         // 260916_최대 체력 추가
+        HP,         // 260916_최대 체력 추가 → 260918_다시 목숨제라 '목숨 수'다(이름은 저장본 호환 때문에 그대로)
     }
 
     // 260905_스킬
@@ -239,6 +239,10 @@
         LASER_BEAM,     // 레이저 — 체력이 가장 많은 몬스터 쪽으로 레이저
         BOOMERANG,      // 부메랑 — 몬스터가 몰린 쪽으로 던졌다 돌아온다
         BOUNCE_SHOT,    // 튕기는 탄 — 사방으로 뿌리고 맵 끝에서 튕긴다
+
+        // 260918_뱀서라이크가 아니고 목숨제라 '적을 잠깐 세우는' 수단이 핵심이다 — 죽이는 것보다 비키게 한다.
+        STUN_SHOT,      // 마비탄 — 가장 가까운 적에게 주기적으로 마비탄 (CRunSkillEffect_Weapon)
+        MASS_STUN,      // 전체 마비 — 주기적으로 모든 적을 잠깐 세운다 + 화면 연출 (CRunSkillEffect_MassStun)
     }
 
     /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>
@@ -307,6 +311,7 @@
         CARD_READY,     // 카드 3지선다 등장
         STAGE_CLEAR,    // 스테이지 클리어
         STAGE_FAIL,     // 스테이지 실패
+        MASS_STUN,      // 260918_전체 마비
     }
 
     // 260916_햅틱 종류. CHaptic_Manager.Play(HAPTIC_ID)로 재생한다.
@@ -321,6 +326,7 @@
         CARD_READY,
         STAGE_CLEAR,
         STAGE_FAIL,
+        MASS_STUN,      // 260918_전체 마비
     }
 
     /// <summary> Addressable 라벨 (Engine.CData_Manager.LoadAssetAsync 인자) </summary>

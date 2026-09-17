@@ -189,6 +189,17 @@ namespace Client
             m_cHapticManager.Play(HAPTIC_ID.EVADE);
         }
 
+        // 260918_전체 마비 — '모든 적에게 걸렸다'가 한눈에 읽혀야 한다. 흔들림 · 펀치 · 번개빛 플래시 · 소리 · 진동을 한 번에.
+        // 새 원인이지만 CCameraShake/CCameraPunch/CFlashEffect는 고치지 않았다 — 설정값 하나 · 호출 한 줄씩이다(2-10-2).
+        private void On_MassStun()
+        {
+            m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_MASS_STUN);
+            m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_MASS_STUN);
+            (m_cInGameUI as CUI_InGame)?.Play_MassStunFlash();
+            m_cAudioManager.Play(SOUND_ID.MASS_STUN);
+            m_cHapticManager.Play(HAPTIC_ID.MASS_STUN);
+        }
+
         private void On_PlayerCaptured(int iCapturedCount)
         {
             m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_CAPTURE);
@@ -535,7 +546,6 @@ namespace Client
                 cEquipTable     = m_cEquipTable,
                 // 260918_캐릭터 탭(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다)이 참고할 표
                 cCharacterTable = m_cCharacterTable,
-                cGachaTable     = m_cGachaTable,
                 cProgress       = m_cProgressManager,
                 OnChanged       = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
                 OnRequestPopup  = Open_LobbyPopup,
@@ -613,8 +623,10 @@ namespace Client
             {
                 eObjectType     = OBJECT_TYPE.UI_MAIN,
                 cEquipTable     = m_cEquipTable,
+                cGachaTable     = m_cGachaTable,
                 cProgress       = m_cProgressManager,
                 OnPurchased     = () => (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency(),
+                OnRequestPopup  = Open_LobbyPopup,
             };
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Shop>(cDesc, trParent);
@@ -713,6 +725,7 @@ namespace Client
 
             m_cStageManager.OnStateChanged += On_StageStateChanged;
             m_cStageManager.OnCardReady    += On_CardReady;
+            m_cStageManager.OnMassStun     += On_MassStun;     // 260918_전체 마비 연출
 
             // 260916_피격/사망/회피/점령 손맛(흔들림·펀치·효과음). CPlayer.Hide()가 풀에 반납할 때
             // 구독을 비워 주므로 재사용된 인스턴스라도 여기서 새로 걸면 안전하다

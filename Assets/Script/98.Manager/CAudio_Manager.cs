@@ -47,6 +47,8 @@ namespace Client
             { SOUND_ID.CARD_READY,  new CSoundDef(WAVE_SHAPE.TRIANGLE, 600f,  700f, 0.20f, 0.55f) },
             { SOUND_ID.STAGE_CLEAR, new CSoundDef(WAVE_SHAPE.SINE,     500f, 1000f, 0.50f, 0.85f) },
             { SOUND_ID.STAGE_FAIL,  new CSoundDef(WAVE_SHAPE.SAWTOOTH, 260f,  100f, 0.50f, 0.85f) },
+            // 260918_전체 마비 — 높은 데서 뚝 떨어지는 사각파. 세상이 멈추는 느낌
+            { SOUND_ID.MASS_STUN,   new CSoundDef(WAVE_SHAPE.SQUARE,  1400f,  180f, 0.35f, 0.75f) },
         };
 
         private readonly Dictionary<SOUND_ID, AudioClip> m_dicClip = new Dictionary<SOUND_ID, AudioClip>();

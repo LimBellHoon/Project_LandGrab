@@ -100,6 +100,9 @@ namespace Client
         // 스테이지가 UI를 직접 열면 화면 전환이 두 군데로 갈라진다(2-7).
         public event Action OnCardReady;
 
+        // 260918_전체 마비가 터졌다 — 흔들림 · 펀치 · 플래시 같은 화면 연출은 CGameManager가 한다(2-10-2).
+        public event Action OnMassStun;
+
         public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
         public CTerritoryGrid   GRID            => m_cGrid;
@@ -107,8 +110,8 @@ namespace Client
         public STAGE_STATE      STATE           => m_eState;
         public float            REMAIN_TIME     => m_fRemainTime;
         public float            OWNED_RATIO     => m_cGrid.OWNED_RATIO;
-        public int              HP              => m_cPlayer != null ? m_cPlayer.HP : 0;
-        public int              MAX_HP          => m_cPlayer != null ? m_cPlayer.MAX_HP : 0;
+        public int              LIFE            => m_cPlayer != null ? m_cPlayer.LIFE : 0;
+        public int              MAX_LIFE        => m_cPlayer != null ? m_cPlayer.MAX_LIFE : 0;
         public int              ENEMY_COUNT     => m_lstEnemy.Count;
         public int              WAVE            => m_iWave;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
@@ -117,7 +120,7 @@ namespace Client
         // 260905_능력치 강화 반영. Start_Stage 전에 넣어 둔다.
         private float           m_fSpeedRate = 1f;      // 이동 속도 배율
         private float           m_fEvasion;             // 피격 회피 확률 0~1
-        private int             m_iBonusHp;             // 260916_강화로 늘어난 최대 체력(구 목숨)
+        private int             m_iBonusLife;           // 260918_강화 · 장비로 늘어난 목숨
         private CSkillInfo      m_cSkillInfo;           // 260905_장착한 액티브 스킬
         private int             m_iSkillLevel;          // 260905_스킬 강화 레벨
 
@@ -129,12 +132,12 @@ namespace Client
 
         /// <param name="fSpeedRate"> 이동 속도에 곱할 값 (1 = 강화 없음) </param>
         /// <param name="fEvasion"> 피격을 무시할 확률 0~1 </param>
-        /// <param name="iBonusHp"> 맵 기본 최대 체력에 더할 양 </param>
-        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion, int iBonusHp)
+        /// <param name="iBonusLife"> 맵 기본 목숨에 더할 수 </param>
+        public void Set_PlayerUpgrade(float fSpeedRate, float fEvasion, int iBonusLife)
         {
             m_fSpeedRate = Mathf.Max(0.1f, fSpeedRate);
             m_fEvasion   = Mathf.Clamp01(fEvasion);
-            m_iBonusHp   = Mathf.Max(0, iBonusHp);
+            m_iBonusLife = Mathf.Max(0, iBonusLife);
         }
 
         // 260917_가방에서 장착한 캐릭터. Start_Stage 전에 넣어 둔다.
@@ -225,6 +228,7 @@ namespace Client
             m_fEnemyCardSlow  = 1f;
             m_iCardGiven      = 0;
             OnCardReady       = null;
+            OnMassStun        = null;
 
             Collect_Player();
             Collect_Enemies();
@@ -499,7 +503,7 @@ namespace Client
                     return true;
 
                 case CARD_TYPE.HEAL:
-                    m_cPlayer.Heal(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    m_cPlayer.Add_Life(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
                     return true;
 
                 case CARD_TYPE.SPEED:
@@ -529,7 +533,7 @@ namespace Client
             switch (eEffect)
             {
                 case CONSUME_EFFECT.SHIELD: m_cPlayer.Add_Shield(); return true;
-                case CONSUME_EFFECT.HEAL:   m_cPlayer.Heal(1);      return true;
+                case CONSUME_EFFECT.HEAL:   m_cPlayer.Add_Life(1);  return true;
                 default:                    return false;
             }
         }
@@ -637,7 +641,8 @@ namespace Client
                 fEvasion        = m_fEvasion + m_fCharEvasionBonus,
                 cSkillInfo      = m_cSkillInfo,
                 iSkillLevel     = m_iSkillLevel,
-                iMaxHp          = Mathf.RoundToInt((m_cMapInfo.iMaxHp + m_iBonusHp) * m_fCharHpRate),
+                // 260918_캐릭터 체력 배율(fMaxHpRate)은 목숨 수에 곱한다 — 반올림이라 목숨이 적으면 차이가 안 날 수 있다
+                iLife           = Mathf.Max(1, Mathf.RoundToInt((m_cMapInfo.iLife + m_iBonusLife) * m_fCharHpRate)),
             };
 
             GameObject goPlayer = CGameInstance.Instance.Reuse_Object(cPlayerDesc);
@@ -769,7 +774,6 @@ namespace Client
                 fFireAngle      = cInfo.fFireAngle,
                 fFireInterval   = cInfo.fFireInterval,
                 iHp             = cInfo.iHp,
-                iAttack         = cInfo.iAttack,
             };
 
             GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
@@ -846,8 +850,6 @@ namespace Client
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
             bool bHit = false;
-            // 260918_몬스터별 공격력(EnemyInfo.iAttack) — 여러 마리가 같은 프레임에 닿으면 가장 센 값을 쓴다.
-            int  iHitDamage = 0;
 
             m_bPlayerExposed = bExposed;
 
@@ -874,7 +876,6 @@ namespace Client
                 if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) == CELL_STATE.TRAIL)
                 {
                     bHit = true;
-                    iHitDamage = Mathf.Max(iHitDamage, cEnemy.ATTACK);
                     continue;
                 }
 
@@ -883,12 +884,12 @@ namespace Client
                     && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
                 {
                     bHit = true;
-                    iHitDamage = Mathf.Max(iHitDamage, cEnemy.ATTACK);
                 }
             }
 
+            // 260918_목숨제 — 몇 마리가 겹쳐도 한 목숨이다(2-14).
             if (bHit == true)
-                m_cPlayer.Damage(iHitDamage);
+                m_cPlayer.Lose_Life();
         }
 
         /// <summary> 점령 판정에 넘길 몬스터 셀 목록. 매 호출마다 버퍼를 재사용해 GC를 만들지 않는다. </summary>
@@ -1238,6 +1239,33 @@ namespace Client
         // 260917_투사체 무기(CRunSkillEffect_Weapon)
         public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
             => CTargetFinder_Utility.Find(m_lstEnemy, vFrom, eFind);
+
+        // 260918_전체 마비 — 같은 출처 키로 걸어 두 번 터지면 새로 걸지 않고 긴 쪽으로 늘어난다(CImpactHandler).
+        private static readonly object MASS_STUN_KEY = new object();
+
+        public int Stun_AllEnemies(float fDuration)
+        {
+            if (fDuration <= 0f)
+                return 0;
+
+            int iCount = 0;
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                cEnemy.IMPACT.Set_Stun(MASS_STUN_KEY, fDuration);
+                // 걸렸다는 걸 몬스터마다 보여 준다 — 화면 플래시만으로는 누가 멈췄는지 안 읽힌다
+                cEnemy.IMPACT.Set_WhiteOut(MASS_STUN_KEY, Mathf.Min(0.3f, fDuration));
+                ++iCount;
+            }
+
+            if (iCount > 0)
+                OnMassStun?.Invoke();
+
+            return iCount;
+        }
 
         public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f)
             => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer, fScale);

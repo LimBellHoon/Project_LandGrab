@@ -65,6 +65,11 @@ namespace Client
         [Range(0f, 1f)]
         [SerializeField] private float m_fTraumaOnDeath = 0.8f;
 
+        // 260918_전체 마비(런 스킬)가 터질 때. '모든 적에게 걸렸다'가 한눈에 읽혀야 해서 피격보다 세게 잡았다.
+        [Tooltip("전체 마비 때 쌓는 트라우마 0~1.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fTraumaOnMassStun = 0.55f;
+
         [Header("카메라 펀치줌")]
         [Tooltip("끄면 점령해도 확대되지 않는다.")]
         [SerializeField] private bool m_bCameraPunchEnabled = true;
@@ -80,6 +85,10 @@ namespace Client
         [Tooltip("한 번 점령할 때마다 쌓는 펀치 0~1. 점령 칸 수와 상관없이 고정값이다.")]
         [Range(0f, 1f)]
         [SerializeField] private float m_fPunchOnCapture = 0.5f;
+
+        [Tooltip("전체 마비 때 쌓는 펀치 0~1.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fPunchOnMassStun = 0.8f;
 
         [Header("화면 플래시")]
         [Tooltip("끄면 피격/회피해도 화면이 물들지 않는다.")]
@@ -100,6 +109,14 @@ namespace Client
         [Tooltip("회피 플래시의 최대 알파.")]
         [Range(0f, 1f)]
         [SerializeField] private float m_fFlashEvadeAlpha = 0.25f;
+
+        [Tooltip("전체 마비 플래시가 다 사라지기까지 걸리는 시간(초).")]
+        [Range(0.05f, 1.5f)]
+        [SerializeField] private float m_fFlashMassStunDuration = 0.45f;
+
+        [Tooltip("전체 마비 플래시의 최대 알파.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fFlashMassStunAlpha = 0.5f;
 
         [Header("사운드")]
         [Tooltip("끄면 효과음이 전혀 나지 않는다.")]
@@ -150,6 +167,10 @@ namespace Client
         public float SHAKE_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fShakeDecayPerSecond);
         public float TRAUMA_ON_HIT           => Mathf.Clamp01(m_fTraumaOnHit);
         public float TRAUMA_ON_DEATH         => Mathf.Clamp01(m_fTraumaOnDeath);
+        public float TRAUMA_ON_MASS_STUN     => Mathf.Clamp01(m_fTraumaOnMassStun);
+        public float PUNCH_ON_MASS_STUN      => Mathf.Clamp01(m_fPunchOnMassStun);
+        public float FLASH_MASS_STUN_DURATION => Mathf.Max(0.01f, m_fFlashMassStunDuration);
+        public float FLASH_MASS_STUN_ALPHA   => Mathf.Clamp01(m_fFlashMassStunAlpha);
         public bool  CAMERA_PUNCH_ENABLED    => m_bCameraPunchEnabled;
         public float PUNCH_MAX_ZOOM_RATIO    => Mathf.Clamp01(m_fPunchMaxZoomRatio);
         public float PUNCH_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fPunchDecayPerSecond);

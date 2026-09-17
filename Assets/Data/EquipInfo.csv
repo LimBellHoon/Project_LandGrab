@@ -2,7 +2,7 @@
 ;== 장비 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
 ;eSlot : Client_Enum.EQUIP_SLOT 이름과 같아야 한다 (SHOES / BAG / NECKLACE / CONSUMABLE)
 ;eStat : Client_Enum.STAT_TYPE 이름과 같아야 한다. 강화와 같은 늨을 올린다
-;fStatValue : SPEED는 배율(0.08 = +8%), EVASION은 확률, HP는 최대 체력 값. 강화 전(레벨 0) 기준값이다
+;fStatValue : SPEED는 배율(0.08 = +8%), EVASION은 확률, HP는 목숨 수(반올림). 강화 전(레벨 0) 기준값이다
 ;fStatValuePerLevel : 강화 1레벨당 fStatValue에 더하는 값. 소모품은 강화하지 않으므로 0
 ;iMaxLevel/iCostBase/iCostAdd : 장비 강화 상한 · 비용(코인). CUpgradeInfo.Get_Cost와 같은 형태 — CProgress_Manager.Try_UpgradeEquip이 쓴다
 ;소모품은 eStat을 NONE으로 두고 효과를 따로 처리한다. 강화 대상이 아니다(iMaxLevel 0)
@@ -12,5 +12,5 @@
 102	SHOES	질주화	이동 속도 +18%	SPEED	0.18	700	NONE	5	150	80	0.02	10
 201	BAG	낡은 가방	회피 +6%	EVASION	0.06	250	NONE	5	100	50	0.01	30
 202	BAG	바람가방	회피 +12%	EVASION	0.12	800	NONE	5	150	80	0.015	10
-301	NECKLACE	수호 목걸이	최대 체력 +1	HP	1	900	NONE	5	150	60	1	15
+301	NECKLACE	수호 목걸이	목숨 +1	HP	1	900	NONE	5	150	60	0.2	15	260918_목숨제라 레벨당 +0.2(반올림) — 5강이면 +2
 401	CONSUMABLE	보호막	피격 1회 무효	NONE	0	120	SHIELD	0	0	0	0	0	1회성

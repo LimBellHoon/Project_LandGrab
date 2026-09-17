@@ -19,9 +19,6 @@ namespace Client
         // 260912_마감 스킬이 점령지를 찾아 나가는 한계. 맵을 통째로 훑지 않게 막는다.
         private const int   SEAL_MAX_RADIUS  = 40;      // 셀
         private const int   SEAL_MAX_STEP    = 120;     // 셀
-        // 260916_목숨 개수 → HP 전환. 자기 선분을 밟은 즉사는 몬스터/탄과 달리 공격력을 가진
-        // 주체가 없으므로, 예전과 같은 피해량(1)을 여기 고정값으로 둔다.
-        private const int   SELF_TRAIL_DAMAGE = 1;
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
@@ -34,9 +31,9 @@ namespace Client
 
         private CTerritoryGrid  m_cGrid;
         private Vector2Int      m_vLastSafeCell;        // 안전 지대를 벗어나기 직전 셀 — 사망 시 복귀 지점
-        // 260916_목숨 개수(-1씩) → HP 풀(가변 피해량) 전환.
-        private int             m_iHp;
-        private int             m_iMaxHp;
+        // 260918_다시 목숨제다(2-14). 무엇에 맞든 하나씩 잃는다 — 선에 몬스터가 닿으면 곧바로 한 목숨.
+        private int             m_iLife;
+        private int             m_iMaxLife;
         private float           m_fInvincibleTimer;
         private float           m_fBaseSpeed;       // 260904_거미줄 감속의 기준이 되는 원래 속도
         private float           m_fEvasion;         // 260905_피격 회피 확률 0~1
@@ -65,18 +62,21 @@ namespace Client
         private Color           m_cBodyColor;
         private bool            m_bBodyColorSaved;
 
-        public int          HP              => m_iHp;
-        public int          MAX_HP          => m_iMaxHp;
+        public int          LIFE            => m_iLife;
+        public int          MAX_LIFE        => m_iMaxLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
 
         #region IImpactTarget
         public Vector2          POS             => m_cGrid != null ? (Vector2)m_cMoveHandler.WORLD_POS : (Vector2)transform.position;
         // 260917_탄의 판정 반경만으로 맞는다 — 예전 적탄 판정(탄 반경 안에 플레이어 중심)과 같다.
         public float            HIT_RADIUS      => 0f;
-        public bool             IS_ALIVE        => m_cGrid != null && m_iHp > 0;
+        public bool             IS_ALIVE        => m_cGrid != null && m_iLife > 0;
+        // 조준(체력이 가장 많은 적)은 몬스터에게만 쓴다 — 플레이어는 남은 목숨을 낸다.
+        int IImpactTarget.HP => m_iLife;
         public CImpactHandler   IMPACT          => m_cImpact;
 
-        public void Take_Damage(int iAmount) => Damage(iAmount);
+        // 260918_탄 피해량(ProjectileInfo.iDamage)과 상관없이 한 목숨이다.
+        public void Take_Damage(int iAmount) => Lose_Life();
 
         /// <summary> 플레이어는 칸을 따라 움직이므로 밀리지 않는다. 밀면 선이 끊겨 점령 규칙이 깨진다(2-3). </summary>
         public void Push(Vector2 vDir, float fDistance, float fDuration) { }
@@ -98,12 +98,12 @@ namespace Client
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
         /// <summary> 남은 HP를 전달 </summary>
-        public event Action<int> OnHpChanged;
+        public event Action<int> OnLifeChanged;
         /// <summary> HP를 전부 잃음 </summary>
         public event Action OnDead;
         /// <summary> 260905_회피 성공. 연출/사운드를 붙일 자리. </summary>
         public event Action OnEvade;
-        // 260916_OnHpChanged는 Heal에도 불려 '맞았다'만 골라 듣기 어렵다.
+        // 260916_OnLifeChanged는 Add_Life에도 불려 '맞았다'만 골라 듣기 어렵다.
         /// <summary> 실제로 맞아 HP가 줄었을 때만. 카메라 흔들림 같은 피격 연출은 이걸 들을 것. </summary>
         public event Action OnDamaged;
         /// <summary> 점령 판정에 쓸 몬스터 셀 목록 공급자 (없으면 null) </summary>
@@ -121,8 +121,8 @@ namespace Client
             }
 
             m_cGrid             = cDesc.cGrid;
-            m_iMaxHp            = Mathf.Max(1, cDesc.iMaxHp);
-            m_iHp               = m_iMaxHp;
+            m_iMaxLife          = Mathf.Max(1, cDesc.iLife);
+            m_iLife             = m_iMaxLife;
             m_fInvincibleTimer  = 0f;
             m_vLastSafeCell     = cDesc.vStartCell;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
@@ -172,9 +172,10 @@ namespace Client
             m_cSkillHandler.Tick(fDeltaTime);
             Tick_RunSkill(fDeltaTime);
 
-            // 260917_적탄 효과. 도트는 매 초 한 번씩 들어온다.
-            Damage(m_cImpact.Tick(fDeltaTime));
-            if (m_cGrid == null || m_iHp <= 0)
+            // 260917_적탄 효과(기절 · 감속 · 번쩍임).
+            // 260918_도트는 플레이어에게 걸지 않는다 — 목숨제라 초마다 목숨이 하나씩 빠지면 맞자마자 끝난다.
+            m_cImpact.Tick(fDeltaTime);
+            if (m_cGrid == null || m_iLife <= 0)
                 return;
 
             Apply_Speed();
@@ -202,7 +203,7 @@ namespace Client
 
             // 풀에 반납되므로 외부 구독을 끊어 다음 재사용에 새지 않게 한다.
             OnCapture       = null;
-            OnHpChanged     = null;
+            OnLifeChanged   = null;
             OnDead          = null;
             OnEvade         = null;
             OnDamaged       = null;
@@ -224,7 +225,7 @@ namespace Client
             switch (eResult)
             {
                 case STEP_RESULT.DEAD:
-                    Damage(SELF_TRAIL_DAMAGE);
+                    Lose_Life();
                     break;
 
                 case STEP_RESULT.CAPTURE:
@@ -381,23 +382,10 @@ namespace Client
                 m_lstRunSkillEffect[i].On_MonsterHit();
         }
 
-        // 260916_몽둥이. 서 있는 방향이 없으면(멈춰 있으면) 휘두를 곳이 없다.
-        // 260917_판정을 투사체로 옮기면서 '어디를 때리나'만 남겼다 — 그리드(셀 크기)를 아는 곳이 여기라서다.
-        /// <summary> 바라보는 방향으로 fOffsetCells칸 앞의 월드 좌표. 멈춰 있으면 false. </summary>
-        public bool Try_Get_FacingPoint(float fOffsetCells, out Vector2 vPoint, out Vector2 vDir)
-        {
-            vPoint = POS;
-            vDir   = Vector2.zero;
-
-            MOVE_DIR eFacing = m_cMoveHandler.CUR_DIR;
-            if (eFacing == MOVE_DIR.NONE || m_cGrid == null)
-                return false;
-
-            Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(eFacing);
-            vDir   = new Vector2(vOffset.x, vOffset.y);
-            vPoint = POS + vDir * fOffsetCells * m_cGrid.CELL_SIZE;
-            return true;
-        }
+        // 260918_몽둥이는 좌우로만 휘두른다 — 셀 크기를 아는 곳이 여기라 셀 단위 오프셋을 월드 좌표로 바꿔 준다.
+        /// <param name="vOffsetCells"> 플레이어 기준 오프셋(셀) </param>
+        public Vector2 Get_OffsetPoint(Vector2 vOffsetCells)
+            => m_cGrid != null ? POS + vOffsetCells * m_cGrid.CELL_SIZE : POS;
 
         private void Tick_RunSkill(float fDeltaTime)
         {
@@ -480,15 +468,13 @@ namespace Client
 
         // 260904_이미 죽었거나 풀에 반납된 뒤의 호출을 막는다.
         // 같은 프레임에 여러 몬스터가 겹치거나 스테이지가 끝난 뒤에도 판정이 한 번 더 들어올 수 있어,
-        // HP가 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
-        // 260916_목숨 개수(-1 고정) → HP 풀(가변 피해량) 전환. 몬스터/탄마다 다른 공격력을
-        // 넣을 수 있도록 파라미터로 받는다 — 지금은 호출부가 전부 같은 값을 넘기지만
-        // (EnemyInfo/ProjectileInfo에 공격력 열이 아직 없다, M4 보스 작업에서 채울 예정),
-        // Damage 자체는 이미 가변 피해량을 받을 준비가 됐다.
-        /// <summary> 몬스터/탄 피격, 자기 선 밟기 등으로 HP를 iAmount만큼 줄인다. </summary>
-        public void Damage(int iAmount)
+        // 목숨이 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
+        // 260918_HP 풀(260916)에서 다시 목숨제로 돌렸다 — 선에 몬스터가 닿으면 곧바로 한 목숨을 잃는 것이
+        // 이 장르(Qix)의 긴장이고, 판이 빨리 돌아 다시 도전하기도 좋다. 몬스터 · 탄마다 다르던 피해량은 없앴다.
+        /// <summary> 몬스터 · 탄에 맞거나 자기 선을 밟았을 때. 보호막 · 회피가 막지 못하면 목숨 하나를 잃고 안전 칸에서 다시 시작한다. </summary>
+        public void Lose_Life()
         {
-            if (m_cGrid == null || iAmount <= 0 || m_iHp <= 0 || IS_INVINCIBLE == true)
+            if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
                 return;
 
             // 260905_보호막이 있으면 확정으로 한 번 막는다. 확률인 회피보다 먼저 쓴다 —
@@ -513,11 +499,11 @@ namespace Client
 
             m_cGrid.Clear_Trail();
 
-            m_iHp = Mathf.Max(0, m_iHp - iAmount);
+            m_iLife = Mathf.Max(0, m_iLife - 1);
             OnDamaged?.Invoke();
-            OnHpChanged?.Invoke(m_iHp);
+            OnLifeChanged?.Invoke(m_iLife);
 
-            if (m_iHp <= 0)
+            if (m_iLife <= 0)
             {
                 OnDead?.Invoke();
                 return;
@@ -534,7 +520,7 @@ namespace Client
         // 효과가 실패하면 쿨타임을 돌리지 않는다 — 멈춘 채로 점멸을 눌러 쿨만 날리면 억울하다.
         public bool Try_UseSkill()
         {
-            if (m_cGrid == null || m_iHp <= 0 || m_cSkillEffect == null)
+            if (m_cGrid == null || m_iLife <= 0 || m_cSkillEffect == null)
                 return false;
 
             if (m_cSkillHandler.IS_READY == false)
@@ -645,14 +631,14 @@ namespace Client
         /// <summary> 보호막을 얻는다. 이미 있으면 그대로 둔다(중첩하지 않는다). </summary>
         public void Add_Shield() => m_bShield = true;
 
-        /// <summary> HP를 회복한다. 최대 HP를 넘기지 않는다. </summary>
-        public void Heal(int iAmount)
+        /// <summary> 목숨을 되찾는다. 최대 목숨을 넘기지 않는다. </summary>
+        public void Add_Life(int iAmount)
         {
-            if (iAmount <= 0 || m_iHp <= 0)
+            if (iAmount <= 0 || m_iLife <= 0)
                 return;
 
-            m_iHp = Mathf.Min(m_iMaxHp, m_iHp + iAmount);
-            OnHpChanged?.Invoke(m_iHp);
+            m_iLife = Mathf.Min(m_iMaxLife, m_iLife + iAmount);
+            OnLifeChanged?.Invoke(m_iLife);
         }
 
         #endregion 규칙 판정

@@ -24,8 +24,8 @@ namespace Client
         public CTerritoryGrid   cGrid       { get; set; }
         public Vector2Int       vStartCell  { get; set; }
         public float            fMoveSpeed  { get; set; }
-        // 260916_목숨 개수 → HP 전환. 시작/최대 체력이다.
-        public int              iMaxHp      { get; set; }
+        // 260918_시작 목숨 수 (다시 목숨제, 2-14)
+        public int              iLife       { get; set; }
         // 260905_능력치 강화 — 피격을 무시할 확률 0~1
         public float            fEvasion    { get; set; }
         // 260905_장착한 액티브 스킬. null이면 스킬 없음.
@@ -66,7 +66,6 @@ namespace Client
         public float            fFireInterval   { get; set; }
         // 260918_몬스터별 체력/공격력(EnemyInfo.csv). 0 이하로 두면 CEnemy가 기존 고정값으로 대체한다.
         public int              iHp             { get; set; }
-        public int              iAttack         { get; set; }
 
         public override void OnReturn()
         {
@@ -145,10 +144,8 @@ namespace Client
         public CCSVData_EquipInfo     cEquipTable     { get; set; }
         // 260918_캐릭터 탭(스킨/레벨업 — 스테이지 진입 캐릭터도 여기서 바꾼다)이 쓴다.
         public CCSVData_CharacterInfo cCharacterTable { get; set; }
-        // 260918_장비 뽑기(가방 하단 BM 자리). 없으면 뽑기 버튼을 감춘다.
-        public CCSVData_GachaInfo     cGachaTable     { get; set; }
         public CProgress_Manager      cProgress       { get; set; }
-        /// <summary> 장착 · 강화 · 뽑기로 코인이나 장착 상태가 바뀌었을 때 </summary>
+        /// <summary> 장착 · 강화로 코인이나 장착 상태가 바뀌었을 때 </summary>
         public Action                 OnChanged       { get; set; }
         /// <summary> 260918_상세 · 뽑기 결과 팝업을 띄워 달라 — 화면을 여는 것은 CGameManager다(2-7) </summary>
         public Action<CUI_PopupDesc>  OnRequestPopup  { get; set; }
@@ -158,7 +155,6 @@ namespace Client
             base.OnReturn();
             cEquipTable     = null;
             cCharacterTable = null;
-            cGachaTable     = null;
             cProgress       = null;
             OnChanged       = null;
             OnRequestPopup  = null;
@@ -210,16 +206,22 @@ namespace Client
     public class CUI_ShopDesc : CUIDesc
     {
         public CCSVData_EquipInfo   cEquipTable { get; set; }
+        // 260918_장비 뽑기(BM)는 상점에서만 한다. 없으면 뽑기 줄이 안 나온다.
+        public CCSVData_GachaInfo   cGachaTable { get; set; }
         public CProgress_Manager    cProgress   { get; set; }
         /// <summary> 구매했을 때 — 로비의 재화 표시를 갱신하려고 쓴다. </summary>
         public Action               OnPurchased { get; set; }
+        /// <summary> 260918_뽑기 결과 팝업을 띄워 달라 — 화면을 여는 것은 CGameManager다(2-7) </summary>
+        public Action<CUI_PopupDesc> OnRequestPopup { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
-            cEquipTable = null;
-            cProgress   = null;
-            OnPurchased = null;
+            cEquipTable    = null;
+            cGachaTable    = null;
+            cProgress      = null;
+            OnPurchased    = null;
+            OnRequestPopup = null;
         }
     }
 

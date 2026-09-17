@@ -46,7 +46,10 @@ namespace Client
                 case RUN_SKILL_TYPE.MAGIC_BOLT:
                 case RUN_SKILL_TYPE.LASER_BEAM:
                 case RUN_SKILL_TYPE.BOOMERANG:
-                case RUN_SKILL_TYPE.BOUNCE_SHOT: cEffect = new CRunSkillEffect_Weapon(); break;
+                case RUN_SKILL_TYPE.BOUNCE_SHOT:
+                case RUN_SKILL_TYPE.STUN_SHOT:   cEffect = new CRunSkillEffect_Weapon(); break;     // 260918_마비탄도 쏘는 무기다
+
+                case RUN_SKILL_TYPE.MASS_STUN:   cEffect = new CRunSkillEffect_MassStun(); break;
 
                 default: return null;
             }
@@ -373,16 +376,17 @@ namespace Client
     /// 판정 반경이 커진다. 뱀서라이크의 다른 무기들처럼 버튼 없이 자동으로 발동한다 —
     /// "액티브"는 버튼 여부가 아니라 쿨타임을 가진 효과라는 뜻이다(패시브는 상시 적용).
     ///
-    /// 260917_판정을 투사체로 옮겼다(회전탄과 같은 이유 — 아무것도 그려지지 않았다). 휘두르면 앞쪽에
+    /// 260917_판정을 투사체로 옮겼다(회전탄과 같은 이유 — 아무것도 그려지지 않았다). 휘두르면
     /// ProjectileInfo 22(짧게 커지는 원)를 레벨 반경만큼 키워 띄우고, 피해 · 넉백(ImpactInfo 7)은 그 탄이 넣는다.
     /// 여기는 '지금 휘두를 차례인가'와 반경만 안다.
+    ///
+    /// 260918_뱀서라이크가 아니라 베기 스킬이 꼭 필요하진 않지만 지우지 않고, 크게(반경 3배, RunSkillInfo) ·
+    /// **좌우 양쪽에 한 번에** 휘두르게 바꿨다. 바라보는 방향을 따르지 않으므로 멈춰 있어도 휘두른다.
     /// </summary>
     public class CRunSkillEffect_Club : CRunSkillEffect
     {
         private const float SWING_INTERVAL = 1.2f;     // 초
 
-        /// <summary> 플레이어 앞으로 얼마나 나가서 휘두를지(셀). </summary>
-        public const float SWING_OFFSET_CELLS = 1f;
 
         private IRunSkillHost m_cHost;
         private CRunSkillInfo m_cInfo;
@@ -421,13 +425,15 @@ namespace Client
                 return;
             }
 
-            // 멈춰 있으면 휘두를 곳이 없다 — 쿨을 찬 채로 기다린다.
-            if (m_cHost == null || m_cOwner == null || PROJECTILE_ID <= 0
-                || m_cOwner.Try_Get_FacingPoint(SWING_OFFSET_CELLS, out Vector2 vPoint, out Vector2 vDir) == false)
+            if (m_cHost == null || m_cOwner == null || PROJECTILE_ID <= 0)
                 return;
 
-            if (Consume_Swing(out float fRadiusCells) == true)
-                m_cHost.Spawn_PlayerShot(PROJECTILE_ID, vPoint, vDir, fRadiusCells);
+            if (Consume_Swing(out float fRadiusCells) == false)
+                return;
+
+            // 원의 가장자리가 몸에 닿게 반경만큼 옆으로 띄운다 — 몸에 겹치면 뒤쪽까지 맞아 '좌우'가 흐려진다.
+            m_cHost.Spawn_PlayerShot(PROJECTILE_ID, m_cOwner.Get_OffsetPoint(Vector2.left * fRadiusCells), Vector2.left, fRadiusCells);
+            m_cHost.Spawn_PlayerShot(PROJECTILE_ID, m_cOwner.Get_OffsetPoint(Vector2.right * fRadiusCells), Vector2.right, fRadiusCells);
         }
 
         /// <returns> 휘둘렀으면 true(그 즉시 쿨이 다시 찬다). fRadiusCells에 판정 반경(셀) — 탄 크기에 곱한다 </returns>
@@ -446,6 +452,46 @@ namespace Client
         {
             if (m_cOwner != null)
                 m_cOwner.OnEvade -= On_OwnerEvade;
+        }
+    }
+
+    // 260918_전체 마비 — 주기적으로 살아 있는 몬스터 전부를 잠깐 세운다.
+    /// <summary>
+    /// 목숨제에서 가장 무서운 순간은 '선을 긋는 중에 몬스터가 다가올 때'다. 죽이는 무기보다 세우는 쪽이 이 게임에 맞다.
+    /// 쿨(fCool)은 RunSkillInfo, 레벨 수치(Get_Value)는 마비 시간(초)이다.
+    /// 몬스터가 하나도 없으면 발동하지 않고 쿨을 찬 채로 기다린다 — 허공에 터뜨려 쿨만 도는 일이 없게.
+    /// 실제로 세우는 일과 화면 연출(흔들림 · 펀치 · 플래시)은 스테이지 → CGameManager가 한다(IRunSkillHost.Stun_AllEnemies).
+    /// </summary>
+    public class CRunSkillEffect_MassStun : CRunSkillEffect
+    {
+        private IRunSkillHost m_cHost;
+        private CRunSkillInfo m_cInfo;
+        private float         m_fCoolTimer;
+
+        public float COOL_REMAIN => m_fCoolTimer;
+        public float DURATION    => m_cInfo != null ? m_cInfo.Get_Value(m_iLevel) : 0f;
+
+        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+            m_cInfo = cInfo;
+        }
+
+        public override void Tick(float fDeltaTime)
+        {
+            if (m_cHost == null || m_cInfo == null)
+                return;
+
+            if (m_fCoolTimer > 0f)
+            {
+                m_fCoolTimer -= fDeltaTime;
+                return;
+            }
+
+            if (m_cHost.Stun_AllEnemies(DURATION) > 0)
+                m_fCoolTimer = m_cInfo.fCool;
         }
     }
 

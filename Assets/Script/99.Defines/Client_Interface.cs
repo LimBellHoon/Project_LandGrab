@@ -58,6 +58,10 @@ namespace Client
         /// <returns> 260917_만든 탄의 본체. 회전탄처럼 스킬이 직접 거둬야 하는 탄이 붙잡아 둔다. 실패하면 null </returns>
         /// <param name="fScale"> 260917_표의 크기에 곱한다. 몽둥이처럼 레벨이 판정 크기를 키우는 스킬이 쓴다 </param>
         CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f);
+
+        // 260918_전체 마비 — 살아 있는 몬스터 전부를 fDuration초 세우고 화면 연출을 올린다.
+        /// <returns> 세운 몬스터 수. 0이면 아무 일도 없었다(연출도 없다) </returns>
+        int Stun_AllEnemies(float fDuration);
     }
 
 

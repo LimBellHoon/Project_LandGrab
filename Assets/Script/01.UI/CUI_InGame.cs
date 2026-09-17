@@ -23,6 +23,8 @@ namespace Client
         // (CEnemy의 기믹별 색과 같은 자리 — 세기·지속시간만 CGameConfig에서 조절한다).
         private static readonly Color COLOR_FLASH_HIT   = new Color(0.9f, 0.15f, 0.15f);
         private static readonly Color COLOR_FLASH_EVADE = Color.white;
+        // 260918_전체 마비 — 번개 빛. 피격(빨강) · 회피(하양)와 섞이지 않는 색이다
+        private static readonly Color COLOR_FLASH_MASS_STUN = new Color(1f, 0.92f, 0.35f);
 
         [SerializeField] private RectTransform  m_trJoystickBase;
         [SerializeField] private RectTransform  m_trJoystickHandle;
@@ -170,6 +172,25 @@ namespace Client
             Color cColor = COLOR_FLASH_EVADE;
             cColor.a = m_cConfig.FLASH_EVADE_ALPHA;
             m_cFlash.Add_Flash(cColor, m_cConfig.FLASH_EVADE_DURATION);
+        }
+
+        // 260918_전체 마비가 터졌다 — CGameManager가 흔들림 · 펀치와 함께 부른다(세계는 매니저, 화면은 UI, 2-10-3).
+        public void Play_MassStunFlash()
+        {
+            if (m_cConfig == null || m_cConfig.SCREEN_FLASH_ENABLED == false)
+                return;
+
+            Color cColor = COLOR_FLASH_MASS_STUN;
+            cColor.a = m_cConfig.FLASH_MASS_STUN_ALPHA;
+            m_cFlash.Add_Flash(cColor, m_cConfig.FLASH_MASS_STUN_DURATION);
+        }
+
+        // 260918_목숨을 하트로 — 찬 하트 ♥ 남은 목숨, 빈 하트 ♡ 잃은 목숨
+        public static string Get_LifeText(int iLife, int iMaxLife)
+        {
+            int iMax = Mathf.Max(0, iMaxLife);
+            int iCur = Mathf.Clamp(iLife, 0, iMax);
+            return new string('♥', iCur) + new string('♡', iMax - iCur);
         }
 
         private void Refresh_Flash()
@@ -330,7 +351,7 @@ namespace Client
 
             m_txtStatus.text = $"{m_cStage.WAVE}/{m_cStage.WAVE_COUNT} 웨이브"
                              + $"   {m_cStage.OWNED_RATIO:P0} / {m_cStage.CLEAR_RATIO:P0}"
-                             + $"   ♥{m_cStage.HP}/{m_cStage.MAX_HP}";
+                             + $"   {CUI_InGame.Get_LifeText(m_cStage.LIFE, m_cStage.MAX_LIFE)}";
         }
     }
 }

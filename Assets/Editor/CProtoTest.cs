@@ -394,8 +394,7 @@ namespace Client
             });
 
             Check("생성 직후에는 안 죽었다", cEnemy.IS_DEAD == false);
-            // 260918_Desc에 iHp/iAttack을 안 주면(0) CEnemy의 기존 고정값(체력3/공격력1)으로 대체된다.
-            Check("iAttack 미지정 시 기본값(1)으로 대체", cEnemy.ATTACK, 1);
+            // 260918_Desc에 iHp를 안 주면(0) CEnemy의 기존 고정값(체력3)으로 대체된다.
 
             cEnemy.Damage(1);
             cEnemy.Damage(1);
@@ -409,7 +408,7 @@ namespace Client
 
             Object.DestroyImmediate(goEnemy);
 
-            // 260918_EnemyInfo.csv에서 온 iHp/iAttack이 그대로 적용되는지 — 종류별 난이도의 기반이다.
+            // 260918_EnemyInfo.csv에서 온 iHp가 그대로 적용되는지 — 종류별 난이도의 기반이다.
             GameObject goCustom = new GameObject("Test_CombatEnemy_Custom");
             CEnemy cCustom = goCustom.AddComponent<CEnemy>();
             cCustom.Initialize(new CEnemyDesc
@@ -426,10 +425,8 @@ namespace Client
                 fTurnRate       = 1f,
                 fHitRange       = 0.5f,
                 iHp             = 1,
-                iAttack         = 5,
             });
 
-            Check("iAttack을 지정하면 그 값이 반영된다", cCustom.ATTACK, 5);
             cCustom.Damage(1);
             Check("iHp를 1로 지정하면 한 대에 죽는다", cCustom.IS_DEAD == true);
 
@@ -524,13 +521,12 @@ namespace Client
                 return;
 
             Check("체력이 0보다 크다", cWanderer.iHp > 0);
-            Check("공격력이 0보다 크다", cWanderer.iAttack > 0);
             Check("분열체가 배회자보다 단단하다(소환주기가 있어 오래 버텨야 함)",
                   cSplitter.iHp >= cWanderer.iHp);
             Check("표에 없는 ID는 null", cTable.Get_Info(99999) == null);
         }
 
-        // 260916_목숨 개수(-1 고정) → HP 풀(가변 피해량) 전환 검증
+        // 260918_다시 목숨제 — 무엇에 맞든 한 목숨, 무적 중엔 안 잃음, 최대를 넘게 되찾지 못함, 0이면 사망
         private static void Test_Player()
         {
             CTerritoryGrid cGrid = Make_Grid();
@@ -545,25 +541,28 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = vStart,
                 fMoveSpeed    = STEP_SPEED,
-                iMaxHp        = 3,
+                iLife         = 3,
             });
 
-            Check("초기 HP = 최대 HP", cPlayer.HP, 3);
-            Check("최대 HP 기록", cPlayer.MAX_HP, 3);
+            Check("처음엔 목숨이 가득", cPlayer.LIFE, 3);
+            Check("최대 목숨 기록", cPlayer.MAX_LIFE, 3);
 
-            int iLastHp = -1;
-            cPlayer.OnHpChanged += iHp => iLastHp = iHp;
+            int iLastLife = -1;
+            cPlayer.OnLifeChanged += iLife => iLastLife = iLife;
 
-            cPlayer.Damage(2);
-            Check("피해량만큼 HP 감소", cPlayer.HP, 1);
-            Check("OnHpChanged가 새 HP를 전달", iLastHp, 1);
+            // 탄 피해량이 커도 한 목숨이다
+            cPlayer.Take_Damage(5);
+            Check("무엇에 맞든 한 목숨", cPlayer.LIFE, 2);
+            Check("OnLifeChanged가 남은 목숨을 전달", iLastLife, 2);
 
-            // 방금 맞아 무적 시간이 걸려 있으므로 추가 피해는 들어가지 않는다
-            cPlayer.Damage(1);
-            Check("무적 중 피해 무시", cPlayer.HP, 1);
+            // 방금 맞아 무적 시간이 걸려 있으므로 더 잃지 않는다
+            cPlayer.Lose_Life();
+            Check("무적 중엔 안 잃는다", cPlayer.LIFE, 2);
 
-            cPlayer.Heal(10);
-            Check("회복은 최대 HP를 넘지 않는다", cPlayer.HP, 3);
+            cPlayer.Add_Life(10);
+            Check("최대 목숨을 넘게 되찾지 못한다", cPlayer.LIFE, 3);
+
+            Check("목숨 표시", CUI_InGame.Get_LifeText(2, 3), "♥♥♡");
 
             Object.DestroyImmediate(goPlayer);
 
@@ -577,14 +576,14 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = vStart,
                 fMoveSpeed    = STEP_SPEED,
-                iMaxHp        = 2,
+                iLife         = 1,
             });
 
             bool bDied = false;
             cDeathPlayer.OnDead += () => bDied = true;
-            cDeathPlayer.Damage(5);
-            Check("치명적 피해는 HP를 0에서 멈춘다", cDeathPlayer.HP, 0);
-            Check("HP가 0이 되면 OnDead 발동", bDied);
+            cDeathPlayer.Lose_Life();
+            Check("마지막 목숨을 잃으면 0", cDeathPlayer.LIFE, 0);
+            Check("목숨이 0이 되면 OnDead 발동", bDied);
 
             Object.DestroyImmediate(goDeath);
         }
@@ -698,7 +697,7 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
                 fMoveSpeed    = STEP_SPEED,
-                iMaxHp        = 3,
+                iLife         = 3,
                 cSkillInfo    = cInfo,
             });
 
@@ -1212,6 +1211,7 @@ namespace Client
                 RUN_SKILL_TYPE.EDGE_WRAP, RUN_SKILL_TYPE.RAGE, RUN_SKILL_TYPE.SOUL_COLLECTOR,
                 RUN_SKILL_TYPE.ORBIT, RUN_SKILL_TYPE.CLUB,
                 RUN_SKILL_TYPE.MAGIC_BOLT, RUN_SKILL_TYPE.LASER_BEAM, RUN_SKILL_TYPE.BOOMERANG, RUN_SKILL_TYPE.BOUNCE_SHOT,
+                RUN_SKILL_TYPE.STUN_SHOT, RUN_SKILL_TYPE.MASS_STUN,
             };
 
             for (int i = 0; i < arrType.Length; ++i)
@@ -1238,8 +1238,10 @@ namespace Client
             Check("맵을 하나도 안 깼으면 해금 스킬은 안 나온다", bAnyGated == false);
 
             // 해금되면 나온다 — 모든 맵을 깼다고 치면 전부가 후보다 (260917_투사체 무기 4종이 늘어 12종)
-            List<CRunSkillInfo> lstAll = cTable.Pick_Random(12, eType => 0, iMapID => true);
-            Check("전부 해금되면 12종 다 후보", lstAll.Count, 12);
+            // 260918_투사체 무기 4종은 가중치 0으로 뺐다(뱀서라이크가 아니다) — 마비 둘이 더해져 10종
+            List<CRunSkillInfo> lstAll = cTable.Pick_Random(14, eType => 0, iMapID => true);
+            Check("전부 해금되면 가중치 있는 10종이 후보", lstAll.Count, 10);
+            Check("빠진 무기는 후보가 아니다", lstAll.Exists(cInfo => cInfo.eType == RUN_SKILL_TYPE.MAGIC_BOLT) == false);
 
             // 이미 만렙이면 후보에서 빠진다
             List<CRunSkillInfo> lstMaxed = cTable.Pick_Random(8,
@@ -1286,7 +1288,7 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
                 fMoveSpeed    = STEP_SPEED,
-                iMaxHp        = 3,
+                iLife         = 3,
                 fEvasion      = 0f,
             };
             cPlayer.Initialize(cDesc);
@@ -1388,7 +1390,7 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = new Vector2Int(GRID_SIZE / 2, BORDER_THICK - 1),
                 fMoveSpeed    = STEP_SPEED,
-                iMaxHp        = 3,
+                iLife         = 3,
                 fEvasion      = 1f,     // 반격의 몽둥이 — 맞으면 반드시 회피하게
             };
             cPlayer.Initialize(cDesc);
@@ -1524,15 +1526,42 @@ namespace Client
             cPlayer.Add_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.EVASION));
             CRunSkillEffect_Club cClub = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.CLUB) as CRunSkillEffect_Club;
             float fRadiusBefore = cClub != null ? cClub.RADIUS_CELLS : 0f;
+            // 260918_몽둥이는 좌우 양쪽을 한 번에, 멈춰 있어도 휘두른다
             int iClubShotBefore = cHost.lstShotID.Count;
             cClub?.Tick(0.01f);
-            Check("몽둥이 — 멈춰 있으면 휘두르지 않는다", cHost.lstShotID.Count, iClubShotBefore);
+            Check("몽둥이 — 좌우 두 번", cHost.lstShotID.Count - iClubShotBefore, 2);
+            Check("몽둥이 — 왼쪽과 오른쪽", cHost.lstShotDir.Count >= 2
+                  && cHost.lstShotDir[cHost.lstShotDir.Count - 2].x < -0.9f && cHost.lstShotDir[cHost.lstShotDir.Count - 1].x > 0.9f);
+            Check("몽둥이 — 반경 3칸 이상(예전의 3배)", cClub != null && cClub.RADIUS_CELLS >= 3f);
+            cClub?.Tick(10f);       // 방금 휘둘러 돈 쿨을 흘려보낸다
             cPlayer.Awaken_RunSkill(cAwakenTable.Get_Info(2));
             Check("반격의 몽둥이 — 범위 1.3배", cClub != null && Mathf.Approximately(cClub.RADIUS_CELLS, fRadiusBefore * 1.3f));
             Check("반격의 몽둥이 — 한 번 휘두르면", cClub != null && cClub.Consume_Swing(out float _) == true);
             Check("반격의 몽둥이 — 쿨이 돈다", cClub != null && cClub.IS_READY == false);
-            cPlayer.Damage(1);              // 회피 확률 1 — 반드시 회피한다
+            cPlayer.Lose_Life();            // 회피 확률 1 — 반드시 회피한다
             Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
+
+            // ---- 260918_전체 마비: 몬스터가 없으면 기다리고, 있으면 쿨마다 레벨 시간만큼
+            CRunSkillInfo cMassInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.MASS_STUN);
+            CFakeRunSkillHost cStunHost = new CFakeRunSkillHost();
+            cPlayer.Set_RunSkillHost(cStunHost);
+            cPlayer.Add_RunSkill(cMassInfo);
+            CRunSkillEffect_MassStun cMass = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.MASS_STUN) as CRunSkillEffect_MassStun;
+            Check("전체 마비 모듈이 붙는다", cMass != null);
+            cMass?.Tick(20f);
+            Check("전체 마비 — 몬스터가 없으면 발동하지 않는다", cStunHost.iStunCount, 0);
+            Check("전체 마비 — 쿨을 찬 채로 기다린다", cMass != null && cMass.COOL_REMAIN <= 0f);
+            cStunHost.lstEnemy.Add(new CFakeImpactTarget(Vector2.zero, 0.3f));
+            cMass?.Tick(0.01f);
+            Check("전체 마비 — 몬스터가 있으면 곧바로", cStunHost.iStunCount, 1);
+            Check("전체 마비 — 1레벨은 1초", Mathf.Approximately(cStunHost.fLastStun, 1f));
+            cMass?.Tick(1f);
+            Check("전체 마비 — 쿨 동안은 다시 안 터진다", cStunHost.iStunCount, 1);
+            cPlayer.Add_RunSkill(cMassInfo);
+            Check("전체 마비 — 레벨이 오르면 시간이 는다", cMass != null && cMass.DURATION > 1f);
+
+            CRunSkillInfo cStunShot = cSkillTable.Find_ByType(RUN_SKILL_TYPE.STUN_SHOT);
+            Check("마비탄은 탄 23을 쏘는 무기", cStunShot != null && cStunShot.iProjectileID == 23);
 
             // ---- 판이 끝나면 각성도 사라진다
             List<CProjectileCore> lstOrbitCore = cHost.lstCore.FindAll(
@@ -1573,6 +1602,20 @@ namespace Client
             public CCSVData_ProjectileInfo          cProjectileTable;
 
             public void Spawn_Soul() { }
+
+            public float fLastStun;
+            public int   iStunCount;
+
+            public int Stun_AllEnemies(float fDuration)
+            {
+                int iAlive = lstEnemy.FindAll(cEnemy => cEnemy.IS_ALIVE).Count;
+                if (iAlive > 0)
+                {
+                    ++iStunCount;
+                    fLastStun = fDuration;
+                }
+                return iAlive;
+            }
 
             public IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind)
                 => CTargetFinder_Utility.Find(lstEnemy, vFrom, eFind);
@@ -2507,7 +2550,7 @@ namespace Client
             const string TAB = "\t";
             string strCsv =
                   string.Join(TAB, "iMapID", "strMapName", "iGridWidth", "iGridHeight", "fCellSize",
-                                   "iBorderThick", "iMaxHp", "fPlayerSpeed", "iWaveCount", "strShapeMask",
+                                   "iBorderThick", "iLife", "fPlayerSpeed", "iWaveCount", "strShapeMask",
                                    "strLayerTex", "strWaveEnemy", "strWaveClearRatio", "strWaveTimeLimit",
                                    "iCoinPerStar", "NONE") + "\n"
                 + string.Join(TAB, "901", "테스트A", "20", "20", "0.1", "1", "3", "8", "1", "-",

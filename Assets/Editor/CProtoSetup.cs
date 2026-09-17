@@ -107,6 +107,7 @@ namespace Client
             "Tex_RunSkill_MOONWALK", "Tex_RunSkill_EDGE_WRAP", "Tex_RunSkill_SOUL_COLLECTOR", "Tex_RunSkill_RAGE",
             "Tex_RunSkill_MAGNET", "Tex_RunSkill_EVASION", "Tex_RunSkill_ORBIT", "Tex_RunSkill_CLUB",
             "Tex_RunSkill_MAGIC_BOLT", "Tex_RunSkill_LASER_BEAM", "Tex_RunSkill_BOOMERANG", "Tex_RunSkill_BOUNCE_SHOT",
+            "Tex_RunSkill_STUN_SHOT", "Tex_RunSkill_MASS_STUN",
         };
         private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
@@ -189,7 +190,7 @@ namespace Client
             iFail += Validate_UIPrefab<CUI_Shop>(PATH_PREFAB_UI_SHOP, UI_SHOP,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
             iFail += Validate_UIPrefab<CUI_Inventory>(PATH_PREFAB_UI_INVEN, UI_INVENTORY,
-                        new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton", "m_btnGacha",
+                        new[] { "m_trContent", "m_btnTemplate", "m_txtTitle", "m_arrTabButton",
                                 "m_btnCharacter", "m_imgCharacter", "m_txtCharacter", "m_spDefaultCharacter",
                                 "m_arrSlotButton", "m_arrSlotIcon" });
             iFail += Validate_UIPrefab<CUI_CardPick>(PATH_PREFAB_UI_CARD, UI_CARDPICK,
@@ -843,6 +844,18 @@ namespace Client
                     return bTrail || Mathf.Sqrt((fU - 0.52f) * (fU - 0.52f) + (fV - 0.25f) * (fV - 0.25f)) < 0.2f;
                 }
 
+                // 260918_마비 둘
+                case 12:    // 마비탄 — 탄 하나와 그 둘레의 짧은 번개 넷
+                {
+                    bool bCore = fDist < 0.26f;
+                    bool bSpark = (Mathf.Abs(fU) < 0.07f && fAbsV > 0.38f && fAbsV < 0.72f)
+                               || (Mathf.Abs(fV) < 0.07f && fAbsU > 0.38f && fAbsU < 0.72f);
+                    return bCore || bSpark;
+                }
+
+                case 13:    // 전체 마비 — 가운데 점과 퍼지는 고리 둘
+                    return fDist < 0.14f || (fDist > 0.34f && fDist < 0.44f) || (fDist > 0.62f && fDist < 0.72f);
+
                 default:    // 몽둥이 — 대각선 자루와 굵은 머리
                 {
                     float fAlong  = (fU + fV) * 0.7071f;
@@ -1390,7 +1403,7 @@ namespace Client
         // 260905_인벤토리. 공용 목록 위에 안쪽 탭(장비/스킬) 두 개를 얹는다.
         private static void Create_InventoryUI()
         {
-            // 260918_네 구역으로 다시 짰다 — 위 패널(A 장착 캐릭터 + B 부위별 슬롯) · C 보유 격자 · D 탭 + 뽑기.
+            // 260918_네 구역으로 다시 짰다 — 위 패널(A 장착 캐릭터 + B 부위별 슬롯) · C 보유 격자 · D 탭. 뽑기는 상점에 있다.
             // 로비 Content 안에 깔리므로 세로 기준 약 1590px 높이를 전제로 위아래를 고정 픽셀로 나눈다.
             GameObject goRoot = Create_UIObject(UI_INVENTORY, null);
             Stretch_Full(goRoot.GetComponent<RectTransform>());
@@ -1526,8 +1539,6 @@ namespace Client
                 arrTabButton[i] = Make_TabButton($"Btn_InnerTab_{i}", goTabBar.transform, arrTabName[i],
                                                  new Color(0.13f, 0.16f, 0.26f, 1f));
 
-            // 뽑기는 BM 자리라 색을 달리해 한눈에 구분한다
-            Button cGacha = Make_TabButton("Btn_Gacha", goTabBar.transform, "뽑기", new Color(0.85f, 0.62f, 0.15f, 1f));
 
             // ---------------- 연결 ----------------
             CUI_Inventory cUI = goRoot.AddComponent<CUI_Inventory>();
@@ -1535,7 +1546,6 @@ namespace Client
             cSerialized.FindProperty("m_trContent").objectReferenceValue    = trGrid;
             cSerialized.FindProperty("m_btnTemplate").objectReferenceValue  = goTemplate.GetComponent<Button>();
             cSerialized.FindProperty("m_txtTitle").objectReferenceValue     = txtTitle;
-            cSerialized.FindProperty("m_btnGacha").objectReferenceValue     = cGacha;
             cSerialized.FindProperty("m_btnCharacter").objectReferenceValue = cCharButton;
             cSerialized.FindProperty("m_imgCharacter").objectReferenceValue = imgChar;
             cSerialized.FindProperty("m_txtCharacter").objectReferenceValue = txtChar;

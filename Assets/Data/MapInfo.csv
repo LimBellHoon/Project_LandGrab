@@ -1,4 +1,4 @@
-﻿iMapID	strMapName	iGridWidth	iGridHeight	fCellSize	iBorderThick	iMaxHp	fPlayerSpeed	iWaveCount	strShapeMask	strLayerTex	strWaveEnemy	strWaveClearRatio	strWaveTimeLimit	iCoinPerStar	strCardRatio	iCharacterID	NONE
+﻿iMapID	strMapName	iGridWidth	iGridHeight	fCellSize	iBorderThick	iLife	fPlayerSpeed	iWaveCount	strShapeMask	strLayerTex	strWaveEnemy	strWaveClearRatio	strWaveTimeLimit	iCoinPerStar	strCardRatio	iCharacterID	NONE
 ;== 맵 / 웨이브 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다														
 ;fPlayerSpeed : 플레이어 이동 속도(초당 셀)															
 ;strLayerTex : 겹쳐 깔리는 이미지 스택. | 로 구분하고 (iWaveCount + 1)장이 필요하다															
