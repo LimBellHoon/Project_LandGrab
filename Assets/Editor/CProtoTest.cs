@@ -41,6 +41,7 @@ namespace Client
             Test_EnemyTable();
             Test_Enemy();
             Test_EnemyCombat();
+            Test_EnemyKiteBehavior();
             Test_Player();
             Test_ShapeMask();
             Test_DirtyCell();
@@ -431,6 +432,74 @@ namespace Client
             Check("iHp를 1로 지정하면 한 대에 죽는다", cCustom.IS_DEAD == true);
 
             Object.DestroyImmediate(goCustom);
+        }
+
+        // 260918_비헤이비어 트리 첫 연결 — PROJECTILE(포수류)만 사거리를 기준으로 쫓을지 버틸지 정하는지 본다.
+        // CTerritoryGrid의 CELL_SIZE가 1이라(Make_Grid) 셀 거리 = 월드 거리로 그대로 쓸 수 있다.
+        private static void Test_EnemyKiteBehavior()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+
+            GameObject goEnemy = new GameObject("Test_BTEnemy");
+            CEnemy cEnemy = goEnemy.AddComponent<CEnemy>();
+            cEnemy.Initialize(new CEnemyDesc
+            {
+                eObjectType     = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName   = "Prefab_Enemy",
+                cGrid           = cGrid,
+                vStartCell      = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir       = Vector2.right,
+                iEnemyID        = 996,
+                eGimmick        = ENEMY_GIMMICK.PROJECTILE,
+                fSpeed          = 1f,
+                fChaseSpeed     = 1f,
+                fTurnRate       = 1f,
+                fHitRange       = 0.5f,
+                fGimmickRange   = 5f,      // 5칸 사거리
+                fGimmickCool    = 100f,    // 테스트 중에는 실제로 쏘지 않아도 된다
+                iGimmickRefID   = 1,
+            });
+
+            Vector2 vFar  = cEnemy.POS + new Vector2(20f, 0f);   // 사거리(5) 밖
+            Vector2 vNear = cEnemy.POS + new Vector2(2f, 0f);    // 사거리(5) 안
+
+            cEnemy.Set_ChaseState(true, vFar);
+            cEnemy.Tick(0.1f);
+            Check("사거리 밖이고 노출돼 있으면 쫓는다", cEnemy.IS_CHASING);
+
+            cEnemy.Set_ChaseState(true, vNear);
+            cEnemy.Tick(0.1f);
+            Check("사거리 안이면 멈춰서 버틴다", cEnemy.IS_CHASING == false);
+
+            cEnemy.Set_ChaseState(false, vFar);   // 플레이어가 안전 지대로 돌아갔다 — 멀어도 쫓지 않는다
+            cEnemy.Tick(0.1f);
+            Check("플레이어가 안전 지대에 있으면 사거리 밖이어도 안 쫓는다", cEnemy.IS_CHASING == false);
+
+            Object.DestroyImmediate(goEnemy);
+
+            // 260918_PROJECTILE이 아니면 트리를 안 만든다 — 예전처럼 노출 여부를 그대로 따른다.
+            GameObject goPlain = new GameObject("Test_BTEnemy_Plain");
+            CEnemy cPlain = goPlain.AddComponent<CEnemy>();
+            cPlain.Initialize(new CEnemyDesc
+            {
+                eObjectType     = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName   = "Prefab_Enemy",
+                cGrid           = cGrid,
+                vStartCell      = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir       = Vector2.right,
+                iEnemyID        = 995,
+                eGimmick        = ENEMY_GIMMICK.NONE,
+                fSpeed          = 1f,
+                fChaseSpeed     = 1f,
+                fTurnRate       = 1f,
+                fHitRange       = 0.5f,
+            });
+
+            cPlain.Set_ChaseState(true, cPlain.POS + new Vector2(50f, 0f));
+            cPlain.Tick(0.1f);
+            Check("트리가 없는 몬스터는 거리와 상관없이 노출 여부를 그대로 따른다", cPlain.IS_CHASING);
+
+            Object.DestroyImmediate(goPlain);
         }
 
         // 260918_EnemyInfo.csv의 iHp/iAttack — 몬스터별 체력·공격력이 표에서 그대로 나오는지 본다.

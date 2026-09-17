@@ -217,6 +217,8 @@
         PATTERN_INDEX,      // float   : 지금 차례인 패턴 번호
         NEXT_PATTERN_TIME,  // float   : 다음 패턴을 시작해도 되는 누적 시간
         IS_SUPERARMOR,      // bool    : 피격 반응을 무시하는 중
+        // 260918_첫 연결(CEnemyBehaviorTree_Utility.Build_Kite, 2-16)에서 추가.
+        IS_TARGET_EXPOSED,  // bool    : 노리는 대상(플레이어)이 지금 위협 가능한 상태인가(안전 지대 밖)
     }
 
     public enum RUN_SKILL_TYPE

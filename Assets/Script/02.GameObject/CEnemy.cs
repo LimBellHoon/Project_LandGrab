@@ -39,11 +39,20 @@ namespace Client
 
         private bool            m_bChase;
         private Vector2         m_vTargetPos;
+        // 260918_CStage_Manager가 매 프레임 넘겨 주는 "플레이어가 안전 지대 밖에 있는가".
+        // 비헤이비어 트리가 있으면 이 값을 그대로 배회/추적으로 쓰지 않고 블랙보드에 넣어 트리가 판단한다.
+        private bool            m_bExposed;
 
         // 260904_EnemyInfo.csv에서 들어온다. 기믹 수치는 m_cGimmick이 들고 있으므로 여기 두지 않는다.
         private int             m_iEnemyID;
         private ENEMY_GIMMICK   m_eGimmick;
         private float           m_fHitRange;        // 셀
+        // 260918_기믹 사거리(셀). PROJECTILE류의 비헤이비어 트리가 ATTACK_RANGE로 쓴다.
+        private float           m_fGimmickRange;
+
+        // 260918_비헤이비어 트리(2-16) 첫 연결 — PROJECTILE 기믹(포수류)만 쓴다. 나머지는 null이라
+        // Tick의 HAS_TREE 검사에서 그냥 건너뛴다(CEnemyBehaviorTree_Utility 참고).
+        private CBehaviorTreeHandler m_cBehaviorTree;
 
         // 260916_런 스킬(회전탄/몽둥이)이 몬스터를 죽일 수 있어야 해서 처음 생긴 HP.
         // 260918_EnemyInfo.csv의 iHp/iAttack으로 몬스터별 값을 받는다. 이 상수는 표에 값이 없는
@@ -59,6 +68,8 @@ namespace Client
         public int              ENEMY_ID        => m_iEnemyID;
         /// <summary> 몸통 박치기 피해. </summary>
         public int              ATTACK          => m_iAttack;
+        /// <summary> 지금 배회 중인지 추적 중인지. 트리가 있는 몬스터는 트리가 정한 결과다. </summary>
+        public bool              IS_CHASING      => m_bChase;
         public Vector2Int       CUR_CELL        => m_cMoveHandler.CELL;
         public Vector2          POS             => m_cMoveHandler.POS;
         /// <summary> 플레이어와의 충돌 반경(셀). 월드 거리로 쓰려면 CELL_SIZE를 곱한다. </summary>
@@ -106,6 +117,7 @@ namespace Client
 
             m_eGimmick      = cDesc.eGimmick;
             m_fHitRange     = cDesc.fHitRange;
+            m_fGimmickRange = cDesc.fGimmickRange;
             m_iHp           = cDesc.iHp > 0 ? cDesc.iHp : DEFAULT_HP;
             m_iAttack       = cDesc.iAttack > 0 ? cDesc.iAttack : DEFAULT_ATTACK;
             m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
@@ -117,7 +129,9 @@ namespace Client
                 m_cGimmick = null;
 
             m_bChase     = false;
+            m_bExposed   = false;
             m_vTargetPos = Vector2.zero;
+            Setup_BehaviorTree();
 
             if (m_cMoveHandler.Initialize(m_cGrid, m_cGrid.Cell_ToWorld(cDesc.vStartCell),
                                           cDesc.vStartDir, m_fSpeed) == false)
@@ -140,6 +154,15 @@ namespace Client
             if (bCollect == true)
                 return;
 
+            // 260918_트리가 있으면 이번 프레임 배회/추적을 여기서 확정한다 — 아래 Apply_Speed/이동
+            // 핸들러가 그 결과(m_bChase)를 쓴다. Set_MoveState를 부르는 쪽은 CEnemyBehaviorTree_Utility.
+            if (m_cBehaviorTree != null && m_cBehaviorTree.HAS_TREE == true)
+            {
+                m_cBehaviorTree.BLACKBOARD.Set(BLACKBOARD_KEY.IS_TARGET_EXPOSED, m_bExposed);
+                m_cBehaviorTree.BLACKBOARD.Set(BLACKBOARD_KEY.TARGET_POS, m_vTargetPos);
+                m_cBehaviorTree.Tick(fDeltaTime);
+            }
+
             Apply_Speed(m_bChase);
             Refresh_WhiteOut();
 
@@ -161,9 +184,27 @@ namespace Client
             m_cGimmick = null;
             m_cGrid    = null;
             m_cImpact.Clear();
+            m_cBehaviorTree?.Release();     // 260918_진행 중이던 노드를 끊고 블랙보드를 비운다
             base.Hide();
         }
         #endregion Engine.CGameObject
+
+        // 260918_비헤이비어 트리 첫 연결 — PROJECTILE 기믹(포수류)만 쓴다(CEnemyBehaviorTree_Utility.Build_Kite).
+        // 풀에서 재사용된 오브젝트가 다른 기믹으로 바뀌면 Set_Tree(null)이 이전 트리를 걷어내 준다.
+        private void Setup_BehaviorTree()
+        {
+            if (m_eGimmick != ENEMY_GIMMICK.PROJECTILE)
+            {
+                m_cBehaviorTree?.Set_Tree(null);
+                return;
+            }
+
+            if (m_cBehaviorTree == null)
+                m_cBehaviorTree = new CBehaviorTreeHandler();
+
+            m_cBehaviorTree.BLACKBOARD.Set(BLACKBOARD_KEY.ATTACK_RANGE, m_fGimmickRange);
+            m_cBehaviorTree.Set_Tree(CEnemyBehaviorTree_Utility.Build_Kite(this, m_cBehaviorTree.BLACKBOARD, m_cGrid.CELL_SIZE));
+        }
 
         /// <summary> 기믹이 무언가를 소환할 창구를 꽂아 준다. 스테이지가 몬스터를 만든 직후 부른다. </summary>
         public void Set_GimmickHost(IGimmickHost cHost) => m_cGimmick?.Set_Host(cHost);
@@ -212,7 +253,26 @@ namespace Client
         }
 
 
-        public void Set_ChaseState(bool bChase, Vector2 vTargetPos)
+        /// <summary> CStage_Manager가 매 프레임 부른다. bExposed = 플레이어가 안전 지대 밖에 있는가. </summary>
+        public void Set_ChaseState(bool bExposed, Vector2 vTargetPos)
+        {
+            m_bExposed   = bExposed;
+            m_vTargetPos = vTargetPos;
+
+            // 260918_트리가 있으면(PROJECTILE류) 실제 배회/추적은 Tick에서 트리가 정한다 —
+            // 여기서는 상태만 갱신해 둔다(CEnemyBehaviorTree_Utility 참고).
+            if (m_cBehaviorTree != null && m_cBehaviorTree.HAS_TREE == true)
+                return;
+
+            Set_MoveState(bExposed, vTargetPos);
+        }
+
+        /// <summary>
+        /// 실제로 배회/추적 중 어느 쪽인지 정한다. 트리가 없는 몬스터는 Set_ChaseState가 곧바로 부르고,
+        /// 트리가 있는 몬스터는 그 트리의 Action 노드가 대신 부른다 — 이동 규칙(CEnemyMoveHandler) 자체는
+        /// 그대로 두고 '언제 쫓을지'만 갈아 끼우는 자리다.
+        /// </summary>
+        public void Set_MoveState(bool bChase, Vector2 vTargetPos)
         {
             m_vTargetPos = vTargetPos;
 

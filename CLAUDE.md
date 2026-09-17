@@ -928,11 +928,41 @@ GYM처럼 코루틴을 걸지 않는다 — 풀로 돌아간 몬스터에게 코
 
 ### 2-16. 비헤이비어 트리 — Portfolio_SoloLeveling 이식 (260917)
 `03.Module/CNode.cs`(Selector · Sequence · Condition · Action · Wait)와 `CBlackboard.cs`(`CBehaviorTreeHandler` 포함).
-M4 보스 패턴용 골격이라 **아직 붙은 곳이 없다.**
+M4 보스 패턴용 골격으로 옮겨 왔다.
 - 노드가 소유자(Animator · CActor)를 모른다. 조건 · 행동은 대리자로 받는다
 - `Evaluate(dt)`로 시간을 주입한다 — 화면 없이 검증한다
 - Selector가 우선순위 높은 자식에게 넘어갈 때 **하던 자식을 끊는다**(원본은 OnExit가 안 불렸다)
 - 3D 전투 노드(대시 · 콤보 등)는 CharacterController 전용이라 옮기지 않았다
+
+#### 첫 연결 — 포수류(PROJECTILE)의 "사거리 유지" (260918)
+`CEnemyBehaviorTree_Utility.Build_Kite`(`03.Module`)가 실제 몬스터에 트리를 붙인 첫 사례다.
+`CEnemy`가 `eGimmick == PROJECTILE`일 때만 `CBehaviorTreeHandler`를 만들어 든다 — 그 외(WEB · SPAWN · NONE)는
+`m_cBehaviorTree`가 `null`(또는 `Set_Tree(null)`로 트리가 빠진 상태)이라 예전처럼 `CStage_Manager`가
+넘기는 노출 여부를 곧바로 배회/추적으로 쓴다.
+
+```
+CEnemy.Set_ChaseState(bExposed, vTargetPos)   CStage_Manager가 매 프레임 부른다 — 상태만 갱신
+  트리 없음 → Set_MoveState(bExposed, vTargetPos)로 바로 반영(기존 동작 그대로)
+  트리 있음 → Tick에서 BLACKBOARD(IS_TARGET_EXPOSED · TARGET_POS)만 채우고 실제 결정은 미룬다
+CEnemy.Tick                                   트리가 있으면 여기서 Evaluate → Action 노드가 Set_MoveState를 부른다
+CEnemy.Set_MoveState(bChase, vTargetPos)      실제로 배회/추적을 뒤집는 자리. 이동 규칙(CEnemyMoveHandler)은
+                                               그대로 두고 '언제 쫓을지'만 갈아 끼운다
+```
+
+트리 구조는 Selector 하나다 — **노출 + 사거리(`EnemyInfo.fGimmickRange`) 밖이면 쫓고, 그 외(사거리 안 /
+플레이어가 안전 지대)에는 자리를 지킨다.** 기믹(`CEnemyGimmick_Projectile`)은 노출·사거리를 스스로
+다시 확인하므로(`Can_Fire`) 트리는 쏠지 말지까지 정하지 않는다 — **이동만 담당한다.**
+
+- **예전엔 포수도 몸통 박치기 거리까지 붙었다가 쐈다.** 사거리 개념이 있는 유일한 기믹인데 이동은
+  다른 몬스터와 똑같이 무조건 추적이라, 사거리를 갖고 있는 의미가 없었다. 이제 사거리 밖에서 멈춰
+  버티는 "치고 빠지는" 대신 "거리를 두는" 느낌이 난다
+- `BLACKBOARD_KEY.IS_TARGET_EXPOSED`를 이번에 추가했다 — 원본 키(`TARGET_POS`/`ATTACK_RANGE`)는
+  이미 있었지만 "지금 노릴 수 있는 상태인가"를 담을 자리가 없었다
+- 풀에서 재사용된 오브젝트가 이전 판엔 다른 기믹이었을 수 있다 — `Setup_BehaviorTree`가 매 `Initialize`마다
+  다시 판단해서 `Set_Tree(null)`로 정리하거나 새 트리를 얹는다. `CBehaviorTreeHandler` 인스턴스 자체는
+  `m_cImpact`처럼 재사용하고 내용만 갈아 끼운다(새 `GC.Alloc`을 매 판마다 만들지 않는다)
+- `CProtoTest.Test_EnemyKiteBehavior`가 사거리 밖/안/비노출 세 갈래와, PROJECTILE이 아닌 몬스터는
+  트리 없이 기존 동작 그대로인지를 화면 없이 검증한다
 
 ### 2-17. 캐릭터 시스템 — 스킨 + 스탯 배율 + 조각 레벨업 (260917~260918)
 캐릭터는 **전용 스킬이 없다.** 런 스킬 풀(2-11-1/2-11-2)은 전 캐릭터 공통이고, 캐릭터마다 다른 것은
