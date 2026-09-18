@@ -32,6 +32,8 @@ namespace Client
         // 260912_점령률 게이지. 숫자만으로는 얼마나 남았는지 한눈에 안 들어온다.
         [SerializeField] private Image          m_imgProgress;
         [SerializeField] private Text           m_txtTime;
+        // 260918_이번 판에서 점령으로 번 코인. 실제 보유 코인 반영은 스테이지가 끝날 때 CGameManager가 한다.
+        [SerializeField] private Text           m_txtCoin;
         [SerializeField] private Button         m_btnPause;
         // 260905_액티브 스킬 버튼
         [SerializeField] private Button         m_btnSkill;
@@ -148,6 +150,7 @@ namespace Client
             Refresh_Joystick();
             Refresh_Status();
             Refresh_Progress();
+            Refresh_Coin();
             Refresh_Skill();
             Refresh_Item();
             Refresh_Flash();
@@ -341,6 +344,23 @@ namespace Client
         {
             int iTotal = Mathf.Max(0, Mathf.CeilToInt(fSeconds));
             return $"{iTotal / 60:00}:{iTotal % 60:00}";
+        }
+
+        // 260918_점령 재화. 매 프레임 갱신 외에 점령하는 그 순간에도 Play_CoinGainEffect가 즉시 불러 준다.
+        private void Refresh_Coin()
+        {
+            if (m_txtCoin == null || m_cStage == null)
+                return;
+
+            m_txtCoin.text = m_cStage.STAGE_COIN.ToString();
+        }
+
+        // 260918_CGameManager가 점령마다 부른다. 파티클이 이 텍스트 쪽으로 촤르륵 날아가는 연출은
+        // 프리팹이 있어야 해서 클라우드 세션에서는 못 만든다 — 숫자 갱신만 지금 넣고, 연출은
+        // 로컬에서 파티클 프리팹을 만들어 이 함수 안에 이어 붙일 것(2-17의 캐릭터 프리팹 폴백과 같은 사정).
+        public void Play_CoinGainEffect(int iAmount, Vector2 vWorldPos)
+        {
+            Refresh_Coin();
         }
 
 

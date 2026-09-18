@@ -57,6 +57,11 @@ namespace Client
         // 260912_카드 지급 — 이미 넘긴 지점은 다시 주지 않는다.
         private int                         m_iCardGiven;
 
+        // 260918_점령 재화 — 안전하게 조금씩과 위험을 감수하고 크게 한 방 사이에 실제 이득 차이를 만든다.
+        // 이번 판 누적만 여기서 들고, 실제 보유 코인 반영(디스크 저장)은 스테이지가 끝날 때 CGameManager가 한 번만 한다.
+        private CCSVData_CaptureRewardInfo  m_cCaptureRewardTable;
+        private int                         m_iStageCoin;
+
         // 260904_기믹이 소환한 것들. 수명과 충돌을 여기서 한꺼번에 본다.
         private readonly List<CProjectile>  m_lstProjectile = new List<CProjectile>();
         private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
@@ -103,6 +108,9 @@ namespace Client
         // 260918_전체 마비가 터졌다 — 흔들림 · 펀치 · 플래시 같은 화면 연출은 CGameManager가 한다(2-10-2).
         public event Action OnMassStun;
 
+        // 260918_점령 재화를 얻었다 — 이번 점령으로 번 코인과, 파티클 연출 기준점으로 쓸 위치.
+        public event Action<int, Vector2> OnCoinGained;
+
         public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
         public CTerritoryGrid   GRID            => m_cGrid;
@@ -116,6 +124,8 @@ namespace Client
         public int              WAVE            => m_iWave;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
         public int              STAR            => m_iStar;
+        // 260918_이번 판에서 점령으로 번 코인 누적. 클리어/실패와 무관하게 CGameManager가 종료 시 지급한다.
+        public int              STAGE_COIN      => m_iStageCoin;
 
         // 260905_능력치 강화 반영. Start_Stage 전에 넣어 둔다.
         private float           m_fSpeedRate = 1f;      // 이동 속도 배율
@@ -171,6 +181,12 @@ namespace Client
             m_fDevAutoFireCool  = Mathf.Max(0.05f, fDevAutoFireCool);
             m_fDevAutoFireTimer = m_fDevAutoFireCool;
             m_iDevEnemyShotID   = Mathf.Max(0, iDevEnemyShotID);
+        }
+
+        // 260918_점령 재화 배율 표. 없으면 배율 없이(1배) 지급한다. Start_Stage 전에 넣어 둔다.
+        public void Set_CaptureRewardTable(CCSVData_CaptureRewardInfo cTable)
+        {
+            m_cCaptureRewardTable = cTable;
         }
 
         public int              WAVE_COUNT      => m_cMapInfo != null ? m_cMapInfo.iWaveCount : 0;
@@ -229,6 +245,8 @@ namespace Client
             m_iCardGiven      = 0;
             OnCardReady       = null;
             OnMassStun        = null;
+            m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
+            OnCoinGained      = null;
 
             Collect_Player();
             Collect_Enemies();
@@ -1306,6 +1324,8 @@ namespace Client
             if (m_eState != STAGE_STATE.PLAYING)
                 return;
 
+            Grant_CaptureReward(iCapturedCount);
+
             // 260912_웨이브를 넘기기 전에 카드부터 본다.
             // 순서가 반대면 판이 넘어가면서 점령률이 초기화돼 카드를 영영 못 받는다.
             Check_CardReady();
@@ -1313,6 +1333,29 @@ namespace Client
             CWaveInfo cWave = m_cMapInfo.Get_Wave(m_iWave);
             if (cWave != null && m_cGrid.OWNED_RATIO >= cWave.fClearRatio)
                 Next_Wave();
+        }
+
+        // 260918_점령 리스크·보상 연결 — 한 번에 닫은 도형이 맵 전체에서 차지하는 비율이 클수록
+        // 배율이 커진다(CaptureRewardInfo.csv). "안전하게 조금씩"과 "위험을 감수하고 크게 한 방" 사이에
+        // 실제 이득 차이를 만들기 위해서다 — 지금까지는 칸 수만 그대로 더해 차이가 전혀 없었다.
+        private void Grant_CaptureReward(int iCapturedCount)
+        {
+            if (iCapturedCount <= 0 || m_cMapInfo == null || m_cMapInfo.iCoinPerCell <= 0)
+                return;
+
+            float fRatio      = m_cGrid.PLAYABLE_COUNT > 0 ? (float)iCapturedCount / m_cGrid.PLAYABLE_COUNT : 0f;
+            float fMultiplier = m_cCaptureRewardTable != null ? m_cCaptureRewardTable.Get_Multiplier(fRatio) : 1f;
+            int   iCoin       = Mathf.RoundToInt(iCapturedCount * m_cMapInfo.iCoinPerCell * fMultiplier);
+
+            if (iCoin <= 0)
+                return;
+
+            m_iStageCoin += iCoin;
+
+            // 260918_파티클이 날아가기 시작할 자리 — 점령한 영역의 정확한 중심 대신 플레이어 위치를 쓴다.
+            // 도형을 닫는 순간 플레이어가 그 영역 경계에 있으므로 근사치로 충분하다.
+            Vector2 vFrom = m_cPlayer != null ? (Vector2)m_cPlayer.transform.position : m_cGrid.WORLD_CENTER;
+            OnCoinGained?.Invoke(iCoin, vFrom);
         }
 
         private void On_PlayerDead()

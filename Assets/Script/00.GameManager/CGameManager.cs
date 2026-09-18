@@ -81,6 +81,7 @@ namespace Client
         private CCSVData_AwakenInfo     m_cAwakenTable;     // 260917_각성 표 — 없으면 각성 후보가 안 나온다
         private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
         private CCSVData_CharacterInfo  m_cCharacterTable;  // 260917_캐릭터 표(스킨 + 스탯 배율)
+        private CCSVData_CaptureRewardInfo m_cCaptureRewardTable;  // 260918_점령 재화 배율 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cCardViewerUI;    // 260918_카드 크게 보기 (Popup 캔버스)
@@ -207,6 +208,13 @@ namespace Client
             m_cHapticManager.Play(HAPTIC_ID.CAPTURE);
         }
 
+        // 260918_점령 재화 — 실제 보유 코인 반영(디스크 저장)은 스테이지 종료 시 한 번만 한다(On_StageStateChanged).
+        // 여기서는 이번 판 누적 표시만 갱신한다 — 점령마다 저장하면 모바일에서 낭비가 크다.
+        private void On_CoinGained(int iAmount, Vector2 vWorldPos)
+        {
+            (m_cInGameUI as CUI_InGame)?.Play_CoinGainEffect(iAmount, vWorldPos);
+        }
+
         public void LateUpdate()
         {
             if (m_bReady == false)
@@ -327,6 +335,8 @@ namespace Client
             m_cImpactTable     = m_cGameInstance.Get_CSVData(CCSVData_ImpactInfo.CSV_KEY) as CCSVData_ImpactInfo;
             // 260917_캐릭터 표가 없으면 전부 기본 스킨/배율(1배)로 진행한다.
             m_cCharacterTable  = m_cGameInstance.Get_CSVData(CCSVData_CharacterInfo.CSV_KEY) as CCSVData_CharacterInfo;
+            // 260918_점령 재화 배율 표가 없으면 배율 없이(1배) 지급한다.
+            m_cCaptureRewardTable = m_cGameInstance.Get_CSVData(CCSVData_CaptureRewardInfo.CSV_KEY) as CCSVData_CaptureRewardInfo;
             if (m_cProjectileTable == null)
             {
                 Debug.LogWarning("[CGameManager] ProjectileInfo.csv를 읽지 못해 탄 없이 진행합니다. "
@@ -698,6 +708,9 @@ namespace Client
                                                   m_cConfig.DEV_AUTO_FIRE_ID, m_cConfig.DEV_AUTO_FIRE_COOL,
                                                   m_cConfig.DEV_ENEMY_SHOT_ID);
 
+            // 260918_점령 재화 배율 표
+            m_cStageManager.Set_CaptureRewardTable(m_cCaptureRewardTable);
+
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
             // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.
             CTerritoryGrid cGrid = m_cStageManager.GRID;
@@ -726,6 +739,7 @@ namespace Client
             m_cStageManager.OnStateChanged += On_StageStateChanged;
             m_cStageManager.OnCardReady    += On_CardReady;
             m_cStageManager.OnMassStun     += On_MassStun;     // 260918_전체 마비 연출
+            m_cStageManager.OnCoinGained   += On_CoinGained;   // 260918_점령 재화
 
             // 260916_피격/사망/회피/점령 손맛(흔들림·펀치·효과음). CPlayer.Hide()가 풀에 반납할 때
             // 구독을 비워 주므로 재사용된 인스턴스라도 여기서 새로 걸면 안전하다
@@ -802,7 +816,8 @@ namespace Client
             int iGainedStar  = m_bLastCleared == true
                              ? m_cProgressManager.Set_Star(m_cStageManager.MAP_ID, m_iLastStar) : 0;
             m_bLastNewRecord = iGainedStar > 0;
-            m_iLastCoin      = iGainedStar * Get_CoinPerStar(m_cStageManager.MAP_ID);
+            // 260918_점령 재화는 신기록 여부와 무관하게 그대로 지급한다 — 이미 먹은 땅은 죽어도 사라지지 않는다.
+            m_iLastCoin      = iGainedStar * Get_CoinPerStar(m_cStageManager.MAP_ID) + m_cStageManager.STAGE_COIN;
 
             if (m_iLastCoin > 0)
                 m_cProgressManager.Add_Coin(m_iLastCoin);
@@ -845,8 +860,12 @@ namespace Client
                            + $"{m_iLastStar} / {m_iLastMaxStar} 웨이브"
                            + $"    점령률 {m_cStageManager.OWNED_RATIO:P0}";
 
-            if (m_bLastNewRecord == true && m_iLastCoin > 0)
-                strBody += $"\n신기록!  +{m_iLastCoin} 코인   (보유 {m_cProgressManager.COIN})";
+            // 260918_점령 재화가 생기면서 신기록이 아니어도 코인을 받을 수 있게 됐다 — 접두어만 가른다.
+            if (m_iLastCoin > 0)
+            {
+                string strPrefix = m_bLastNewRecord == true ? "신기록!  " : string.Empty;
+                strBody += $"\n{strPrefix}+{m_iLastCoin} 코인   (보유 {m_cProgressManager.COIN})";
+            }
 
             Open_Popup(new CUI_PopupDesc
             {

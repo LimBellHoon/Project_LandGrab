@@ -52,6 +52,7 @@ namespace Client
             Test_CharacterGrantAndViewer();
             Test_Star();
             Test_Currency();
+            Test_CaptureReward();
             Test_Skill();
             Test_Inventory();
             Test_SkillUpgrade();
@@ -918,6 +919,26 @@ namespace Client
             Check("만렉은 비용 0", cInfo.Get_Cost(3), 0);
             Check("2레벨 수치", Mathf.RoundToInt(cInfo.Get_Value(2) * 100f), 8);
             Check("만렉 초과 수치는 상한", Mathf.RoundToInt(cInfo.Get_Value(99) * 100f), 12);
+        }
+
+        // 260918_점령 재화 배율 — 구간을 못 찾으면 마지막 구간 배율을 그대로 쓰는지까지 본다
+        private static void Test_CaptureReward()
+        {
+            const string TAB = "\t";
+            string strCsv =
+                  string.Join(TAB, "iTier", "fRatioMin", "fRatioMax", "fMultiplier", "NONE") + "\n"
+                + string.Join(TAB, "1", "0",    "0.10", "1.0", "") + "\n"
+                + string.Join(TAB, "2", "0.10", "0.20", "1.2", "") + "\n"
+                + string.Join(TAB, "3", "0.20", "1.01", "5.0", "");
+
+            CCSVData_CaptureRewardInfo cTable = new CCSVData_CaptureRewardInfo();
+            cTable.Read_CSVData(new TextAsset(strCsv));
+
+            Check("표 없이는 1배", Mathf.Approximately(new CCSVData_CaptureRewardInfo().Get_Multiplier(0.5f), 1f));
+            Check("첫 구간(5%)", Mathf.Approximately(cTable.Get_Multiplier(0.05f), 1.0f));
+            Check("두 번째 구간(15%)", Mathf.Approximately(cTable.Get_Multiplier(0.15f), 1.2f));
+            Check("세 번째 구간(80%)", Mathf.Approximately(cTable.Get_Multiplier(0.8f), 5.0f));
+            Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
         }
 
         // 260912_세로 화면 맞춤 — 9:16에서 맵 좌우가 잘리지 않아야 한다

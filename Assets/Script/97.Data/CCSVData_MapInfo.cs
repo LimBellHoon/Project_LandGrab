@@ -56,6 +56,8 @@ namespace Client
         public string   strShapeMask;               // 맵 모양 텍스처. 비어 있으면 직사각형 전체
         // 260905_별 1개당 주는 코인. 최고 기록을 갱신한 만큼만 지급한다.
         public int              iCoinPerStar;
+        // 260918_점령 한 칸당 기본 코인. CaptureRewardInfo.csv의 배율과 곱해져 실제 지급액이 된다.
+        public int              iCoinPerCell;
         // 260912_이 점령률을 넘을 때마다 카드를 한 번 고른다. 웨이브가 아니라 판 전체 기준이다.
         public List<float>      lstCardRatio = new List<float>();
         // 260917_이 맵을 클리어하면 얻거나 강화하는 캐릭터(CharacterInfo.csv ID). 0이면 잔향/파밍 스테이지.
@@ -126,8 +128,9 @@ namespace Client
                 iWaveCount      = CCSV_Utility.To_Int(arrField, 8, 1),
                 strShapeMask    = CCSV_Utility.To_String(arrField, 9),
                 iCoinPerStar    = CCSV_Utility.To_Int(arrField, 14, 50),
-                lstCardRatio    = CCSV_Utility.To_FloatList(arrField, 15),
-                iCharacterID    = CCSV_Utility.To_Int(arrField, 16),
+                iCoinPerCell    = CCSV_Utility.To_Int(arrField, 15, 1),
+                lstCardRatio    = CCSV_Utility.To_FloatList(arrField, 16),
+                iCharacterID    = CCSV_Utility.To_Int(arrField, 17),
             };
 
             if (cInfo.iMapID <= 0)

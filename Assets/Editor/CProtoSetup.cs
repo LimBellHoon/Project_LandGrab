@@ -38,7 +38,7 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo", "CaptureRewardInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
@@ -47,6 +47,7 @@ namespace Client
             typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
             typeof(CCSVData_RunSkillInfo), typeof(CCSVData_ProjectileInfo), typeof(CCSVData_ImpactInfo),
             typeof(CCSVData_AwakenInfo), typeof(CCSVData_CharacterInfo), typeof(CCSVData_GachaInfo),
+            typeof(CCSVData_CaptureRewardInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
