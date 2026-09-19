@@ -1,4 +1,4 @@
-iTier	fRatioMin	fRatioMax	fMultiplier	NONE
+﻿iTier	fRatioMin	fRatioMax	fMultiplier	NONE
 ;== 점령 재화 배율 표 (260918) ==	구분자는 반드시 [탭]	0번 줄이 헤더다	헤더 위에는 아무것도 못 넣는다
 ;한 번의 점령(도형을 닫아서 새로 먹은 칸수)이 맵 전체 플레이 가능 칸수에서 차지하는 비율로 구간을 정한다
 ;안전하게 조금씩 먹는 것보다 위험을 감수하고 한 번에 크게 먹는 쪽이 이득이 되도록 구간이 올라갈수록 배율이 커진다
