@@ -27,8 +27,12 @@ namespace Client
         [SerializeField] private Button     m_btnTabCharacter;
         [SerializeField] private Button     m_btnTabGallery;
 
-        private static readonly Color COLOR_TAB_ON    = new Color(0.25f, 0.80f, 0.95f);
-        private static readonly Color COLOR_TAB_OFF   = new Color(0.16f, 0.26f, 0.34f);
+        // 260920_고른 탭은 밝은 하늘색 + 흰 글자, 나머지는 어둡게 가라앉힌다 —
+        // 색만 살짝 다르면 지금 어느 탭인지 한눈에 안 읽힌다(레퍼런스 화면과 같은 대비).
+        private static readonly Color COLOR_TAB_ON      = new Color(0.25f, 0.80f, 0.95f);
+        private static readonly Color COLOR_TAB_OFF     = new Color(0.13f, 0.20f, 0.27f);
+        private static readonly Color COLOR_TAB_TEXT_ON  = new Color(1f, 1f, 1f);
+        private static readonly Color COLOR_TAB_TEXT_OFF = new Color(0.62f, 0.70f, 0.78f);
         // 못 가졌거나 아직 안 열린 칸 — 지우지 않고 어둡게만 둔다
         private static readonly Color COLOR_CELL_LOCK = new Color(0.35f, 0.38f, 0.45f);
         private static readonly Color COLOR_CELL_OPEN = new Color(1f, 1f, 1f);
@@ -105,9 +109,16 @@ namespace Client
 
         private static void Paint_Tab(Button cButton, bool bOn)
         {
-            Image cImage = cButton != null ? cButton.GetComponent<Image>() : null;
+            if (cButton == null)
+                return;
+
+            Image cImage = cButton.GetComponent<Image>();
             if (cImage != null)
                 cImage.color = bOn == true ? COLOR_TAB_ON : COLOR_TAB_OFF;
+
+            Text cText = cButton.GetComponentInChildren<Text>(true);
+            if (cText != null)
+                cText.color = bOn == true ? COLOR_TAB_TEXT_ON : COLOR_TAB_TEXT_OFF;
         }
 
         private void Build_List()

@@ -1733,7 +1733,7 @@ namespace Client
             Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
 
             CRunSkillInfo cStunShot = cSkillTable.Find_ByType(RUN_SKILL_TYPE.STUN_SHOT);
-            Check("마비탄은 탄 23을 쏘는 무기", cStunShot != null && cStunShot.iProjectileID == 23);
+            Check("마비탄은 탄 24를 쏘는 무기", cStunShot != null && cStunShot.iProjectileID == 24);
 
             // ---- 판이 끝나면 각성도 사라진다
             List<CProjectileCore> lstOrbitCore = cHost.lstCore.FindAll(

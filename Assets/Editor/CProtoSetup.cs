@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System.Collections.Generic;
+using System.IO;
 
 using UnityEditor;
 using UnityEditor.AddressableAssets;
@@ -351,7 +352,40 @@ namespace Client
                     ++iFail;
                 }
 
+                iFail += Validate_CsvDuplicateID(strName, cText.text);
                 iFail += Validate_AddressableEntry(strPath, strName, CAddressableLabel.CSV);
+            }
+
+            return iFail;
+        }
+
+        /// <summary>
+        /// 260920_첫 열(ID)이 겹치는 행을 잡는다. 파서는 "뒤의 행을 버린다"며 에러 한 줄만 남기고 넘어가서,
+        /// **그 줄이 통째로 없는 표**로 게임이 돈다 — 마비탄이 체인 라이트닝 탄을 쏘고 있었던 적이 있다.
+        /// 표가 늘어도 규칙은 같으므로 모든 CSV에 같은 검사를 돌린다.
+        /// </summary>
+        private static int Validate_CsvDuplicateID(string strName, string strText)
+        {
+            HashSet<string> hsID  = new HashSet<string>();
+            string[] arrLine = strText.Split('\n');
+            int iFail = 0;
+
+            // 0번 줄은 헤더, ';'로 시작하거나 빈 줄은 주석이다(2-5).
+            for (int i = 1; i < arrLine.Length; ++i)
+            {
+                string strLine = arrLine[i].TrimEnd('\r');
+                if (strLine.Length == 0 || strLine[0] == ';')
+                    continue;
+
+                string strID = strLine.Split('\t')[0].Trim();
+                if (strID.Length == 0)
+                    continue;
+
+                if (hsID.Add(strID) == true)
+                    continue;
+
+                Debug.LogError($"  FAIL  {strName}.csv의 ID {strID}가 중복입니다. 뒤의 행은 조용히 버려집니다.");
+                ++iFail;
             }
 
             return iFail;
