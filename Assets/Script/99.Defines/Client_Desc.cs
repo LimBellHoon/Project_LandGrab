@@ -343,4 +343,20 @@ namespace Client
             cGrid = null;
         }
     }
+
+    // 260920_맵 위 상호작용 아이템(CFieldItem). 영혼과 같은 모양에 '무엇인가'만 더 붙는다.
+    public class CFieldItemDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid       { get; set; }
+        public Vector2Int       vCell       { get; set; }
+        public float            fLifeTime   { get; set; }   // 초
+        public int              iItemID     { get; set; }
+        public FIELD_ITEM_TYPE  eType       { get; set; }
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
 }

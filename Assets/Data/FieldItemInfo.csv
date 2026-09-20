@@ -1,0 +1,8 @@
+﻿iItemID	eType	strName	strDesc	iWeight	fValue	fDuration	fLifeTime	NONE
+;== 맵 위 상호작용 아이템 (260920) ==	구분자는 반드시 [탭]	0번 줄이 헤더다						
+;어디서 얼마나 나올지는 MapInfo.csv가 정한다(웨이브 시작 개수 · 시간 주기 · 처치 드랍 확률)								
+;fValue·fDuration의 뜻은 종류마다 다르다 — CCSVData_FieldItemInfo 주석 참고								
+;---	종류	이름	설명	가중치	수치	지속	수명	메모
+1	MASS_STUN	번개 구슬	주우면 모든 몬스터가 잠깐 멈춰 선다	10	0	2.5	14	화면 연출은 CGameManager.On_MassStun
+2	HEAL_LIFE	회복 물약	목숨을 하나 되돌린다	6	1	0	14	최대 목숨을 넘지 않는다
+3	MAGNET_ALL	전체 자석	맵 위의 픽업을 전부 끌어온다	8	0	0	14	다른 아이템도 같이 발동한다

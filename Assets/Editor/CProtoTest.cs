@@ -53,6 +53,7 @@ namespace Client
             Test_Star();
             Test_Currency();
             Test_CaptureReward();
+            Test_FieldItem();
             Test_Skill();
             Test_Inventory();
             Test_SkillUpgrade();
@@ -941,6 +942,45 @@ namespace Client
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
         }
 
+        // 260920_맵 위 상호작용 아이템(2-20) — 표 파싱과 가중치
+        private static void Test_FieldItem()
+        {
+            const string TAB = "\t";
+            string strCsv =
+                  string.Join(TAB, "iItemID", "eType", "strName", "strDesc", "iWeight", "fValue", "fDuration", "fLifeTime", "NONE") + "\n"
+                + string.Join(TAB, "1", "MASS_STUN",  "번개", "", "10", "0", "2.5", "14", "") + "\n"
+                + string.Join(TAB, "2", "HEAL_LIFE",  "물약", "", "0",  "1", "0",   "14", "") + "\n"
+                + string.Join(TAB, "3", "MAGNET_ALL", "자석", "", "5",  "0", "0",   "9",  "");
+
+            CCSVData_FieldItemInfo cTable = new CCSVData_FieldItemInfo();
+            cTable.Read_CSVData(new TextAsset(strCsv));
+
+            Check("세 종류를 읽는다", cTable.COUNT, 3);
+            Check("ID로 찾는다", cTable.Find(2)?.eType == FIELD_ITEM_TYPE.HEAL_LIFE);
+            Check("종류로 찾는다", cTable.Find_ByType(FIELD_ITEM_TYPE.MASS_STUN)?.iItemID == 1);
+            Check("없는 ID는 null", cTable.Find(99) == null);
+            Check("기절 시간은 표에서", Mathf.Approximately(cTable.Find(1).fDuration, 2.5f));
+            Check("회복량도 표에서", Mathf.Approximately(cTable.Find(2).fValue, 1f));
+            Check("종류마다 수명을 따로 준다", Mathf.Approximately(cTable.Find(3).fLifeTime, 9f));
+
+            // 가중치 0은 나오지 않는다 — 표에서 지우지 않고 잠글 때 쓰는 규칙(카드 · 런 스킬과 같다)
+            bool bHealPicked = false;
+            for (int i = 0; i < 200; ++i)
+            {
+                CFieldItemInfo cPick = cTable.Pick_Random();
+                if (cPick != null && cPick.eType == FIELD_ITEM_TYPE.HEAL_LIFE)
+                    bHealPicked = true;
+            }
+            Check("가중치 0은 뽑히지 않는다", bHealPicked == false);
+            Check("나올 것이 있으면 하나는 고른다", cTable.Pick_Random() != null);
+            Check("빈 표는 null", new CCSVData_FieldItemInfo().Pick_Random() == null);
+
+            // 색만으로 무엇인지 읽혀야 하므로 종류끼리 같은 색이면 안 된다
+            Check("종류마다 색이 다르다",
+                  CFieldItem.Get_Color(FIELD_ITEM_TYPE.MASS_STUN) != CFieldItem.Get_Color(FIELD_ITEM_TYPE.HEAL_LIFE)
+               && CFieldItem.Get_Color(FIELD_ITEM_TYPE.HEAL_LIFE) != CFieldItem.Get_Color(FIELD_ITEM_TYPE.MAGNET_ALL));
+        }
+
         // 260912_세로 화면 맞춤 — 9:16에서 맵 좌우가 잘리지 않아야 한다
         private static void Test_CameraFit()
         {
@@ -1232,7 +1272,7 @@ namespace Client
                 RUN_SKILL_TYPE.EDGE_WRAP, RUN_SKILL_TYPE.RAGE, RUN_SKILL_TYPE.SOUL_COLLECTOR,
                 RUN_SKILL_TYPE.ORBIT, RUN_SKILL_TYPE.CLUB,
                 RUN_SKILL_TYPE.MAGIC_BOLT, RUN_SKILL_TYPE.LASER_BEAM, RUN_SKILL_TYPE.BOOMERANG, RUN_SKILL_TYPE.BOUNCE_SHOT,
-                RUN_SKILL_TYPE.STUN_SHOT, RUN_SKILL_TYPE.MASS_STUN,
+                RUN_SKILL_TYPE.STUN_SHOT,
             };
 
             for (int i = 0; i < arrType.Length; ++i)
@@ -1261,7 +1301,7 @@ namespace Client
             // 해금되면 나온다 — 모든 맵을 깼다고 치면 전부가 후보다 (260917_투사체 무기 4종이 늘어 12종)
             // 260918_투사체 무기 4종은 가중치 0으로 뺐다(뱀서라이크가 아니다) — 마비 둘이 더해져 10종
             List<CRunSkillInfo> lstAll = cTable.Pick_Random(14, eType => 0, iMapID => true);
-            Check("전부 해금되면 가중치 있는 10종이 후보", lstAll.Count, 10);
+            Check("전부 해금되면 가중치 있는 9종이 후보", lstAll.Count, 9);
             Check("빠진 무기는 후보가 아니다", lstAll.Exists(cInfo => cInfo.eType == RUN_SKILL_TYPE.MAGIC_BOLT) == false);
 
             // 이미 만렙이면 후보에서 빠진다
@@ -1561,23 +1601,6 @@ namespace Client
             Check("반격의 몽둥이 — 쿨이 돈다", cClub != null && cClub.IS_READY == false);
             cPlayer.Lose_Life();            // 회피 확률 1 — 반드시 회피한다
             Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
-
-            // ---- 260920_전체 마비: 고르는 순간 1회만. 쿨타임으로 반복하지 않는다
-            CRunSkillInfo cMassInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.MASS_STUN);
-            CFakeRunSkillHost cStunHost = new CFakeRunSkillHost();
-            cStunHost.lstEnemy.Add(new CFakeImpactTarget(Vector2.zero, 0.3f));
-            cPlayer.Set_RunSkillHost(cStunHost);
-            cPlayer.Add_RunSkill(cMassInfo);
-            CRunSkillEffect_MassStun cMass = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.MASS_STUN) as CRunSkillEffect_MassStun;
-            Check("전체 마비 모듈이 붙는다", cMass != null);
-            Check("전체 마비 — 고르는 순간 곧바로 터진다", cStunHost.iStunCount, 1);
-            Check("전체 마비 — 1레벨은 1초", Mathf.Approximately(cStunHost.fLastStun, 1f));
-            cMass?.Tick(30f);
-            Check("전체 마비 — 시간이 지나도 다시 터지지 않는다", cStunHost.iStunCount, 1);
-            cPlayer.Add_RunSkill(cMassInfo);
-            Check("전체 마비 — 다시 고르면 그때 또 한 번", cStunHost.iStunCount, 2);
-            Check("전체 마비 — 레벨이 오르면 시간이 는다", cMass != null && cMass.DURATION > 1f);
-            Check("전체 마비 — 터진 횟수는 고른 횟수와 같다", cMass != null && cMass.FIRED_COUNT == 2);
 
             CRunSkillInfo cStunShot = cSkillTable.Find_ByType(RUN_SKILL_TYPE.STUN_SHOT);
             Check("마비탄은 탄 23을 쏘는 무기", cStunShot != null && cStunShot.iProjectileID == 23);

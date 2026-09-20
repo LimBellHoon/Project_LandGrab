@@ -22,7 +22,12 @@ namespace Client
         private const string PREFAB_PROJECTILE  = "Prefab_Projectile";
         private const string PREFAB_WEB         = "Prefab_Web";
         private const string PREFAB_SOUL        = "Prefab_Soul";
+        private const string PREFAB_FIELD_ITEM  = "Prefab_FieldItem";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
+
+        // 260920_필드 아이템은 영혼과 같은 반경으로 줍는다(자석 보너스도 그대로 탄다).
+        // 사고 방지용 상한 — 아이템이 판을 뒤덮지 않게 한다. 규칙 값이 아니라 안전장치라 MAX_ENEMY와 같은 자리다.
+        private const int    MAX_FIELD_ITEM     = 8;
 
         // 260916_런 스킬 '영혼 수집가'. 자석(CPlayer.PICKUP_RADIUS)이 없어도 이 정도는 기본으로 줍는다 —
         // 몬스터/탄 충돌 반경(PROJECTILE_HIT_RANGE)과 같은 자리라 CSV로 뺄 이유가 아직 없다.
@@ -67,6 +72,11 @@ namespace Client
         private readonly List<CWeb>         m_lstWeb        = new List<CWeb>();
         // 260916_런 스킬이 떨어뜨린 것들. 위 두 목록과 같은 자리다.
         private readonly List<CSoul>        m_lstSoul       = new List<CSoul>();
+        // 260920_맵 위 상호작용 아이템. 표가 없으면 아무것도 안 나올 뿐 판은 그대로 돈다.
+        private readonly List<CFieldItem>   m_lstFieldItem  = new List<CFieldItem>();
+        private CCSVData_FieldItemInfo      m_cFieldItemTable;
+        private bool                        m_bFieldItemEnabled = true;     // 개발용 스위치(CGameConfig)
+        private float                       m_fFieldItemTimer;              // 시간마다 하나씩 떨어뜨리는 타이머
         // 260917_탄 표. 없으면 탄을 쏘지 않을 뿐 판은 돈다.
         private CCSVData_ProjectileInfo     m_cProjectileTable;
         private CCSVData_ImpactInfo         m_cImpactTable;
@@ -110,6 +120,9 @@ namespace Client
 
         // 260918_점령 재화를 얻었다 — 이번 점령으로 번 코인과, 파티클 연출 기준점으로 쓸 위치.
         public event Action<int, Vector2> OnCoinGained;
+
+        // 260920_필드 아이템을 주웠다 — 화면 연출(소리 · 진동)을 CGameManager가 낸다.
+        public event Action<FIELD_ITEM_TYPE> OnFieldItemUsed;
 
         public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
@@ -247,6 +260,8 @@ namespace Client
             OnMassStun        = null;
             m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
             OnCoinGained      = null;
+            OnFieldItemUsed   = null;
+            m_fFieldItemTimer = 0f;
 
             Collect_Player();
             Collect_Enemies();
@@ -360,6 +375,8 @@ namespace Client
             Tick_Projectile(fDeltaTime);
             Tick_Web();
             Tick_Soul();
+            Tick_FieldItem();
+            Tick_FieldItemSpawn(fDeltaTime);
 
             m_fRemainTime -= fDeltaTime;
             if (m_fRemainTime <= 0f)
@@ -396,6 +413,10 @@ namespace Client
 
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
                                             Get_Texture(m_cMapInfo.Get_RevealTex(iWave)));
+
+            Collect_All(m_lstFieldItem);       // 260920_지난 웨이브에 못 주운 것은 판과 함께 사라진다
+            Spawn_WaveFieldItems();
+            m_fFieldItemTimer = 0f;
 
             Spawn_Enemies(cWave);
 
@@ -830,6 +851,7 @@ namespace Client
             Collect_All(m_lstProjectile);
             Collect_All(m_lstWeb);
             Collect_All(m_lstSoul);
+            Collect_All(m_lstFieldItem);
         }
 
         // 목록 세 개가 같은 일을 하므로 하나로 묶는다.
@@ -889,6 +911,10 @@ namespace Client
                 CEnemy cEnemy = m_lstEnemy[i];
                 if (cEnemy == null || cEnemy.IS_DEAD == true)
                 {
+                    // 260920_잡은 자리에 확률로 아이템을 떨어뜨린다. 걷어내기 전에 위치를 먼저 읽어야 한다.
+                    if (cEnemy != null)
+                        Drop_FieldItem(cEnemy.transform.position);
+
                     m_lstEnemy.RemoveAt(i);
                     continue;
                 }
@@ -1296,6 +1322,178 @@ namespace Client
         public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f)
             => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer, fScale);
 
+        #region 필드 아이템 (260920)
+        public void Set_FieldItemTable(CCSVData_FieldItemInfo cTable, bool bEnabled)
+        {
+            m_cFieldItemTable   = cTable;
+            m_bFieldItemEnabled = bEnabled;
+        }
+
+        /// <summary>
+        /// 맵 위 아이템 하나를 미점령 칸에 놓는다. 무엇이 나올지는 표의 가중치가 정한다.
+        /// 세 경로(웨이브 시작 · 시간마다 · 몬스터 처치)가 전부 이 함수를 지난다 — 상한도 여기 하나로 걸린다(1-1).
+        /// </summary>
+        /// <param name="vNearCell"> 이 칸 근처에 놓는다. null이면 맵 전체에서 무작위 </param>
+        public bool Spawn_FieldItem(Vector2Int? vNearCell = null)
+        {
+            if (m_bFieldItemEnabled == false || m_cFieldItemTable == null || m_cMapInfo == null)
+                return false;
+
+            if (m_lstFieldItem.Count >= MAX_FIELD_ITEM || Has_Prefab(PREFAB_FIELD_ITEM) == false)
+                return false;
+
+            CFieldItemInfo cInfo = m_cFieldItemTable.Pick_Random();
+            if (cInfo == null)
+                return false;
+
+            Vector2Int vDesired = vNearCell ?? new Vector2Int(UnityEngine.Random.Range(0, m_cMapInfo.iGridWidth),
+                                                              UnityEngine.Random.Range(0, m_cMapInfo.iGridHeight));
+            if (m_cGrid.Try_Find_NearestCell(vDesired, CELL_STATE.EMPTY, SPAWN_SEARCH_RADIUS,
+                                             out Vector2Int vCell) == false)
+                return false;
+
+            CFieldItemDesc cDesc = new CFieldItemDesc
+            {
+                eObjectType   = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName = PREFAB_FIELD_ITEM,
+                cGrid         = m_cGrid,
+                vCell         = vCell,
+                fLifeTime     = cInfo.fLifeTime,
+                iItemID       = cInfo.iItemID,
+                eType         = cInfo.eType,
+            };
+
+            GameObject goItem = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goItem == null)
+                return false;
+
+            CFieldItem cItem = goItem.GetComponent<CFieldItem>();
+            if (cItem == null)
+                return false;
+
+            m_lstFieldItem.Add(cItem);
+            return true;
+        }
+
+        // 웨이브를 시작할 때 몇 개 깔아 둔다 — 판이 다시 깔리므로(2-5) 매 웨이브 새로 뿌린다.
+        private void Spawn_WaveFieldItems()
+        {
+            if (m_cMapInfo == null)
+                return;
+
+            for (int i = 0; i < m_cMapInfo.iFieldItemOnWave; ++i)
+                Spawn_FieldItem();
+        }
+
+        // 시간마다 하나씩. 아무것도 안 하고 버티기만 해도 판이 조금씩 바뀐다.
+        private void Tick_FieldItemSpawn(float fDeltaTime)
+        {
+            if (m_cMapInfo == null || m_cMapInfo.fFieldItemCool <= 0f)
+                return;
+
+            m_fFieldItemTimer += fDeltaTime;
+            if (m_fFieldItemTimer < m_cMapInfo.fFieldItemCool)
+                return;
+
+            m_fFieldItemTimer = 0f;
+            Spawn_FieldItem();
+        }
+
+        // 몬스터를 잡은 자리에 확률로 떨어뜨린다 — 런 스킬 무기를 고를 이유가 하나 더 생긴다.
+        private void Drop_FieldItem(Vector2 vWorldPos)
+        {
+            if (m_cMapInfo == null || m_cMapInfo.fFieldItemDropRate <= 0f)
+                return;
+
+            if (UnityEngine.Random.value > m_cMapInfo.fFieldItemDropRate)
+                return;
+
+            Spawn_FieldItem(m_cGrid.World_ToCell(vWorldPos));
+        }
+
+        /// <summary>
+        /// 줍는 판정. 가까이 가면 줍고, **점령한 땅 안에 들어간 아이템도 주운 것으로 본다**(260920) —
+        /// 내 땅으로 덮었는데 아이템이 조용히 사라지면 크게 먹을수록 손해가 된다.
+        /// </summary>
+        private void Tick_FieldItem()
+        {
+            if (m_cPlayer == null)
+                return;
+
+            Vector2 vPlayerPos   = m_cPlayer.transform.position;
+            float   fPickupRange = (SOUL_PICKUP_RADIUS_BASE + m_cPlayer.PICKUP_RADIUS) * m_cGrid.CELL_SIZE;
+
+            for (int i = m_lstFieldItem.Count - 1; i >= 0; --i)
+            {
+                CFieldItem cItem = m_lstFieldItem[i];
+
+                if (cItem == null || cItem.IS_EXPIRED == true)
+                {
+                    m_lstFieldItem.RemoveAt(i);
+                    continue;
+                }
+
+                bool bInOwned = m_cGrid.Get_Cell(m_cGrid.World_ToCell(cItem.POS)) == CELL_STATE.OWNED;
+                if (bInOwned == false && Vector2.Distance(cItem.POS, vPlayerPos) > fPickupRange)
+                    continue;
+
+                cItem.Expire();
+                Apply_FieldItem(cItem.TYPE, cItem.ITEM_ID);
+            }
+        }
+
+        /// <summary>
+        /// 아이템 효과. 세 종류 전부 이미 있는 길을 그대로 탄다 —
+        /// 마비는 Stun_AllEnemies(화면 연출까지 OnMassStun), 회복은 CPlayer.Add_Life, 자석은 아래 Collect_AllPickup.
+        /// </summary>
+        private void Apply_FieldItem(FIELD_ITEM_TYPE eType, int iItemID)
+        {
+            CFieldItemInfo cInfo = m_cFieldItemTable?.Find(iItemID);
+
+            switch (eType)
+            {
+                case FIELD_ITEM_TYPE.MASS_STUN:
+                    Stun_AllEnemies(cInfo != null ? cInfo.fDuration : 2f);
+                    break;
+
+                case FIELD_ITEM_TYPE.HEAL_LIFE:
+                    m_cPlayer?.Add_Life(cInfo != null ? Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)) : 1);
+                    break;
+
+                case FIELD_ITEM_TYPE.MAGNET_ALL:
+                    Collect_AllPickup();
+                    break;
+            }
+
+            OnFieldItemUsed?.Invoke(eType);
+        }
+
+        /// <summary> 전체 자석 — 맵 위 픽업을 전부 그 자리에서 먹는다. 다른 아이템도 같이 발동한다. </summary>
+        private void Collect_AllPickup()
+        {
+            for (int i = m_lstSoul.Count - 1; i >= 0; --i)
+            {
+                CSoul cSoul = m_lstSoul[i];
+                if (cSoul == null || cSoul.IS_EXPIRED == true)
+                    continue;
+
+                cSoul.Expire();
+                m_cPlayer?.On_SoulCollected();
+            }
+
+            // 자석이 자석을 다시 부르지 않게 목록을 먼저 떠 둔다(먹는 도중에 새 아이템이 끼어들 수 있다).
+            for (int i = m_lstFieldItem.Count - 1; i >= 0; --i)
+            {
+                CFieldItem cItem = m_lstFieldItem[i];
+                if (cItem == null || cItem.IS_EXPIRED == true || cItem.TYPE == FIELD_ITEM_TYPE.MAGNET_ALL)
+                    continue;
+
+                cItem.Expire();
+                Apply_FieldItem(cItem.TYPE, cItem.ITEM_ID);
+            }
+        }
+        #endregion 필드 아이템 (260920)
+
         private void Tick_Soul()
         {
             if (m_cPlayer == null)
@@ -1314,7 +1512,9 @@ namespace Client
                     continue;
                 }
 
-                if (Vector2.Distance(cSoul.POS, vPlayerPos) <= fPickupRange)
+                // 260920_가까이 갔거나, 그 칸을 점령해 내 땅이 됐으면 주운 것이다.
+                bool bInOwned = m_cGrid.Get_Cell(m_cGrid.World_ToCell(cSoul.POS)) == CELL_STATE.OWNED;
+                if (bInOwned == true || Vector2.Distance(cSoul.POS, vPlayerPos) <= fPickupRange)
                 {
                     cSoul.Expire();
                     m_cPlayer.On_SoulCollected();

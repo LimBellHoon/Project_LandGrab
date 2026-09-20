@@ -62,6 +62,11 @@ namespace Client
         public List<float>      lstCardRatio = new List<float>();
         // 260917_이 맵을 클리어하면 얻거나 강화하는 캐릭터(CharacterInfo.csv ID). 0이면 잔향/파밍 스테이지.
         public int               iCharacterID;
+        // 260920_맵 위 상호작용 아이템(FieldItemInfo.csv)이 이 맵에서 얼마나 나오는가.
+        // 세 경로를 같이 쓴다 — 웨이브 시작에 몇 개 깔고, 시간마다 하나씩 더하고, 몬스터를 잡으면 확률로 떨군다.
+        public int               iFieldItemOnWave;      // 웨이브 시작에 까는 개수 (0이면 안 깐다)
+        public float             fFieldItemCool;        // 시간마다 하나 (초, 0이면 안 나온다)
+        public float             fFieldItemDropRate;    // 몬스터 처치 시 드랍 확률 (0~1)
         public List<string>     lstLayerTex = new List<string>();
         public List<CWaveInfo>  lstWave     = new List<CWaveInfo>();
 
@@ -131,6 +136,10 @@ namespace Client
                 iCoinPerCell    = CCSV_Utility.To_Int(arrField, 15, 1),
                 lstCardRatio    = CCSV_Utility.To_FloatList(arrField, 16),
                 iCharacterID    = CCSV_Utility.To_Int(arrField, 17),
+                // 260920_필드 아이템 등장 규칙. 열을 뒤에 붙였으므로 앞 열 번호는 그대로다.
+                iFieldItemOnWave   = CCSV_Utility.To_Int(arrField, 18, 1),
+                fFieldItemCool     = CCSV_Utility.To_Float(arrField, 19, 25f),
+                fFieldItemDropRate = CCSV_Utility.To_Float(arrField, 20, 0.15f),
             };
 
             if (cInfo.iMapID <= 0)

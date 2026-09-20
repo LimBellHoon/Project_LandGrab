@@ -43,6 +43,11 @@ namespace Client
         [Range(0f, 0.6f)]
         [SerializeField] private float m_fCameraFollowTime = 0.12f;
 
+        // 260920_맵 위 상호작용 아이템(2-20). 꺼두면 아이템이 아예 나오지 않는다 — 아이템 없이 도는지 볼 때 쓴다.
+        [Header("필드 아이템")]
+        [Tooltip("끄면 맵 위 아이템이 한 개도 나오지 않는다. 등장 빈도는 MapInfo.csv가 정한다.")]
+        [SerializeField] private bool m_bFieldItemEnabled = true;
+
         [Header("카메라 흔들림")]
         [Tooltip("끄면 아예 흔들리지 않는다. 옵션창이 생기면 이 값 하나만 토글하면 된다.")]
         [SerializeField] private bool m_bCameraShakeEnabled = true;
@@ -162,6 +167,7 @@ namespace Client
         public float CAMERA_MARGIN      => Mathf.Max(0f, m_fCameraMargin);
         public float VIEW_CELL_HEIGHT   => Mathf.Max(0f, m_fViewCellHeight);
         public float CAMERA_FOLLOW_TIME => Mathf.Clamp(m_fCameraFollowTime, 0f, 0.6f);
+        public bool  FIELD_ITEM_ENABLED      => m_bFieldItemEnabled;
         public bool  CAMERA_SHAKE_ENABLED    => m_bCameraShakeEnabled;
         public float SHAKE_MAX_OFFSET        => Mathf.Max(0f, m_fShakeMaxOffset);
         public float SHAKE_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fShakeDecayPerSecond);

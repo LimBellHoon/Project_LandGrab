@@ -38,7 +38,7 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo", "CaptureRewardInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo", "CaptureRewardInfo", "FieldItemInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
@@ -47,7 +47,7 @@ namespace Client
             typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
             typeof(CCSVData_RunSkillInfo), typeof(CCSVData_ProjectileInfo), typeof(CCSVData_ImpactInfo),
             typeof(CCSVData_AwakenInfo), typeof(CCSVData_CharacterInfo), typeof(CCSVData_GachaInfo),
-            typeof(CCSVData_CaptureRewardInfo),
+            typeof(CCSVData_CaptureRewardInfo), typeof(CCSVData_FieldItemInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -61,6 +61,9 @@ namespace Client
         // 260916_런 스킬 '영혼 수집가' 픽업
         private const string PATH_TEX_SOUL          = DIR_ART + "/Tex_Soul.png";
         private const string PATH_PREFAB_SOUL       = DIR_PREFAB + "/Prefab_Soul.prefab";
+        // 260920_맵 위 상호작용 아이템. 종류가 늘어도 프리팹은 하나 — 색만 바뀐다(CFieldItem.Get_Color).
+        private const string PATH_TEX_FIELD_ITEM    = DIR_ART + "/Tex_FieldItem.png";
+        private const string PATH_PREFAB_FIELD_ITEM = DIR_PREFAB + "/Prefab_FieldItem.prefab";
         // 260904_스테이지 선택 UI
         // 260904_UI 프리팹 이름은 Engine이 강제한다.
         // Engine.CUI_Manager.Open<T>가 Desc의 strPrefabName을
@@ -108,7 +111,7 @@ namespace Client
             "Tex_RunSkill_MOONWALK", "Tex_RunSkill_EDGE_WRAP", "Tex_RunSkill_SOUL_COLLECTOR", "Tex_RunSkill_RAGE",
             "Tex_RunSkill_MAGNET", "Tex_RunSkill_EVASION", "Tex_RunSkill_ORBIT", "Tex_RunSkill_CLUB",
             "Tex_RunSkill_MAGIC_BOLT", "Tex_RunSkill_LASER_BEAM", "Tex_RunSkill_BOOMERANG", "Tex_RunSkill_BOUNCE_SHOT",
-            "Tex_RunSkill_STUN_SHOT", "Tex_RunSkill_MASS_STUN",
+            "Tex_RunSkill_STUN_SHOT",
         };
         private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
@@ -180,6 +183,7 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_PROJECTILE, "Prefab_Projectile", typeof(CProjectile));
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_ActorPrefab(PATH_PREFAB_SOUL, "Prefab_Soul", typeof(CSoul));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", typeof(CFieldItem));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
@@ -558,6 +562,10 @@ namespace Client
             // 260916_런 스킬 '영혼 수집가' 픽업. 기존 원형 텍스처 생성기를 그대로 쓴다.
             Write_Png(PATH_TEX_SOUL, Make_CircleTexture(28, new Color(0.6f, 0.95f, 1f)));
             Import_AsSprite(PATH_TEX_SOUL, 28);
+
+            // 260920_필드 아이템은 흰색으로 구워 두고 CFieldItem이 종류별 색을 곱한다(몬스터와 같은 방식).
+            Write_Png(PATH_TEX_FIELD_ITEM, Make_CircleTexture(40, Color.white));
+            Import_AsSprite(PATH_TEX_FIELD_ITEM, 40);
 
             // 260904_조이스틱. 바깥은 테두리 링, 손잡이는 꽉 찬 원.
             Write_Png(PATH_TEX_JOY_BASE, Make_RingTexture(128));
@@ -1068,6 +1076,7 @@ namespace Client
             Create_ActorPrefab<CProjectile>("Prefab_Projectile", PATH_TEX_PROJECTILE, PATH_PREFAB_PROJECTILE, 18);
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_ActorPrefab<CSoul>("Prefab_Soul", PATH_TEX_SOUL, PATH_PREFAB_SOUL, 14);
+            Create_ActorPrefab<CFieldItem>("Prefab_FieldItem", PATH_TEX_FIELD_ITEM, PATH_PREFAB_FIELD_ITEM, 15);
             Create_StageSelectUI();
             Create_InGameUI();
             Create_LobbyUI();
@@ -1119,6 +1128,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_PROJECTILE, "Prefab_Projectile", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_SOUL, "Prefab_Soul", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_LOBBY, UI_LOBBY, CAddressableLabel.PREFAB);

@@ -59,8 +59,10 @@ namespace Client
 
             m_fLifeTime -= fDeltaTime;
 
-            // 그 칸이 점령돼 버리면 더 주울 수 없으므로 남아 있을 이유가 없다.
-            if (m_fLifeTime <= 0f || m_cGrid.Get_Cell(m_vCell) != CELL_STATE.EMPTY)
+            // 260920_점령된 칸이어도 여기서 지우지 않는다 — 예전에는 점령하는 순간 영혼이 조용히 사라져
+            // '먹으려고 남겨 둔 것을 내 땅으로 덮어 손해 보는' 이상한 상황이 됐다.
+            // 이제 점령한 땅 안의 픽업은 CStage_Manager가 주운 것으로 처리한다.
+            if (m_fLifeTime <= 0f)
             {
                 bCollect = true;
                 return;

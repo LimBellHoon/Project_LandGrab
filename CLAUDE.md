@@ -155,6 +155,7 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | `GachaInfo.csv` | `CCSVData_GachaInfo` | 장비 뽑기 — 비용 · 중복 환급 비율 (2-17-3) |
 | `CharacterInfo.csv` | `CCSVData_CharacterInfo` | 캐릭터 — 스킨 프리팹 · 레벨별 스탯 배율 (2-17) |
 | `CaptureRewardInfo.csv` | `CCSVData_CaptureRewardInfo` | 점령 재화 배율 — 한 번에 닫은 도형의 맵 대비 비율 구간별 (2-18) |
+| `FieldItemInfo.csv` | `CCSVData_FieldItemInfo` | 맵 위 상호작용 아이템 — 종류 · 가중치 · 수치 (2-20) |
 
 > 표를 추가하면 `CProtoSetup`의 **`ARR_CSV`와 `ARR_CSV_TYPE` 두 곳 모두**에 넣을 것.
 > 한쪽만 넣으면 검증이 배열 밖을 짚어 예외로 죽는다(260912에 가드를 넣어 이제는 이름을 대고 멈춘다).
@@ -701,7 +702,7 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 > | 스킬 | 동작 | 레벨 수치 |
 > |---|---|---|
 > | 마비탄 `STUN_SHOT` | 3초마다 가장 가까운 적에게 유도 마비탄(`ProjectileInfo` 23, 피해 0 · 1.5초 기절). `CRunSkillEffect_Weapon` 그대로 | 발 수(부채꼴 40°) |
-> | 전체 마비 `MASS_STUN` | 260920_**고르는 순간 1회만** 살아 있는 적 전부 기절 + 번쩍임. 쿨타임으로 반복하지 않는다 | 기절 시간(1초 + 0.3/Lv) |
+> | ~~전체 마비 `MASS_STUN`~~ | 260920_**런 스킬에서 뺐다** — 맵 위에서 주워 쓰는 필드 아이템이 됐다(2-20) | — |
 >
 > **전체 마비는 '모두에게 걸렸다'가 한눈에 읽혀야 한다.** 스테이지가 `OnMassStun`을 올리면 `CGameManager.On_MassStun`이
 > 흔들림(`m_fTraumaOnMassStun`) · 펀치줌(`m_fPunchOnMassStun`) · 번개빛 화면 플래시(`CUI_InGame.Play_MassStunFlash`) ·
@@ -1158,11 +1159,43 @@ CStage_Manager.On_PlayerCapture → Grant_CaptureReward(iCapturedCount)
   바로 뒤에 끼워 넣었다 — **이 CSV를 참조하는 다른 시트/스프레드시트가 있다면 열 순서가
   하나씩 밀렸으니 다시 맞출 것**
 
+### 2-20. 맵 위 상호작용 아이템 (260920)
+지나가면서 줍는 픽업이다. `CSoul`(2-11-1)과 같은 자리이지만 목적이 달라 **클래스를 따로 만들었다**
+(2-19에서 설계해 둔 그대로) — 영혼은 "주울수록 빨라지는 누적 보상"이고, 이쪽은 "지금 이 순간을 뒤집는 한 방"이다.
+
+```
+FieldItemInfo.csv       종류 · 가중치 · 수치 · 지속 · 수명        ← 무엇을 하는가
+MapInfo.csv             iFieldItemOnWave · fFieldItemCool · fFieldItemDropRate  ← 이 맵에서 얼마나 나오는가
+CFieldItem              위치 · 수명 · 겉모습만 안다 (CSoul과 같은 구조)
+CStage_Manager          Spawn_FieldItem(한 곳) · Tick_FieldItem(줍기) · Apply_FieldItem(효과)
+CGameManager            OnFieldItemUsed → 소리 · 진동
+```
+
+| 종류 | 하는 일 | 표의 값 |
+|---|---|---|
+| `MASS_STUN` 번개 구슬 | 살아 있는 몬스터를 전부 기절 + 화면 연출 | `fDuration` 기절 시간 |
+| `HEAL_LIFE` 회복 물약 | 목숨을 되돌린다(최대치 넘지 않음) | `fValue` 회복량 |
+| `MAGNET_ALL` 전체 자석 | 맵 위 픽업(영혼 · 다른 아이템)을 전부 그 자리에서 먹는다 | — |
+
+- **세 경로로 나온다** — 웨이브 시작에 몇 개 깔고(`iFieldItemOnWave`), 시간마다 하나씩(`fFieldItemCool`),
+  몬스터를 잡으면 확률로(`fFieldItemDropRate`). 전부 `Spawn_FieldItem` 하나를 지나므로 상한(`MAX_FIELD_ITEM` 8)도 한 곳에 걸린다
+- **미점령 칸에만 놓는다.** 안전 지대에 놓으면 아무 위험 없이 주울 수 있어 의미가 없다
+- **점령한 땅 안에 들어간 픽업은 주운 것으로 친다**(260920). 영혼도 같이 바꿨다 —
+  예전에는 그 칸을 점령하는 순간 조용히 사라져서 **먹으려고 남겨 둔 것을 내 땅으로 덮으면 손해**가 됐다.
+  이제 크게 한 번에 먹으면 그 안의 픽업이 전부 딸려 온다(2-18의 "크게 먹는 쪽이 이득"과 같은 결)
+- 줍는 반경은 영혼과 같다(`SOUL_PICKUP_RADIUS_BASE` + 자석 런 스킬 보너스) — 같은 숫자를 두 곳에 두지 않는다
+- **전체 마비는 런 스킬에서 여기로 옮겼다**(2-11-2). 쿨마다 도는 마비는 몬스터를 영영 세워 두었다 —
+  주워서 쓰는 한 방이 되면서 "언제 주우러 가느냐"가 판단이 됐다. `IRunSkillHost.Stun_AllEnemies`와
+  `OnMassStun` 연출은 그대로 재사용한다(호출하는 쪽만 바뀌었다)
+- 종류가 늘어도 **프리팹은 `Prefab_FieldItem` 하나**다. 색만 바꾼다(`CFieldItem.Get_Color`) — `CEnemy`의 기믹별 색과 같은 자리
+- 개발용 스위치는 `GameConfig.asset`의 `m_bFieldItemEnabled`(1-6). 끄면 아예 안 나온다. 옵션 UI에는 아직 안 올렸다
+
 ### 2-19. 다음 작업 후보 — 재미 개선 (260918, 설계만·코드 미착수)
 "재화 획득 이펙트/구간 배율"(2-18)과 같은 날 나온 아이디어 중 오늘 처리 못한 것들이다.
 클라우드 세션은 프리팹·씬을 못 만들므로 로컬에서 바로 집어갈 수 있게 설계만 적어 둔다.
 
 #### 필드 상호작용 아이템 (알파벳형 수집물)
+> 260920_**아이템 자체는 만들었다 → 2-20.** 아래 남은 것은 "N개 모아야 별 3개" 같은 퀘스트 조건 틀뿐이다.
 `CSoul`(2-11-1)과 같은 자리 — 스테이지 위에 무작위로 놓이고, 플레이어가 지나가면 줍는
 픽업 오브젝트. 다만 목적이 다르다: 소울은 "판이 끝날 때까지 유지되는 속도 가산"이 목적이고,
 이 아이템은 "**반드시 주울 이유**"(예: 별 3개 조건에 걸기)가 목적이라 소울 클래스를 그대로

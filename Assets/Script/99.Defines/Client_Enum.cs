@@ -242,7 +242,16 @@
 
         // 260918_뱀서라이크가 아니고 목숨제라 '적을 잠깐 세우는' 수단이 핵심이다 — 죽이는 것보다 비키게 한다.
         STUN_SHOT,      // 마비탄 — 가장 가까운 적에게 주기적으로 마비탄 (CRunSkillEffect_Weapon)
-        MASS_STUN,      // 전체 마비 — 주기적으로 모든 적을 잠깐 세운다 + 화면 연출 (CRunSkillEffect_MassStun)
+        // 260920_전체 마비는 런 스킬에서 뺐다 — 맵 위에서 주워 쓰는 필드 아이템(FIELD_ITEM_TYPE.MASS_STUN)이 됐다.
+    }
+
+    // 260920_맵 위에 놓여 지나가며 줍는 아이템 (FieldItemInfo.csv · CFieldItem · 2-20)
+    public enum FIELD_ITEM_TYPE
+    {
+        NONE = 0,
+        MASS_STUN,      // 전체 마비 — 살아 있는 몬스터를 전부 잠깐 세운다 + 화면 연출
+        HEAL_LIFE,      // 목숨 회복 — 최대치를 넘지 않게 목숨을 되돌린다
+        MAGNET_ALL,     // 전체 자석 — 맵 위의 픽업(영혼 · 다른 아이템)을 전부 그 자리에서 먹는다
     }
 
     /// <summary> 인벤토리 창 안의 탭. 스킬은 한 개만 장착한다. </summary>
@@ -312,6 +321,7 @@
         STAGE_CLEAR,    // 스테이지 클리어
         STAGE_FAIL,     // 스테이지 실패
         MASS_STUN,      // 260918_전체 마비
+        ITEM_GET,       // 260920_맵 위 아이템 획득
     }
 
     // 260916_햅틱 종류. CHaptic_Manager.Play(HAPTIC_ID)로 재생한다.
@@ -327,6 +337,7 @@
         STAGE_CLEAR,
         STAGE_FAIL,
         MASS_STUN,      // 260918_전체 마비
+        ITEM_GET,       // 260920_맵 위 아이템 획득
     }
 
     /// <summary> Addressable 라벨 (Engine.CData_Manager.LoadAssetAsync 인자) </summary>

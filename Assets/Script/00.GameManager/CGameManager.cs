@@ -82,6 +82,7 @@ namespace Client
         private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
         private CCSVData_CharacterInfo  m_cCharacterTable;  // 260917_캐릭터 표(스킨 + 스탯 배율)
         private CCSVData_CaptureRewardInfo m_cCaptureRewardTable;  // 260918_점령 재화 배율 표
+        private CCSVData_FieldItemInfo m_cFieldItemTable;   // 260920_맵 위 상호작용 아이템 표
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cCardViewerUI;    // 260918_카드 크게 보기 (Popup 캔버스)
@@ -199,6 +200,14 @@ namespace Client
             (m_cInGameUI as CUI_InGame)?.Play_MassStunFlash();
             m_cAudioManager.Play(SOUND_ID.MASS_STUN);
             m_cHapticManager.Play(HAPTIC_ID.MASS_STUN);
+        }
+
+        // 260920_맵 위 아이템을 주웠다. 마비는 On_MassStun이 이미 큰 연출을 내므로 여기서는 소리 · 진동만 —
+        // 같은 순간에 두 번 흔들면 무슨 일이 일어났는지 오히려 안 읽힌다.
+        private void On_FieldItemUsed(FIELD_ITEM_TYPE eType)
+        {
+            m_cAudioManager.Play(SOUND_ID.ITEM_GET);
+            m_cHapticManager.Play(HAPTIC_ID.ITEM_GET);
         }
 
         private void On_PlayerCaptured(int iCapturedCount)
@@ -337,6 +346,7 @@ namespace Client
             m_cCharacterTable  = m_cGameInstance.Get_CSVData(CCSVData_CharacterInfo.CSV_KEY) as CCSVData_CharacterInfo;
             // 260918_점령 재화 배율 표가 없으면 배율 없이(1배) 지급한다.
             m_cCaptureRewardTable = m_cGameInstance.Get_CSVData(CCSVData_CaptureRewardInfo.CSV_KEY) as CCSVData_CaptureRewardInfo;
+            m_cFieldItemTable     = m_cGameInstance.Get_CSVData(CCSVData_FieldItemInfo.CSV_KEY) as CCSVData_FieldItemInfo;
             if (m_cProjectileTable == null)
             {
                 Debug.LogWarning("[CGameManager] ProjectileInfo.csv를 읽지 못해 탄 없이 진행합니다. "
@@ -711,6 +721,9 @@ namespace Client
             // 260918_점령 재화 배율 표
             m_cStageManager.Set_CaptureRewardTable(m_cCaptureRewardTable);
 
+            // 260920_맵 위 아이템 표 + 개발용 스위치
+            m_cStageManager.Set_FieldItemTable(m_cFieldItemTable, m_cConfig.FIELD_ITEM_ENABLED);
+
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
             // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.
             CTerritoryGrid cGrid = m_cStageManager.GRID;
@@ -739,6 +752,7 @@ namespace Client
             m_cStageManager.OnStateChanged += On_StageStateChanged;
             m_cStageManager.OnCardReady    += On_CardReady;
             m_cStageManager.OnMassStun     += On_MassStun;     // 260918_전체 마비 연출
+            m_cStageManager.OnFieldItemUsed += On_FieldItemUsed;  // 260920_맵 위 아이템
             m_cStageManager.OnCoinGained   += On_CoinGained;   // 260918_점령 재화
 
             // 260916_피격/사망/회피/점령 손맛(흔들림·펀치·효과음). CPlayer.Hide()가 풀에 반납할 때

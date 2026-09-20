@@ -49,7 +49,6 @@ namespace Client
                 case RUN_SKILL_TYPE.BOUNCE_SHOT:
                 case RUN_SKILL_TYPE.STUN_SHOT:   cEffect = new CRunSkillEffect_Weapon(); break;     // 260918_마비탄도 쏘는 무기다
 
-                case RUN_SKILL_TYPE.MASS_STUN:   cEffect = new CRunSkillEffect_MassStun(); break;
 
                 default: return null;
             }
@@ -452,42 +451,6 @@ namespace Client
         {
             if (m_cOwner != null)
                 m_cOwner.OnEvade -= On_OwnerEvade;
-        }
-    }
-
-    // 260918_전체 마비 — 주기적으로 살아 있는 몬스터 전부를 잠깐 세운다.
-    /// <summary>
-    /// 목숨제에서 가장 무서운 순간은 '선을 긋는 중에 몬스터가 다가올 때'다. 죽이는 무기보다 세우는 쪽이 이 게임에 맞다.
-    /// 쿨(fCool)은 RunSkillInfo, 레벨 수치(Get_Value)는 마비 시간(초)이다.
-    /// 몬스터가 하나도 없으면 발동하지 않고 쿨을 찬 채로 기다린다 — 허공에 터뜨려 쿨만 도는 일이 없게.
-    /// 실제로 세우는 일과 화면 연출(흔들림 · 펀치 · 플래시)은 스테이지 → CGameManager가 한다(IRunSkillHost.Stun_AllEnemies).
-    /// </summary>
-    public class CRunSkillEffect_MassStun : CRunSkillEffect
-    {
-        private IRunSkillHost m_cHost;
-        private CRunSkillInfo m_cInfo;
-        private int           m_iFiredCount;
-
-        /// <summary> 지금까지 터뜨린 횟수 — 고른 횟수(레벨)와 같아야 한다. </summary>
-        public int   FIRED_COUNT => m_iFiredCount;
-        public float DURATION    => m_cInfo != null ? m_cInfo.Get_Value(m_iLevel) : 0f;
-
-        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
-
-        // 260920_3지선다에서 고르는 그 순간에 딱 한 번 터진다. 쿨타임으로 반복하지 않는다 —
-        // 계속 도는 마비는 몬스터를 영영 세워 두어 피하는 재미가 사라졌다.
-        // 레벨을 올리면(다시 고르면) 그때 또 한 번, 더 긴 시간으로 터진다.
-        // Set_Host가 On_LevelChanged보다 먼저 불리므로(CPlayer.Add_RunSkill) 여기서 바로 쓸 수 있다.
-        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
-        {
-            base.On_LevelChanged(cInfo, iLevel);
-            m_cInfo = cInfo;
-
-            if (m_cHost == null)
-                return;
-
-            m_cHost.Stun_AllEnemies(DURATION);
-            ++m_iFiredCount;
         }
     }
 
