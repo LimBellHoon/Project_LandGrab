@@ -1,4 +1,4 @@
-﻿iMapID	strMapName	iGridWidth	iGridHeight	fCellSize	iBorderThick	iLife	fPlayerSpeed	iWaveCount	strShapeMask	strLayerTex	strWaveEnemy	strWaveClearRatio	strWaveTimeLimit	iCoinPerStar	iCoinPerCell	iCharacterID	iFieldItemOnWave	fFieldItemCool	fFieldItemDropRate	iCellPerShard	iShardPerKill	iGaugeBase	iGaugeAdd	NONE
+﻿iMapID	strMapName	iGridWidth	iGridHeight	fCellSize	iBorderThick	iLife	fPlayerSpeed	iWaveCount	strShapeMask	strLayerTex	strWaveEnemy	strWaveClearRatio	strWaveTimeLimit	iCoinPerStar	iCoinPerCell	iCharacterID	iFieldItemOnWave	fFieldItemCool	fFieldItemDropRate	iCellPerShard	iShardPerKill	iGaugeBase	iGaugeAdd	iStartRadius	NONE
 ;== 맵 / 웨이브 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다														
 ;fPlayerSpeed : 플레이어 이동 속도(초당 셀)															
 ;strLayerTex : 겹쳐 깔리는 이미지 스택. | 로 구분하고 (iWaveCount + 1)장이 필요하다															
@@ -11,5 +11,6 @@
 ;iCoinPerCell : 점령 한 칸당 기본 코인. 실제 지급액은 여기에 CaptureRewardInfo.csv의 배율(한 번에 닫은 도형이 맵 전체에서 차지하는 비율 기준)을 곱한다(260918)
 ;iFieldItemOnWave / fFieldItemCool / fFieldItemDropRate : 맵 위 아이템(FieldItemInfo.csv)이 나오는 세 경로 — 웨이브 시작에 깔 개수 / 시간마다 하나(초, 0이면 안 나옴) / 몬스터 처치 시 드랍 확률(0~1) (260920)
 ;iCellPerShard / iShardPerKill / iGaugeBase / iGaugeAdd : 3지선다 게이지(2-21) — 몇 칸을 먹어야 조각 하나 / 몬스터 처치 조각 수 / 첫 고르기에 필요한 조각 / 고를 때마다 늘어나는 요구량 (260920)
-;---	이름	가로셀	세로셀	셀크기	테두리	체력	이동속도	웨이브수	모양마스크	이미지스택	웨이브별몬스터	웨이브별점령률	웨이브별제한시간	별당코인	칸당코인	캐릭터ID	웨이브시작아이템	아이템주기	처치드랍확률	칸당조각	처치조각	게이지기본	게이지증가	메모
-1	프로토 스테이지	60	100	0.12	0	3	9	3	-	Tex_Mask_01|Tex_Reward_01|Tex_Reward_02|Tex_Reward_03	101*3|101*2,102*2|102*2,103*1,104*1	0.6|0.65|0.7	90|90|120	50	1	1	1	25	0.15	40	1	6	3	기본 맵 — 캐릭터 1(리네트)을 준다
+;iBorderThick / iStartRadius : 시작 안전 지대. 0이면 외곽 테두리를 주지 않는다(외벽을 찍어도 점령되지 않는다). iStartRadius는 맵 한가운데 시작 섬의 반경(셀) — 5면 11x11칸 (2-3, 260920)
+;---	이름	가로셀	세로셀	셀크기	테두리	체력	이동속도	웨이브수	모양마스크	이미지스택	웨이브별몬스터	웨이브별점령률	웨이브별제한시간	별당코인	칸당코인	캐릭터ID	웨이브시작아이템	아이템주기	처치드랍확률	칸당조각	처치조각	게이지기본	게이지증가	시작섬반경	메모
+1	프로토 스테이지	60	100	0.12	0	3	9	3	-	Tex_Mask_01|Tex_Reward_01|Tex_Reward_02|Tex_Reward_03	101*3|101*2,102*2|102*2,103*1,104*1	0.6|0.65|0.7	90|90|120	50	1	1	1	25	0.15	40	1	6	3	5	기본 맵 — 캐릭터 1(리네트)을 준다

@@ -56,6 +56,7 @@ namespace Client
             Test_FieldItem();
             Test_Gauge();
             Test_MoveStyle();
+            Test_StartArea();
             Test_CharacterCard();
             Test_Skill();
             Test_Inventory();
@@ -942,6 +943,36 @@ namespace Client
             Check("두 번째 구간(15%)", Mathf.Approximately(cTable.Get_Multiplier(0.15f), 1.2f));
             Check("세 번째 구간(80%)", Mathf.Approximately(cTable.Get_Multiplier(0.8f), 5.0f));
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
+        }
+
+        // 260920_시작 섬(2-3) — 가운데에서 시작하고, 외벽은 점령지가 아니다
+        private static void Test_StartArea()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 5);
+
+            Vector2Int vCenter = cGrid.START_CENTER;
+            Check("시작 섬 한가운데가 점령돼 있다", cGrid.Get_Cell(vCenter) == CELL_STATE.OWNED);
+            Check("상하좌우 5칸까지 점령", cGrid.Get_Cell(vCenter + new Vector2Int(5, 0)) == CELL_STATE.OWNED
+                                        && cGrid.Get_Cell(vCenter + new Vector2Int(0, -5)) == CELL_STATE.OWNED);
+            Check("6칸부터는 미점령", cGrid.Get_Cell(vCenter + new Vector2Int(6, 0)) == CELL_STATE.EMPTY);
+            Check("시작 섬은 11x11칸", Count_Owned(cGrid), 121);
+
+            // 외벽이 점령지가 아니어야 '벽을 찍어 점령'이 막힌다
+            Check("맵 네 귀퉁이는 미점령", cGrid.Get_Cell(0, 0) == CELL_STATE.EMPTY
+                                       && cGrid.Get_Cell(40, 40) == CELL_STATE.EMPTY);
+            Check("맵 가장자리도 미점령", cGrid.Get_Cell(vCenter.x, 0) == CELL_STATE.EMPTY);
+
+            // 섬의 아래 경계 칸이 플레이어가 설 자리다 — 안쪽은 '점령지 내부'라 움직일 수 없다
+            Vector2Int vStart = new Vector2Int(vCenter.x, vCenter.y - 5);
+            Check("시작 칸은 섬의 경계", cGrid.Is_Boundary(vStart));
+            Check("섬 한가운데는 경계가 아니다", cGrid.Is_Boundary(vCenter) == false);
+
+            // 섬 없이 테두리만 쓰던 옛 설정도 그대로 돈다
+            CTerritoryGrid cBorder = new CTerritoryGrid();
+            cBorder.Initialize(20, 20, 1f, Vector2.zero, 2, null, 0);
+            Check("테두리만 있는 맵은 가운데가 미점령", cBorder.Get_Cell(10, 10) == CELL_STATE.EMPTY);
+            Check("테두리는 점령", cBorder.Get_Cell(0, 0) == CELL_STATE.OWNED);
         }
 
         // 260920_캐릭터별 카드(2-17-2) — 표에 캐릭터를 더하면 카드 화면에 그대로 따라 붙는다

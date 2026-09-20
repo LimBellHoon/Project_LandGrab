@@ -257,7 +257,8 @@ namespace Client
             Vector2 vOrigin = -vWorldSize * 0.5f;
 
             if (m_cGrid.Initialize(cMapInfo.iGridWidth, cMapInfo.iGridHeight, cMapInfo.fCellSize,
-                                   vOrigin, cMapInfo.iBorderThick, Load_ShapeMask(cMapInfo)) == false)
+                                   vOrigin, cMapInfo.iBorderThick, Load_ShapeMask(cMapInfo),
+                                   cMapInfo.iStartRadius) == false)
                 return false;
 
             return m_cGridRenderer.Initialize(m_cGrid, srCover, srReveal);
@@ -428,7 +429,7 @@ namespace Client
 
             // 260920_점령을 비우므로 점령률도 0으로 돌아간다. 카드 지점(strCardRatio)도 같이 되돌려
             // 웨이브마다 다시 준다 — 안 그러면 2·3웨이브에서는 카드가 아예 안 나온다(2-10-1).
-            m_cGrid.Reset(m_cMapInfo.iBorderThick);
+            m_cGrid.Reset(m_cMapInfo.iBorderThick, m_cMapInfo.iStartRadius);
             m_iGauge     = 0;
             m_iPickGiven = 0;
             Respawn_Player();
@@ -753,7 +754,13 @@ namespace Client
         /// </summary>
         private Vector2Int Find_StartCell()
         {
-            Vector2Int vDesired = new Vector2Int(m_cMapInfo.iGridWidth / 2, m_cMapInfo.iBorderThick - 1);
+            // 260920_시작 섬의 **아래 경계 칸**에서 시작한다(2-3). 섬 한가운데는 점령지 '내부'라
+            // 이동 규칙(2-3)에 막혀 한 칸도 못 움직인다 — 안전한 곳은 경계선 위뿐이다.
+            // 섬이 없는 맵(테두리만 있는 옛 설정)은 예전처럼 아래 테두리에서 시작한다.
+            Vector2Int vDesired = m_cMapInfo.iStartRadius > 0
+                                ? new Vector2Int(m_cGrid.START_CENTER.x,
+                                                 m_cGrid.START_CENTER.y - m_cMapInfo.iStartRadius)
+                                : new Vector2Int(m_cMapInfo.iGridWidth / 2, Mathf.Max(0, m_cMapInfo.iBorderThick - 1));
 
             if (m_cGrid.Try_Find_NearestCell(vDesired, CELL_STATE.OWNED, SPAWN_SEARCH_RADIUS,
                                              out Vector2Int vStart) == true)

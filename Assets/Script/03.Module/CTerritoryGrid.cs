@@ -68,13 +68,17 @@ namespace Client
 
         #region Initialize
         /// <param name="vOrigin"> 셀 (0,0)의 좌하단 월드 좌표 </param>
-        /// <param name="iBorderThick"> 시작 시 점령된 외곽 테두리 두께(셀). 플레이어의 최초 안전 지대. </param>
+        /// <param name="iBorderThick"> 시작 시 점령된 외곽 테두리 두께(셀). 0이면 테두리를 주지 않는다. </param>
+        /// <param name="iStartRadius">
+        /// 260920_맵 한가운데에 깔아 줄 '시작 섬'의 반경(셀). 중심에서 상하좌우로 이만큼씩 점령된 채 시작한다.
+        /// 0이면 만들지 않는다.
+        /// </param>
         /// <param name="arrPlayable">
         /// 260904_맵 모양 마스크. 길이 iWidth*iHeight, false인 칸은 BLOCK이 된다.
         /// null이면 직사각형 전체를 쓴다.
         /// </param>
         public bool Initialize(int iWidth, int iHeight, float fCellSize, Vector2 vOrigin, int iBorderThick,
-                               bool[] arrPlayable = null)
+                               bool[] arrPlayable = null, int iStartRadius = 0)
         {
             if (iWidth <= 0 || iHeight <= 0 || fCellSize <= 0f)
             {
@@ -106,22 +110,23 @@ namespace Client
             for (int i = 0; i < iCellCount; ++i)
                 m_arrBlocked[i] = arrPlayable != null && arrPlayable[i] == false;
 
-            Reset(iBorderThick);
+            Reset(iBorderThick, iStartRadius);
             return true;
         }
 
         /// <summary>
-        /// 전 셀을 EMPTY로 되돌리고 외곽 테두리만 OWNED로 채운다.
+        /// 전 셀을 EMPTY로 되돌리고 시작 안전 지대(외곽 테두리 · 가운데 시작 섬)만 OWNED로 채운다.
         /// 260904_모양 마스크로 잘라낸 BLOCK 칸은 그대로 두고 점령률 분모에서도 뺀다.
         /// 웨이브가 넘어갈 때마다 이 함수로 판을 다시 깐다.
         /// </summary>
-        public void Reset(int iBorderThick)
+        public void Reset(int iBorderThick, int iStartRadius = 0)
         {
             m_lstTrail.Clear();
             m_iOwnedCount    = 0;
             m_iPlayableCount = 0;
 
-            iBorderThick = Mathf.Clamp(iBorderThick, 1, Mathf.Min(m_iWidth, m_iHeight) / 2);
+            // 260920_0을 허용한다 — 외벽이 점령지가 아니어야 '벽을 찍어서 점령'이 막힌다(2-3).
+            iBorderThick = Mathf.Clamp(iBorderThick, 0, Mathf.Min(m_iWidth, m_iHeight) / 2);
 
             for (int y = 0; y < m_iHeight; ++y)
             {
@@ -151,7 +156,39 @@ namespace Client
                 }
             }
 
+            Fill_StartArea(iStartRadius);
             Set_FullDirty();
+        }
+
+        /// <summary>
+        /// 260920_맵 한가운데를 정사각형으로 점령해 둔다 — 플레이어가 여기서 시작한다(2-3).
+        /// 외벽에서 시작하면 벽을 따라 한 번에 크게 그어 판이 순식간에 끝났다.
+        /// 가운데에서 시작하면 어느 방향으로 나가든 **돌아올 거리가 생긴다.**
+        /// </summary>
+        public Vector2Int START_CENTER => new Vector2Int(m_iWidth / 2, m_iHeight / 2);
+
+        private void Fill_StartArea(int iStartRadius)
+        {
+            if (iStartRadius <= 0)
+                return;
+
+            Vector2Int vCenter = START_CENTER;
+
+            for (int y = vCenter.y - iStartRadius; y <= vCenter.y + iStartRadius; ++y)
+            {
+                for (int x = vCenter.x - iStartRadius; x <= vCenter.x + iStartRadius; ++x)
+                {
+                    if (Is_InBounds(x, y) == false)
+                        continue;
+
+                    int iIndex = To_Index(x, y);
+                    if (m_arrCell[iIndex] != CELL_STATE.EMPTY)
+                        continue;   // BLOCK(맵 밖)은 건드리지 않는다
+
+                    m_arrCell[iIndex] = CELL_STATE.OWNED;
+                    ++m_iOwnedCount;
+                }
+            }
         }
         #endregion Initialize
 

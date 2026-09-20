@@ -48,6 +48,8 @@ namespace Client
         public int      iGridHeight;
         public float    fCellSize;
         public int      iBorderThick;
+        // 260920_맵 한가운데 시작 섬의 반경(셀). 여기서 시작하고, 외벽은 점령지가 아니다(2-3)
+        public int      iStartRadius;
         // 260918_시작 목숨 수 (다시 목숨제, 2-14)
         public int      iLife;
         public float    fPlayerSpeed;               // 초당 셀
@@ -132,7 +134,7 @@ namespace Client
                 iGridWidth      = CCSV_Utility.To_Int(arrField, 2, 60),
                 iGridHeight     = CCSV_Utility.To_Int(arrField, 3, 100),
                 fCellSize       = CCSV_Utility.To_Float(arrField, 4, 0.12f),
-                iBorderThick    = CCSV_Utility.To_Int(arrField, 5, 2),
+                iBorderThick    = CCSV_Utility.To_Int(arrField, 5, 0),
                 iLife           = CCSV_Utility.To_Int(arrField, 6, 3),
                 fPlayerSpeed    = CCSV_Utility.To_Float(arrField, 7, 9f),
                 iWaveCount      = CCSV_Utility.To_Int(arrField, 8, 1),
@@ -149,6 +151,8 @@ namespace Client
                 iShardPerKill      = CCSV_Utility.To_Int(arrField, 21, 1),
                 iGaugeBase         = CCSV_Utility.To_Int(arrField, 22, 6),
                 iGaugeAdd          = CCSV_Utility.To_Int(arrField, 23, 3),
+                // 260920_시작 섬(2-3)
+                iStartRadius       = CCSV_Utility.To_Int(arrField, 24, 5),
             };
 
             if (cInfo.iMapID <= 0)
