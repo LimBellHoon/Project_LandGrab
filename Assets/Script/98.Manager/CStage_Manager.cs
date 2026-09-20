@@ -964,7 +964,9 @@ namespace Client
                     continue;
 
                 // 그리는 중인 선분에 몬스터가 닿아도 사망한다.
-                if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) == CELL_STATE.TRAIL)
+                // 260920_중심이 그 칸에 들어갈 때까지 기다리지 않는다 — 몸(HIT_RANGE)이 선에 닿으면 바로다.
+                // 예전에는 화면에서 몬스터가 선을 덮고 있는데도 한참 안 죽어 '왜 안 죽지'가 됐다.
+                if (m_cGrid.Is_StateWithin(cEnemy.POS, cEnemy.HIT_RANGE, CELL_STATE.TRAIL) == true)
                 {
                     bHit = true;
                     continue;

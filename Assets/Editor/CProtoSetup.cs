@@ -121,6 +121,8 @@ namespace Client
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
+        // 260920_UI 게이지처럼 '채워지는' Image는 스프라이트가 있어야 fillAmount가 먹는다.
+        private const string PATH_TEX_WHITE         = DIR_ART + "/Tex_White.png";
         private const string PATH_TEX_JOY_BASE      = DIR_ART + "/Tex_JoystickBase.png";
         private const string PATH_TEX_JOY_HANDLE    = DIR_ART + "/Tex_JoystickHandle.png";
         private const string PATH_SCENE      = DIR_SCENE + "/LV_Proto.unity";
@@ -610,6 +612,10 @@ namespace Client
             Import_AsSprite(PATH_TEX_SHARD, 20);
 
             // 260904_조이스틱. 바깥은 테두리 링, 손잡이는 꽉 찬 원.
+            // 260920_속이 꽉 찬 흰 사각형. 게이지 · 배경 띠처럼 색만 칠해 쓰는 UI가 가져다 쓴다.
+            Write_Png(PATH_TEX_WHITE, Make_SolidTexture(8));
+            Import_AsSprite(PATH_TEX_WHITE, 8);
+
             Write_Png(PATH_TEX_JOY_BASE, Make_RingTexture(128));
             Import_AsSprite(PATH_TEX_JOY_BASE, 128);
 
@@ -618,6 +624,20 @@ namespace Client
         }
 
         /// <summary> 조이스틱 바깥 링 — 가운데가 비어 있어 게임 화면을 덜 가린다. </summary>
+        /// <summary> 260920_속이 꽉 찬 흰 사각형. Image.Type.Filled는 스프라이트가 없으면 채워지지 않는다. </summary>
+        private static Texture2D Make_SolidTexture(int iSize)
+        {
+            Texture2D texture = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
+
+            Color32[] arrPixel = new Color32[iSize * iSize];
+            for (int i = 0; i < arrPixel.Length; ++i)
+                arrPixel[i] = new Color32(255, 255, 255, 255);
+
+            texture.SetPixels32(arrPixel);
+            texture.Apply();
+            return texture;
+        }
+
         private static Texture2D Make_RingTexture(int iSize)
         {
             Texture2D tex = new Texture2D(iSize, iSize, TextureFormat.RGBA32, false);
@@ -1186,6 +1206,7 @@ namespace Client
             }
             Regist_Addressable(cSettings, $"{DIR_ART}/{TEX_CARD_GLOW}.png",
                                TEX_CARD_GLOW, CAddressableLabel.TEXTURE);
+            Regist_Addressable(cSettings, PATH_TEX_WHITE, "Tex_White", CAddressableLabel.TEXTURE);
 
             Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD, UI_CARDPICK, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_CARD_GALLERY, UI_CARD_GALLERY, CAddressableLabel.PREFAB);
@@ -1884,12 +1905,15 @@ namespace Client
             Image imgGaugeBg = goGaugeBg.AddComponent<Image>();
             imgGaugeBg.color = new Color(0f, 0f, 0f, 0.55f);
             imgGaugeBg.raycastTarget = false;
+            imgGaugeBg.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_WHITE);
 
             GameObject goGauge = Create_UIObject("Img_Gauge", goGaugeBg.transform);
             Stretch_Full(goGauge.GetComponent<RectTransform>());
             Image imgProgress = goGauge.AddComponent<Image>();
             imgProgress.color = new Color(0.30f, 0.78f, 0.46f, 0.95f);
             imgProgress.raycastTarget = false;
+            // 260920_스프라이트가 없으면 Filled가 동작하지 않아 게이지가 움직이지 않았다.
+            imgProgress.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_WHITE);
             imgProgress.type = Image.Type.Filled;
             imgProgress.fillMethod = Image.FillMethod.Horizontal;
             imgProgress.fillOrigin = (int)Image.OriginHorizontal.Left;

@@ -304,6 +304,41 @@ namespace Client
         public bool Is_Boundary(Vector2Int vCell) => Is_Boundary(vCell.x, vCell.y);
 
         /// <summary>
+        /// 260920_월드 좌표에서 반경 안에 그 상태인 칸이 있는가. **몸 크기로 판정해야 하는 것**이 쓴다 —
+        /// 몬스터가 선에 닿았는지를 중심 한 점으로만 보면, 화면에서는 몸이 선을 덮고 있는데도
+        /// 중심이 그 칸에 들어가기 전까지 아무 일도 일어나지 않아 '왜 안 죽지'가 된다.
+        /// </summary>
+        /// <param name="fRadiusCells"> 반경(셀) </param>
+        public bool Is_StateWithin(Vector2 vWorldPos, float fRadiusCells, CELL_STATE eState)
+        {
+            Vector2Int vCenter = World_ToCell(vWorldPos);
+            int iRange = Mathf.Max(0, Mathf.CeilToInt(fRadiusCells));
+            float fRadiusSq = (fRadiusCells * m_fCellSize) * (fRadiusCells * m_fCellSize);
+
+            for (int dy = -iRange; dy <= iRange; ++dy)
+            {
+                for (int dx = -iRange; dx <= iRange; ++dx)
+                {
+                    int x = vCenter.x + dx;
+                    int y = vCenter.y + dy;
+
+                    if (Is_InBounds(x, y) == false || m_arrCell[To_Index(x, y)] != eState)
+                        continue;
+
+                    // 칸의 중심이 아니라 칸 '면'까지의 거리로 본다 — 닿았으면 닿은 것이다.
+                    Vector2 vCellCenter = Cell_ToWorld(x, y);
+                    float fDx = Mathf.Max(0f, Mathf.Abs(vWorldPos.x - vCellCenter.x) - m_fCellSize * 0.5f);
+                    float fDy = Mathf.Max(0f, Mathf.Abs(vWorldPos.y - vCellCenter.y) - m_fCellSize * 0.5f);
+
+                    if (fDx * fDx + fDy * fDy <= fRadiusSq)
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// 260920_가장 가까운 점령지 경계 칸을 찾는다. 점령 직후 플레이어가 '내부'에 남았을 때
         /// 선 위로 되돌려 놓는 데 쓴다(2-3) — 안전한 곳은 경계선 위뿐이라는 규칙을 지키기 위해서다.
         /// </summary>

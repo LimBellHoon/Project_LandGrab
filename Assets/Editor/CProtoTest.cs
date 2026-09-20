@@ -57,6 +57,7 @@ namespace Client
             Test_Gauge();
             Test_MoveStyle();
             Test_TrailZoom();
+            Test_TrailHitRange();
             Test_SnapToBoundary();
             Test_StartArea();
             Test_CharacterCard();
@@ -976,6 +977,37 @@ namespace Client
 
             cZoom.Set_Enabled(false);
             Check("끄면 곧바로 1배", Mathf.Approximately(cZoom.Tick(50, 1f, 0.02f), 1f));
+        }
+
+        // 260920_선 충돌은 몸 크기로 본다 — 중심 한 점으로만 보면 몸이 선을 덮어도 안 죽는다
+        private static void Test_TrailHitRange()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(20, 20, 1f, Vector2.zero, 2);
+
+            // (10,10)에 선을 하나 깐다 — 그 칸으로 한 걸음 들어가면 TRAIL이 된다
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2Int(10, 1), 100f);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 1);
+            Check("선을 그리는 중", cGrid.IS_DRAWING);
+
+            Vector2 vTrail = cGrid.Cell_ToWorld(cMove.CUR_CELL);
+
+            // 선에서 1.5칸 떨어진 자리 — 몸이 작으면 안 닿고, 크면 닿는다
+            Vector2 vNear = vTrail + new Vector2(1.5f, 0f);
+            Check("작은 몸은 안 닿는다", cGrid.Is_StateWithin(vNear, 0.4f, CELL_STATE.TRAIL) == false);
+            Check("큰 몸은 닿는다", cGrid.Is_StateWithin(vNear, 1.2f, CELL_STATE.TRAIL));
+
+            // 선 위에 올라서 있으면 몸 크기와 상관없이 닿은 것이다
+            Check("선 위는 언제나 닿는다", cGrid.Is_StateWithin(vTrail, 0.1f, CELL_STATE.TRAIL));
+
+            // 멀리 떨어지면 아무리 커도 안 닿는다
+            Vector2 vFar = vTrail + new Vector2(6f, 6f);
+            Check("멀면 안 닿는다", cGrid.Is_StateWithin(vFar, 1.2f, CELL_STATE.TRAIL) == false);
+
+            // 선이 사라지면(사망 · 점령) 더는 안 닿는다
+            cGrid.Clear_Trail();
+            Check("선을 거두면 안 닿는다", cGrid.Is_StateWithin(vTrail, 1.2f, CELL_STATE.TRAIL) == false);
         }
 
         // 260920_점령 직후 경계선으로 되돌린다(2-3) — 내부에 남으면 월보를 공짜로 얻은 셈이 된다
