@@ -11,10 +11,11 @@ namespace Client
     /// </summary>
     public class CTerritoryGrid
     {
-        private const int DIR_COUNT = 4;
+        private const int DIR_COUNT = 4;        // 플러드필이 쓰는 4방향 연결. 대각선을 여기 넣으면 점령 판정이 새 나간다
+        private const int DIR_COUNT_ALL = 8;    // 260920_이동 입력용 — 뒤 넷은 대각선(2-22)
         // MOVE_DIR(UP, DOWN, LEFT, RIGHT) 순서와 인덱스를 맞춘다.
-        private static readonly int[] ARR_DIR_X = { 0, 0, -1, 1 };
-        private static readonly int[] ARR_DIR_Y = { 1, -1, 0, 0 };
+        private static readonly int[] ARR_DIR_X = { 0, 0, -1, 1, -1,  1, -1, 1 };
+        private static readonly int[] ARR_DIR_Y = { 1, -1, 0, 0,  1,  1, -1, -1 };
 
         // 260902_경계 판정은 8방향. 4방향만 보면 테두리의 모서리 칸이 경계에서 빠져 길이 끊긴다.
         private const int DIR8_COUNT = 8;
@@ -176,7 +177,7 @@ namespace Client
         public static Vector2Int Dir_ToOffset(MOVE_DIR eDir)
         {
             int i = (int)eDir;
-            if (i < 0 || i >= DIR_COUNT)
+            if (i < 0 || i >= DIR_COUNT_ALL)
                 return Vector2Int.zero;
 
             return new Vector2Int(ARR_DIR_X[i], ARR_DIR_Y[i]);
@@ -205,6 +206,27 @@ namespace Client
                 case MOVE_DIR.RIGHT: return MOVE_DIR.LEFT;
                 default:             return MOVE_DIR.NONE;
             }
+        }
+
+        // 260920_캐릭터별 이동 방식(2-22)
+        public static bool Is_Diagonal(MOVE_DIR eDir) => eDir >= MOVE_DIR.UP_LEFT;
+
+        /// <summary>
+        /// 대각선을 가로 · 세로 두 방향으로 쪼갠다. 대각선 한 번은 이 두 칸을 잇따라 밟는 것이다 —
+        /// 진짜로 비스듬히 한 칸 가면 트레일이 대각선으로만 이어져 **4방향 플러드필이 그 틈으로 새어 나간다**
+        /// (점령이 엉뚱하게 터진다). 규칙(Step_To)을 건드리지 않으려면 이 방법뿐이다.
+        /// </summary>
+        public static void Dir_Split(MOVE_DIR eDir, out MOVE_DIR eHorizontal, out MOVE_DIR eVertical)
+        {
+            eHorizontal = MOVE_DIR.NONE;
+            eVertical   = MOVE_DIR.NONE;
+
+            if (Is_Diagonal(eDir) == false)
+                return;
+
+            Vector2Int vOffset = Dir_ToOffset(eDir);
+            eHorizontal = vOffset.x > 0 ? MOVE_DIR.RIGHT : MOVE_DIR.LEFT;
+            eVertical   = vOffset.y > 0 ? MOVE_DIR.UP    : MOVE_DIR.DOWN;
         }
         #endregion 좌표 변환
 

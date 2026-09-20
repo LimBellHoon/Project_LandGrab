@@ -91,16 +91,36 @@ namespace Client
                 vDelta = vDelta.normalized * m_fRadius;
 
             m_vHandle = m_vOrigin + vDelta;
-            m_eDir    = To_Dir(vDelta, m_fDeadZone);
+            m_eDir    = To_Dir(vDelta, m_fDeadZone, m_eMoveStyle);
         }
 
-        /// <summary> 기울인 방향을 4방향 중 하나로 자른다. 대각선은 더 많이 기운 축을 따른다. </summary>
-        public static MOVE_DIR To_Dir(Vector2 vDelta, float fDeadZone)
+        // 260920_캐릭터별 이동 방식(2-22). 8방향 캐릭터는 대각선까지 잡는다.
+        private MOVE_STYLE m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
+
+        public void Set_MoveStyle(MOVE_STYLE eStyle) => m_eMoveStyle = eStyle;
+
+        /// <summary> 기울인 방향을 4방향(또는 8방향) 중 하나로 자른다. </summary>
+        public static MOVE_DIR To_Dir(Vector2 vDelta, float fDeadZone,
+                                      MOVE_STYLE eStyle = MOVE_STYLE.FOUR_WAY)
         {
             if (vDelta.magnitude < fDeadZone)
                 return MOVE_DIR.NONE;
 
-            if (Mathf.Abs(vDelta.x) >= Mathf.Abs(vDelta.y))
+            float fAbsX = Mathf.Abs(vDelta.x);
+            float fAbsY = Mathf.Abs(vDelta.y);
+
+            // 8방향은 45도 부채꼴 여덟 칸으로 자른다 — 두 축이 엇비슷하면 대각선이다.
+            // (tan 22.5도 = 0.414. 작은 축이 큰 축의 41.4%를 넘으면 대각선으로 본다)
+            if (eStyle == MOVE_STYLE.EIGHT_WAY
+             && Mathf.Min(fAbsX, fAbsY) > Mathf.Max(fAbsX, fAbsY) * 0.414f)
+            {
+                if (vDelta.y >= 0f)
+                    return vDelta.x >= 0f ? MOVE_DIR.UP_RIGHT : MOVE_DIR.UP_LEFT;
+
+                return vDelta.x >= 0f ? MOVE_DIR.DOWN_RIGHT : MOVE_DIR.DOWN_LEFT;
+            }
+
+            if (fAbsX >= fAbsY)
                 return vDelta.x >= 0f ? MOVE_DIR.RIGHT : MOVE_DIR.LEFT;
 
             return vDelta.y >= 0f ? MOVE_DIR.UP : MOVE_DIR.DOWN;

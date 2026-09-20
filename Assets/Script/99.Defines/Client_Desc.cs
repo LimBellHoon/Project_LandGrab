@@ -31,6 +31,8 @@ namespace Client
         // 260905_장착한 액티브 스킬. null이면 스킬 없음.
         public CSkillInfo       cSkillInfo  { get; set; }
         public int              iSkillLevel { get; set; }
+        // 260920_캐릭터별 이동 방식(2-22)
+        public MOVE_STYLE       eMoveStyle  { get; set; }
 
         public override void OnReturn()
         {

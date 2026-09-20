@@ -138,6 +138,13 @@ namespace Client
         [Header("디버그")]
         [Tooltip("켜면 해금 규칙을 무시하고 모든 맵을 고를 수 있다.")]
         [SerializeField] private bool m_bUnlockAllStage;
+        // 260920_캐릭터를 전부 가진 것으로 친다 — 가방 캐릭터 탭에서 바로 갈아 끼우며 테스트할 때 쓴다.
+        [Tooltip("켜면 CharacterInfo.csv의 캐릭터를 전부 1레벨로 갖고 시작한다. 이동 방식 테스트용.")]
+        [SerializeField] private bool m_bUnlockAllCharacter;
+
+        // 260920_캐릭터를 바꾸지 않고 이동 방식만 바꿔 본다(2-22). NONE이면 캐릭터 표를 따른다.
+        [Tooltip("FOUR_WAY / EIGHT_WAY를 고르면 장착한 캐릭터와 상관없이 그 방식으로 움직인다.")]
+        [SerializeField] private DEV_MOVE_STYLE m_eDevMoveStyle = DEV_MOVE_STYLE.NONE;
 
         [Tooltip("켜면 코인을 쓰지 않고 구매 / 강화 / 스킬 강화가 된다. 코인은 줄지 않는다.")]
         [SerializeField] private bool m_bFreeSpend;
@@ -190,6 +197,11 @@ namespace Client
         public float SFX_VOLUME              => Mathf.Clamp01(m_fSfxVolume);
         public bool  HAPTIC_ENABLED           => m_bHapticEnabled;
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
+        public bool  UNLOCK_ALL_CHARACTER => m_bUnlockAllCharacter;
+        /// <summary> 260920_개발용 이동 방식 덮어쓰기. null이면 캐릭터를 따른다(2-22). </summary>
+        public MOVE_STYLE? DEV_MOVE_STYLE_OVERRIDE
+            => m_eDevMoveStyle == DEV_MOVE_STYLE.NONE ? (MOVE_STYLE?)null
+             : m_eDevMoveStyle == DEV_MOVE_STYLE.EIGHT_WAY ? MOVE_STYLE.EIGHT_WAY : MOVE_STYLE.FOUR_WAY;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);
         public int   DEV_AUTO_FIRE_ID   => Mathf.Max(0, m_iDevAutoFireProjectileID);

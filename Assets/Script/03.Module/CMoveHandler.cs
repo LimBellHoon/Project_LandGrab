@@ -18,6 +18,10 @@ namespace Client
         private float           m_fSpeed;                   // 초당 이동 셀 수
         private bool            m_bMoving;
         private bool            m_bFollowing;               // 직전 이동이 선분 자동 추적이었는가
+        // 260920_캐릭터별 이동 방식(2-22). 대각선 입력은 '가로 한 칸 → 세로 한 칸'으로 밟는다.
+        // m_ePendingDir이 그 두 번째 칸이다 — 첫 칸에 도착하면 입력과 상관없이 곧바로 이어 간다.
+        private MOVE_STYLE      m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
+        private MOVE_DIR        m_ePendingDir = MOVE_DIR.NONE;
 
         // 260916_런 스킬(뱀서라이크) — '월보'/'어디로든 신발'이 걸어 두는 플래그.
         // CPlayer가 CRunSkillEffect를 통해 켜고 끈다. 그리드 규칙 자체(Step_To)는 그대로 두고
@@ -73,6 +77,7 @@ namespace Client
             m_fProgress  = 0f;
             m_bMoving    = false;
             m_bFollowing = false;
+            m_ePendingDir = MOVE_DIR.NONE;
         }
 
         /// <summary>
@@ -99,8 +104,57 @@ namespace Client
             return true;
         }
 
+        /// <summary> 260920_캐릭터가 쓸 이동 방식. 스테이지에 들어갈 때 한 번 정한다(2-22). </summary>
+        public void Set_MoveStyle(MOVE_STYLE eStyle)
+        {
+            m_eMoveStyle  = eStyle;
+            m_ePendingDir = MOVE_DIR.NONE;
+        }
+
+        public MOVE_STYLE MOVE_STYLE_NOW => m_eMoveStyle;
+
+        /// <summary>
+        /// 대각선 입력을 두 칸으로 나눈다. 갈 수 있는 축을 먼저 밟고 나머지를 예약한다 —
+        /// 한 축이 막혀 있으면 나머지 한 축으로만 간다(코너에 끼지 않는다).
+        /// </summary>
+        private MOVE_DIR Resolve_Diagonal(MOVE_DIR eDesiredDir)
+        {
+            if (m_eMoveStyle != MOVE_STYLE.EIGHT_WAY || CTerritoryGrid.Is_Diagonal(eDesiredDir) == false)
+                return eDesiredDir;
+
+            CTerritoryGrid.Dir_Split(eDesiredDir, out MOVE_DIR eHorizontal, out MOVE_DIR eVertical);
+
+            // 번갈아 가며 먼저 밟을 축을 바꾸면 계단이 잘게 쪼개져 대각선처럼 보인다.
+            bool bHorizontalFirst = m_eCurDir != eHorizontal;
+            MOVE_DIR eFirst  = bHorizontalFirst ? eHorizontal : eVertical;
+            MOVE_DIR eSecond = bHorizontalFirst ? eVertical   : eHorizontal;
+
+            if (Can_Move(eFirst) == false)
+            {
+                m_ePendingDir = MOVE_DIR.NONE;
+                return eSecond;
+            }
+
+            m_ePendingDir = eSecond;
+            return eFirst;
+        }
+
         private bool Try_StartMove(MOVE_DIR eDesiredDir)
         {
+            // 예약된 두 번째 칸이 있으면 입력보다 그쪽이 먼저다 — 대각선 한 번을 끝까지 마친다.
+            if (m_ePendingDir != MOVE_DIR.NONE)
+            {
+                MOVE_DIR ePending = m_ePendingDir;
+                m_ePendingDir = MOVE_DIR.NONE;
+
+                if (Can_Move(ePending) == true)
+                    eDesiredDir = ePending;
+            }
+            else
+            {
+                eDesiredDir = Resolve_Diagonal(eDesiredDir);
+            }
+
             MOVE_DIR eDir = eDesiredDir;
 
             bool bFollowing = false;
@@ -192,6 +246,11 @@ namespace Client
         private bool Can_Move(MOVE_DIR eDir)
         {
             if (eDir == MOVE_DIR.NONE)
+                return false;
+
+            // 260920_대각선으로 한 칸에 가는 일은 없다 — 가로 · 세로 두 칸으로 쪼개 밟는다(2-22).
+            // 4방향 캐릭터에게 대각선 입력이 들어와도 여기서 막힌다.
+            if (CTerritoryGrid.Is_Diagonal(eDir) == true)
                 return false;
 
             Vector2Int vNext = Get_NextCell(eDir);

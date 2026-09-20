@@ -78,6 +78,15 @@ namespace Client
         // 260920_맵 위 상호작용 아이템. 표가 없으면 아무것도 안 나올 뿐 판은 그대로 돈다.
         private readonly List<CFieldItem>   m_lstFieldItem  = new List<CFieldItem>();
         private CCSVData_FieldItemInfo      m_cFieldItemTable;
+        // 260920_캐릭터별 이동 방식(2-22). 개발 스위치가 켜져 있으면 캐릭터와 무관하게 그 방식으로 덮어쓴다.
+        private MOVE_STYLE                  m_eCharMoveStyle = MOVE_STYLE.FOUR_WAY;
+        private MOVE_STYLE?                 m_eDevMoveStyle;
+
+        /// <summary> 이번 판에 실제로 쓰는 이동 방식. </summary>
+        public MOVE_STYLE MOVE_STYLE_NOW => m_eDevMoveStyle ?? m_eCharMoveStyle;
+
+        /// <summary> 260920_개발용 — 캐릭터를 바꾸지 않고 이동 방식만 바꿔 본다(1-6). null이면 캐릭터를 따른다. </summary>
+        public void Set_DevMoveStyle(MOVE_STYLE? eStyle) => m_eDevMoveStyle = eStyle;
         // 260920_점령 조각(2-21). 수명이 없어 그 웨이브 동안 맵에 그대로 남는다.
         private readonly List<CShard>       m_lstShard      = new List<CShard>();
         private bool                        m_bFieldItemEnabled = true;     // 개발용 스위치(CGameConfig)
@@ -179,6 +188,8 @@ namespace Client
             m_fCharSpeedRate     = cInfo != null ? cInfo.Get_SpeedRate(iLevel)    : 1f;
             m_fCharHpRate        = cInfo != null ? cInfo.Get_MaxHpRate(iLevel)    : 1f;
             m_fCharEvasionBonus  = cInfo != null ? cInfo.Get_EvasionBonus(iLevel) : 0f;
+            // 260920_이동 방식은 레벨과 무관한 그 캐릭터의 성질이다(2-22)
+            m_eCharMoveStyle     = cInfo != null ? cInfo.eMoveStyle : MOVE_STYLE.FOUR_WAY;
         }
 
         // 260905_장착 시스템이 생기기 전까지는 CGameManager가 표에서 골라 넣어 준다.
@@ -704,6 +715,7 @@ namespace Client
                 fEvasion        = m_fEvasion + m_fCharEvasionBonus,
                 cSkillInfo      = m_cSkillInfo,
                 iSkillLevel     = m_iSkillLevel,
+                eMoveStyle      = MOVE_STYLE_NOW,
                 // 260918_캐릭터 체력 배율(fMaxHpRate)은 목숨 수에 곱한다 — 반올림이라 목숨이 적으면 차이가 안 날 수 있다
                 iLife           = Mathf.Max(1, Mathf.RoundToInt((m_cMapInfo.iLife + m_iBonusLife) * m_fCharHpRate)),
             };

@@ -55,6 +55,7 @@ namespace Client
             Test_CaptureReward();
             Test_FieldItem();
             Test_Gauge();
+            Test_MoveStyle();
             Test_Skill();
             Test_Inventory();
             Test_SkillUpgrade();
@@ -941,6 +942,66 @@ namespace Client
             Check("두 번째 구간(15%)", Mathf.Approximately(cTable.Get_Multiplier(0.15f), 1.2f));
             Check("세 번째 구간(80%)", Mathf.Approximately(cTable.Get_Multiplier(0.8f), 5.0f));
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
+        }
+
+        // 260920_캐릭터별 이동 방식(2-22) — 대각선은 가로 · 세로 두 칸으로 밟는다
+        private static void Test_MoveStyle()
+        {
+            // 대각선 분해 — 점령 판정(4방향 플러드필)이 성립하려면 대각선 한 칸을 만들면 안 된다
+            CTerritoryGrid.Dir_Split(MOVE_DIR.UP_RIGHT, out MOVE_DIR eH, out MOVE_DIR eV);
+            Check("대각선은 가로 · 세로로 쪼개진다", eH == MOVE_DIR.RIGHT && eV == MOVE_DIR.UP);
+            CTerritoryGrid.Dir_Split(MOVE_DIR.DOWN_LEFT, out eH, out eV);
+            Check("왼쪽 아래도 마찬가지", eH == MOVE_DIR.LEFT && eV == MOVE_DIR.DOWN);
+            Check("4방향은 쪼개지지 않는다", CTerritoryGrid.Is_Diagonal(MOVE_DIR.UP) == false);
+            Check("대각선 오프셋은 두 축이 다 선다", CTerritoryGrid.Dir_ToOffset(MOVE_DIR.UP_RIGHT) == new Vector2Int(1, 1));
+
+            // 조이스틱 — 4방향은 대각선을 만들지 않고, 8방향만 만든다
+            Vector2 vDiagonal = new Vector2(0.5f, 0.5f);
+            Check("4방향 캐릭터는 대각선이 안 나온다",
+                  CTerritoryGrid.Is_Diagonal(CVirtualJoystick.To_Dir(vDiagonal, 0.1f, MOVE_STYLE.FOUR_WAY)) == false);
+            Check("8방향 캐릭터는 대각선이 나온다",
+                  CVirtualJoystick.To_Dir(vDiagonal, 0.1f, MOVE_STYLE.EIGHT_WAY) == MOVE_DIR.UP_RIGHT);
+            Check("8방향이어도 한 축으로 기울면 4방향 그대로",
+                  CVirtualJoystick.To_Dir(new Vector2(0.5f, 0.05f), 0.1f, MOVE_STYLE.EIGHT_WAY) == MOVE_DIR.RIGHT);
+            Check("데드존 안은 멈춤",
+                  CVirtualJoystick.To_Dir(new Vector2(0.01f, 0.01f), 0.1f, MOVE_STYLE.EIGHT_WAY) == MOVE_DIR.NONE);
+
+            // 실제 이동 — 8방향은 두 번 밟아 대각선 칸에 도착한다
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(20, 20, 1f, Vector2.zero, 2, null);
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2Int(5, 1), 100f);
+            cMove.Set_MoveStyle(MOVE_STYLE.EIGHT_WAY);
+
+            Vector2Int vStart = cMove.CUR_CELL;
+            Step_Until_Arrive(cMove, MOVE_DIR.UP_RIGHT, out Vector2Int vFirst);
+            Step_Until_Arrive(cMove, MOVE_DIR.UP_RIGHT, out Vector2Int vSecond);
+            Check("대각선 한 번은 두 칸을 밟는다", vFirst != vStart && vSecond != vFirst);
+            Check("두 칸을 밟으면 대각선 자리에 선다", vSecond == vStart + new Vector2Int(1, 1));
+            Check("가는 길은 4방향으로 이어진다",
+                  Mathf.Abs(vFirst.x - vStart.x) + Mathf.Abs(vFirst.y - vStart.y) == 1);
+
+            // 4방향 캐릭터는 대각선 입력을 받아도 대각선으로 가지 않는다
+            CMoveHandler cFour = new CMoveHandler();
+            cFour.Initialize(cGrid, new Vector2Int(5, 1), 100f);
+            cFour.Set_MoveStyle(MOVE_STYLE.FOUR_WAY);
+            Check("4방향 캐릭터는 대각선 입력으로 움직이지 않는다",
+                  Step_Until_Arrive(cFour, MOVE_DIR.UP_RIGHT, out Vector2Int vNone) == false);
+        }
+
+        /// <summary> 한 칸 도착할 때까지 Tick을 돌린다. 200번 안에 못 가면 못 가는 것으로 본다. </summary>
+        private static bool Step_Until_Arrive(CMoveHandler cMove, MOVE_DIR eDir, out Vector2Int vArrived)
+        {
+            vArrived = cMove.CUR_CELL;
+
+            for (int i = 0; i < 200; ++i)
+            {
+                if (cMove.Tick(0.02f, eDir, out vArrived) == true)
+                    return true;
+            }
+
+            return false;
         }
 
         // 260920_3지선다 게이지(2-21) — 조각 요구량이 고를수록 늘어난다

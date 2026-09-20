@@ -21,6 +21,7 @@ namespace Client
         private readonly CVirtualJoystick m_cJoystick = new CVirtualJoystick();
 
         private MOVE_DIR m_eDesiredDir = MOVE_DIR.NONE;
+        private MOVE_STYLE m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
 
         public MOVE_DIR         DESIRED_DIR => m_eDesiredDir;
         /// <summary> UI가 그리기 위해 읽는다. </summary>
@@ -48,6 +49,13 @@ namespace Client
             m_eDesiredDir = Read_Dir();
         }
 
+        // 260920_캐릭터별 이동 방식(2-22). 조이스틱과 키보드가 같은 값을 본다.
+        public void Set_MoveStyle(MOVE_STYLE eStyle)
+        {
+            m_eMoveStyle = eStyle;
+            m_cJoystick.Set_MoveStyle(eStyle);
+        }
+
         public void Clear()
         {
             m_eDesiredDir = MOVE_DIR.NONE;
@@ -56,6 +64,14 @@ namespace Client
 
         private MOVE_DIR Read_Dir()
         {
+            // 260920_8방향 캐릭터는 두 축을 같이 누르면 대각선이다. 4방향 캐릭터는 이 분기를 타지 않는다.
+            if (m_eMoveStyle == MOVE_STYLE.EIGHT_WAY)
+            {
+                MOVE_DIR eDiagonal = Read_Diagonal();
+                if (eDiagonal != MOVE_DIR.NONE)
+                    return eDiagonal;
+            }
+
             // 새로 눌린 키를 최우선으로 잡아 방향 전환 반응을 즉각적으로 만든다.
             if (Input.GetKeyDown(KeyCode.W) || Input.GetKeyDown(KeyCode.UpArrow))    return MOVE_DIR.UP;
             if (Input.GetKeyDown(KeyCode.S) || Input.GetKeyDown(KeyCode.DownArrow))  return MOVE_DIR.DOWN;
@@ -70,6 +86,21 @@ namespace Client
             if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))  return MOVE_DIR.DOWN;
             if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))  return MOVE_DIR.LEFT;
             if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) return MOVE_DIR.RIGHT;
+
+            return MOVE_DIR.NONE;
+        }
+
+        private static MOVE_DIR Read_Diagonal()
+        {
+            bool bUp    = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow);
+            bool bDown  = Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow);
+            bool bLeft  = Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow);
+            bool bRight = Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow);
+
+            if (bUp == true && bLeft  == true) return MOVE_DIR.UP_LEFT;
+            if (bUp == true && bRight == true) return MOVE_DIR.UP_RIGHT;
+            if (bDown == true && bLeft  == true) return MOVE_DIR.DOWN_LEFT;
+            if (bDown == true && bRight == true) return MOVE_DIR.DOWN_RIGHT;
 
             return MOVE_DIR.NONE;
         }

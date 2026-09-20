@@ -1,4 +1,4 @@
-﻿iCharacterID	strName	strPrefabName	iMaxLevel	fSpeedRateBase	fSpeedRatePerLevel	fMaxHpRateBase	fMaxHpRatePerLevel	fEvasionBonusBase	fEvasionBonusPerLevel	strDesc	iFragmentPerClear	iFragmentCostBase	iFragmentCostAdd	strStarLevel	strStarDesc	NONE
+﻿iCharacterID	strName	strPrefabName	iMaxLevel	fSpeedRateBase	fSpeedRatePerLevel	fMaxHpRateBase	fMaxHpRatePerLevel	fEvasionBonusBase	fEvasionBonusPerLevel	strDesc	iFragmentPerClear	iFragmentCostBase	iFragmentCostAdd	strStarLevel	strStarDesc	eMoveStyle	NONE
 ;== 캐릭터 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
 ;캐릭터는 스킨(외형)과 스탯 배율만 다르다 — 전용 스킬은 없다(런 스킬 뽑기 풀은 전 캐릭터 공통, 노션 "캐릭터 시스템" 카드 4장 A안)
 ;fSpeedRateBase/PerLevel : MapInfo.fPlayerSpeed에 곱하는 배율. 1레벨 기준이 Base, 레벨마다 PerLevel씩 늘어난다
@@ -9,6 +9,7 @@
 ;iFragmentCostBase/Add : 레벨업에 드는 조각 수. 1→2가 첫 강화라 (지금레벨-1)번째 강화로 계산한다
 ;strStarLevel/strStarDesc : 성급 스켈레톤 — 화면 틀만 만들어 둔다. 임계 레벨과 설명 텍스트뿐이고 실제 효과는 없다
 ;strPrefabName : 전용 스킨 프리팹이 아직 없으면(Setup Assets 전) 기본 Prefab_Player로 대체된다(CStage_Manager.Spawn_Player) — 표에는 최종 이름을 적어 둔다
-;---	이름	프리팹	최대레벨	속도배율	속도배율/Lv	체력배율	체력배율/Lv	회피보너스	회피보너스/Lv	설명	조각/클리어	레벨업비용	레벨업비용/Lv	성급임계레벨	성급설명	메모
-1	리네트	Prefab_Character_Rinette	10	1	0	1.15	0.03	0	0.01	전직 결계 경비대 — 몽둥이	10	20	5	3|6|10	효과 없음|최대 체력 +5%|공격력 +10%	노션 세계관 카드 참고
-2	셀레스티안	Prefab_Character_Celestian	10	1.05	0.01	0.95	0.01	0.03	0.01	별자리 회의 수제자 — 회전탄	10	20	5	3|6|10	효과 없음|최대 체력 +5%|공격력 +10%	노션 세계관 카드 참고
+;eMoveStyle : 이 캐릭터의 이동 방식(2-22) — FOUR_WAY 상하좌우 / EIGHT_WAY 대각선까지. 8방향은 한 번에 두 칸을 밟아 빠르므로 속도 배율을 낮게 잡는다 (260920)
+;---	이름	프리팹	최대레벨	속도배율	속도배율/Lv	체력배율	체력배율/Lv	회피보너스	회피보너스/Lv	설명	조각/클리어	레벨업비용	레벨업비용/Lv	성급임계레벨	성급설명	이동방식	메모
+1	리네트	Prefab_Character_Rinette	10	1	0	1.15	0.03	0	0.01	전직 결계 경비대 — 몽둥이	10	20	5	3|6|10	효과 없음|최대 체력 +5%|공격력 +10%	FOUR_WAY	노션 세계관 카드 참고
+2	셀레스티안	Prefab_Character_Celestian	10	0.72	0.01	0.95	0.01	0.03	0.01	별자리 회의 수제자 — 회전탄	10	20	5	3|6|10	효과 없음|최대 체력 +5%|공격력 +10%	EIGHT_WAY	노션 세계관 카드 참고

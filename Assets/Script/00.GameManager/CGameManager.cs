@@ -279,6 +279,15 @@ namespace Client
                 m_cProgressManager.Set_UnlockAll(m_cConfig.UNLOCK_ALL_STAGE);
                 m_cProgressManager.Set_FreeSpend(m_cConfig.FREE_SPEND);
 
+                // 260920_개발용 — 캐릭터를 전부 가진 것으로 만든다. 캐릭터마다 이동 방식이 달라(2-22)
+                // 가방 캐릭터 탭에서 갈아 끼우며 바로 비교할 수 있다.
+                if (m_cConfig.UNLOCK_ALL_CHARACTER == true)
+                {
+                    int iGranted = m_cProgressManager.Grant_AllCharacters(m_cCharacterTable);
+                    if (iGranted > 0)
+                        Debug.Log($"[CGameManager] 개발 스위치 — 캐릭터 {iGranted}명을 열어 두었습니다.");
+                }
+
                 // 코인이 하나도 없을 때만 넣는다 — 켜 둔 채로 놀아도 계속 불어나지 않게.
                 if (m_cConfig.START_COIN > 0 && m_cProgressManager.COIN <= 0)
                     m_cProgressManager.Add_Coin(m_cConfig.START_COIN);
@@ -712,6 +721,8 @@ namespace Client
             CCharacterInfo cCharacter = iCharacterID > 0 && m_cCharacterTable != null
                                       ? m_cCharacterTable.Get_Info(iCharacterID) : null;
             m_cStageManager.Set_Character(cCharacter, m_cProgressManager.Get_CharacterLevel(iCharacterID));
+            // 260920_개발용 이동 방식 덮어쓰기(2-22). NONE이면 캐릭터 표를 그대로 따른다.
+            m_cStageManager.Set_DevMoveStyle(m_cConfig.DEV_MOVE_STYLE_OVERRIDE);
 
             // 260917_탄 표와 개발용 투사체 스위치
             m_cStageManager.Set_ProjectileSetting(m_cProjectileTable, m_cImpactTable,

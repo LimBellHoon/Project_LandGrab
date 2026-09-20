@@ -145,6 +145,10 @@ namespace Client
             if (m_cSkillEffect != null && m_cSkillEffect.Initialize(this) == true)
                 m_cSkillEffect.Set_Host(m_cSkillHost);
 
+            // 260920_캐릭터별 이동 방식(2-22). 판이 시작할 때 한 번 정하고 도중에는 바뀌지 않는다.
+            m_cMoveHandler.Set_MoveStyle(cDesc.eMoveStyle);
+            m_cInputHandler.Set_MoveStyle(cDesc.eMoveStyle);
+
             if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
                 return false;
 

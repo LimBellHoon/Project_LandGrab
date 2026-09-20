@@ -13,7 +13,10 @@
         BLOCK = 3,
     }
 
-    /// <summary> 그리드 이동 방향 (4방향) </summary>
+    /// <summary>
+    /// 그리드 이동 방향. 0~3이 4방향이고, 260920_대각선 넷을 뒤에 붙였다.
+    /// **앞 넷의 순서는 바꾸지 말 것** — CTerritoryGrid의 플러드필이 0~3만 돌며 4방향 연결을 본다.
+    /// </summary>
     public enum MOVE_DIR
     {
         NONE = -1,
@@ -21,6 +24,28 @@
         DOWN = 1,
         LEFT = 2,
         RIGHT = 3,
+
+        // 260920_캐릭터별 이동 방식(2-22). 대각선은 가로 한 칸 + 세로 한 칸으로 밟는다 —
+        // 그래야 점령 판정(4방향 연결)이 그대로 성립한다.
+        UP_LEFT = 4,
+        UP_RIGHT = 5,
+        DOWN_LEFT = 6,
+        DOWN_RIGHT = 7,
+    }
+
+    /// <summary> 260920_GameConfig에서 이동 방식을 덮어쓸 때 쓰는 개발용 선택지. NONE이면 캐릭터 표를 따른다(1-6). </summary>
+    public enum DEV_MOVE_STYLE
+    {
+        NONE = 0,
+        FOUR_WAY,
+        EIGHT_WAY,
+    }
+
+    // 260920_캐릭터마다 다른 이동 방식 (CharacterInfo.csv의 eMoveStyle, 2-22)
+    public enum MOVE_STYLE
+    {
+        FOUR_WAY = 0,   // 기본 — 상하좌우
+        EIGHT_WAY,      // 대각선까지. 한 번에 두 칸을 밟으므로 그만큼 빠르다 → 캐릭터 속도 배율을 낮게 잡는다
     }
 
     /// <summary> 셀에 도착했을 때 일어난 일 (CTerritoryGrid.Step_To의 결과) </summary>

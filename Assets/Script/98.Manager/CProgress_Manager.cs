@@ -59,6 +59,38 @@ namespace Client
         /// <summary> 디버그용 — 켜면 해금 규칙을 무시하고 전부 열린 것으로 본다. </summary>
         public void Set_UnlockAll(bool bUnlockAll) => m_bUnlockAll = bUnlockAll;
 
+        /// <summary>
+        /// 260920_디버그용 — CharacterInfo.csv의 캐릭터를 전부 1레벨로 가진 것으로 만든다.
+        /// 캐릭터마다 이동 방식이 다르므로(2-22) 하나씩 깨지 않고 갈아 끼우며 확인하려고 만들었다.
+        /// 이미 가진 캐릭터의 레벨은 건드리지 않는다.
+        /// </summary>
+        /// <returns> 새로 넣어 준 캐릭터 수 </returns>
+        public int Grant_AllCharacters(CCSVData_CharacterInfo cTable)
+        {
+            if (cTable == null)
+                return 0;
+
+            int iGranted = 0;
+            for (int i = 0; i < cTable.ALL.Count; ++i)
+            {
+                CCharacterInfo cInfo = cTable.ALL[i];
+                if (cInfo == null || m_cProgress.Has_Character(cInfo.iCharacterID) == true)
+                    continue;
+
+                m_cProgress.Set_CharacterLevel(cInfo.iCharacterID, 1);
+                ++iGranted;
+            }
+
+            if (iGranted <= 0)
+                return 0;
+
+            if (m_cProgress.iEquippedCharacterID <= 0 && cTable.ALL.Count > 0)
+                m_cProgress.iEquippedCharacterID = cTable.ALL[0].iCharacterID;
+
+            m_cRepository.Save(m_cProgress);
+            return iGranted;
+        }
+
         /// <summary> 디버그용 — 켜면 코인을 쓰지 않고 구매 / 강화가 된다. </summary>
         public void Set_FreeSpend(bool bFreeSpend) => m_bFreeSpend = bFreeSpend;
 

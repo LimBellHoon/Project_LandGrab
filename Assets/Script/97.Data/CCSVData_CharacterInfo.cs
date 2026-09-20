@@ -33,6 +33,8 @@ namespace Client
         public int      iFragmentPerClear;
         public int      iFragmentCostBase;
         public int      iFragmentCostAdd;
+        // 260920_이 캐릭터의 이동 방식(2-22). 8방향은 한 번에 두 칸을 밟아 빠르므로 속도 배율을 낮게 잡는다
+        public MOVE_STYLE eMoveStyle;
 
         // 260918_성급 스켈레톤 — 화면 틀만 만들어 둔다. 임계 레벨과 설명 텍스트뿐이고
         // 실제 스탯/효과는 아직 어디에도 걸려 있지 않다. 나중에 기획이 확정되면
@@ -116,6 +118,7 @@ namespace Client
                 iFragmentPerClear     = CCSV_Utility.To_Int(arrField, 11, 10),
                 iFragmentCostBase     = CCSV_Utility.To_Int(arrField, 12, 20),
                 iFragmentCostAdd      = CCSV_Utility.To_Int(arrField, 13, 5),
+                eMoveStyle            = CCSV_Utility.To_Enum(arrField, 16, MOVE_STYLE.FOUR_WAY),
                 lstStarLevel          = CCSV_Utility.To_IntList(arrField, 14),
                 lstStarDesc           = CCSV_Utility.To_List(arrField, 15),
             };
