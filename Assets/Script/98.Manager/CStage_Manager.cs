@@ -147,6 +147,8 @@ namespace Client
         public STAGE_STATE      STATE           => m_eState;
         public float            REMAIN_TIME     => m_fRemainTime;
         public float            OWNED_RATIO     => m_cGrid.OWNED_RATIO;
+        // 260920_카메라가 선 길이만큼 물러날 때 본다(2-10)
+        public int              TRAIL_COUNT     => m_cGrid.TRAIL_COUNT;
         public int              LIFE            => m_cPlayer != null ? m_cPlayer.LIFE : 0;
         public int              MAX_LIFE        => m_cPlayer != null ? m_cPlayer.MAX_LIFE : 0;
         public int              ENEMY_COUNT     => m_lstEnemy.Count;

@@ -75,6 +75,24 @@ namespace Client
         [Range(0f, 1f)]
         [SerializeField] private float m_fTraumaOnMassStun = 0.55f;
 
+        // 260920_선을 길게 그을수록 시야를 넓힌다(2-10). 멀리 나갔을 때 돌아올 길과 쫓아오는 몬스터를
+        // 같이 봐야 판단이 되는데, 시야가 고정이면 화면 밖에서 잘려 억울하게 죽는다.
+        [Header("선 길이 줌아웃")]
+        [Tooltip("끄면 선을 아무리 길게 그어도 시야가 그대로다.")]
+        [SerializeField] private bool m_bTrailZoomEnabled = true;
+
+        [Tooltip("그리는 선 한 칸마다 넓어지는 비율. 0.012면 50칸에 60% 넓어진다.")]
+        [Range(0f, 0.05f)]
+        [SerializeField] private float m_fTrailZoomPerCell = 0.012f;
+
+        [Tooltip("아무리 길게 그어도 이 배율을 넘지 않는다.")]
+        [Range(1f, 2.5f)]
+        [SerializeField] private float m_fTrailZoomMax = 1.6f;
+
+        [Tooltip("목표 배율까지 따라붙는 시간(초). 클수록 느긋하게 물러난다.")]
+        [Range(0.05f, 1.5f)]
+        [SerializeField] private float m_fTrailZoomFollowTime = 0.45f;
+
         [Header("카메라 펀치줌")]
         [Tooltip("끄면 점령해도 확대되지 않는다.")]
         [SerializeField] private bool m_bCameraPunchEnabled = true;
@@ -184,6 +202,10 @@ namespace Client
         public float PUNCH_ON_MASS_STUN      => Mathf.Clamp01(m_fPunchOnMassStun);
         public float FLASH_MASS_STUN_DURATION => Mathf.Max(0.01f, m_fFlashMassStunDuration);
         public float FLASH_MASS_STUN_ALPHA   => Mathf.Clamp01(m_fFlashMassStunAlpha);
+        public bool  TRAIL_ZOOM_ENABLED      => m_bTrailZoomEnabled;
+        public float TRAIL_ZOOM_PER_CELL     => Mathf.Max(0f, m_fTrailZoomPerCell);
+        public float TRAIL_ZOOM_MAX          => Mathf.Max(1f, m_fTrailZoomMax);
+        public float TRAIL_ZOOM_FOLLOW_TIME  => Mathf.Max(0.01f, m_fTrailZoomFollowTime);
         public bool  CAMERA_PUNCH_ENABLED    => m_bCameraPunchEnabled;
         public float PUNCH_MAX_ZOOM_RATIO    => Mathf.Clamp01(m_fPunchMaxZoomRatio);
         public float PUNCH_DECAY_PER_SECOND  => Mathf.Max(0.01f, m_fPunchDecayPerSecond);
