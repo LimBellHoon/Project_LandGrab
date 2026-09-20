@@ -64,6 +64,9 @@ namespace Client
         // 260920_맵 위 상호작용 아이템. 종류가 늘어도 프리팹은 하나 — 색만 바뀐다(CFieldItem.Get_Color).
         private const string PATH_TEX_FIELD_ITEM    = DIR_ART + "/Tex_FieldItem.png";
         private const string PATH_PREFAB_FIELD_ITEM = DIR_PREFAB + "/Prefab_FieldItem.prefab";
+        // 260920_점령 조각 — 3지선다 게이지를 올리는 픽업(2-21)
+        private const string PATH_TEX_SHARD         = DIR_ART + "/Tex_Shard.png";
+        private const string PATH_PREFAB_SHARD      = DIR_PREFAB + "/Prefab_Shard.prefab";
         // 260904_스테이지 선택 UI
         // 260904_UI 프리팹 이름은 Engine이 강제한다.
         // Engine.CUI_Manager.Open<T>가 Desc의 strPrefabName을
@@ -184,6 +187,7 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_ActorPrefab(PATH_PREFAB_SOUL, "Prefab_Soul", typeof(CSoul));
             iFail += Validate_ActorPrefab(PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", typeof(CFieldItem));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_SHARD, "Prefab_Shard", typeof(CShard));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
@@ -566,6 +570,10 @@ namespace Client
             // 260920_필드 아이템은 흰색으로 구워 두고 CFieldItem이 종류별 색을 곱한다(몬스터와 같은 방식).
             Write_Png(PATH_TEX_FIELD_ITEM, Make_CircleTexture(40, Color.white));
             Import_AsSprite(PATH_TEX_FIELD_ITEM, 40);
+
+            // 260920_조각도 흰색으로 구워 두고 CShard가 색을 곱한다.
+            Write_Png(PATH_TEX_SHARD, Make_CircleTexture(20, Color.white));
+            Import_AsSprite(PATH_TEX_SHARD, 20);
 
             // 260904_조이스틱. 바깥은 테두리 링, 손잡이는 꽉 찬 원.
             Write_Png(PATH_TEX_JOY_BASE, Make_RingTexture(128));
@@ -1077,6 +1085,7 @@ namespace Client
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_ActorPrefab<CSoul>("Prefab_Soul", PATH_TEX_SOUL, PATH_PREFAB_SOUL, 14);
             Create_ActorPrefab<CFieldItem>("Prefab_FieldItem", PATH_TEX_FIELD_ITEM, PATH_PREFAB_FIELD_ITEM, 15);
+            Create_ActorPrefab<CShard>("Prefab_Shard", PATH_TEX_SHARD, PATH_PREFAB_SHARD, 14);
             Create_StageSelectUI();
             Create_InGameUI();
             Create_LobbyUI();
@@ -1129,6 +1138,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_SOUL, "Prefab_Soul", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_SHARD, "Prefab_Shard", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_LOBBY, UI_LOBBY, CAddressableLabel.PREFAB);

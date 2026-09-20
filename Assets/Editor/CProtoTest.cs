@@ -54,6 +54,7 @@ namespace Client
             Test_Currency();
             Test_CaptureReward();
             Test_FieldItem();
+            Test_Gauge();
             Test_Skill();
             Test_Inventory();
             Test_SkillUpgrade();
@@ -940,6 +941,39 @@ namespace Client
             Check("두 번째 구간(15%)", Mathf.Approximately(cTable.Get_Multiplier(0.15f), 1.2f));
             Check("세 번째 구간(80%)", Mathf.Approximately(cTable.Get_Multiplier(0.8f), 5.0f));
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
+        }
+
+        // 260920_3지선다 게이지(2-21) — 조각 요구량이 고를수록 늘어난다
+        private static void Test_Gauge()
+        {
+            const string TAB = "\t";
+            // MapInfo 헤더 순서 그대로. 마지막 네 열이 조각 · 게이지다.
+            string strCsv =
+                  string.Join(TAB, "iMapID", "strMapName", "iGridWidth", "iGridHeight", "fCellSize", "iBorderThick",
+                                   "iLife", "fPlayerSpeed", "iWaveCount", "strShapeMask", "strLayerTex", "strWaveEnemy",
+                                   "strWaveClearRatio", "strWaveTimeLimit", "iCoinPerStar", "iCoinPerCell", "iCharacterID",
+                                   "iFieldItemOnWave", "fFieldItemCool", "fFieldItemDropRate",
+                                   "iCellPerShard", "iShardPerKill", "iGaugeBase", "iGaugeAdd", "NONE") + "\n"
+                + string.Join(TAB, "1", "테스트", "60", "100", "0.12", "2", "3", "9", "1", "-",
+                                   "A|B", "101*1", "0.6", "90", "50", "1", "0",
+                                   "2", "20", "0.5", "40", "2", "6", "3", "");
+
+            CCSVData_MapInfo cTable = new CCSVData_MapInfo();
+            cTable.Read_CSVData(new TextAsset(strCsv));
+
+            CMapInfo cInfo = cTable.Get_Info(1);
+            Check("조각 · 게이지 열을 읽는다", cInfo != null && cInfo.iCellPerShard == 40 && cInfo.iShardPerKill == 2);
+            Check("게이지 기본 요구량", cInfo.iGaugeBase, 6);
+            Check("게이지 증가량", cInfo.iGaugeAdd, 3);
+            Check("필드 아이템 열도 밀리지 않았다",
+                  cInfo.iFieldItemOnWave == 2 && Mathf.Approximately(cInfo.fFieldItemDropRate, 0.5f));
+
+            // 요구량은 고른 횟수에 비례해 늘어난다 — GAUGE_NEED와 같은 식이어야 한다
+            for (int iGiven = 0; iGiven < 4; ++iGiven)
+            {
+                int iNeed = cInfo.iGaugeBase + cInfo.iGaugeAdd * iGiven;
+                Check($"{iGiven + 1}번째 고르기에 조각 {iNeed}개", iNeed, 6 + 3 * iGiven);
+            }
         }
 
         // 260920_맵 위 상호작용 아이템(2-20) — 표 파싱과 가중치

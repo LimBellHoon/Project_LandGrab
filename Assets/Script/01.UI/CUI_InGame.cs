@@ -369,8 +369,11 @@ namespace Client
             if (m_txtStatus == null || m_cStage == null)
                 return;
 
+            // 260920_조각 게이지를 같이 보여 준다 — 무엇을 해야 다음 3지선다가 열리는지가 화면에 없으면
+            // 조각을 주우러 갈 이유를 알 수 없다(2-21). 점령률은 웨이브 클리어 조건이라 그대로 둔다.
             m_txtStatus.text = $"{m_cStage.WAVE}/{m_cStage.WAVE_COUNT} 웨이브"
                              + $"   {m_cStage.OWNED_RATIO:P0} / {m_cStage.CLEAR_RATIO:P0}"
+                             + $"   ◆{m_cStage.GAUGE}/{m_cStage.GAUGE_NEED}"
                              + $"   {CUI_InGame.Get_LifeText(m_cStage.LIFE, m_cStage.MAX_LIFE)}";
         }
     }

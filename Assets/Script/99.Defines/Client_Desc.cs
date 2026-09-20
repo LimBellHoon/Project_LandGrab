@@ -344,6 +344,20 @@ namespace Client
         }
     }
 
+    // 260920_점령 조각(CShard) — 게이지를 올리는 픽업. 수명이 없어 fLifeTime을 받지 않는다.
+    public class CShardDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid   { get; set; }
+        public Vector2Int       vCell   { get; set; }
+        public int              iValue  { get; set; }   // 채우는 게이지 양
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
+
     // 260920_맵 위 상호작용 아이템(CFieldItem). 영혼과 같은 모양에 '무엇인가'만 더 붙는다.
     public class CFieldItemDesc : CGameObjectDesc
     {

@@ -23,6 +23,7 @@ namespace Client
         private const string PREFAB_WEB         = "Prefab_Web";
         private const string PREFAB_SOUL        = "Prefab_Soul";
         private const string PREFAB_FIELD_ITEM  = "Prefab_FieldItem";
+        private const string PREFAB_SHARD       = "Prefab_Shard";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
 
         // 260920_필드 아이템은 영혼과 같은 반경으로 줍는다(자석 보너스도 그대로 탄다).
@@ -60,7 +61,9 @@ namespace Client
         private float                       m_fEnemyCardSlow = 1f;
 
         // 260912_카드 지급 — 이미 넘긴 지점은 다시 주지 않는다.
-        private int                         m_iCardGiven;
+        // 260920_3지선다 게이지(2-21). m_iGauge는 지금까지 모은 조각, m_iPickGiven은 지금까지 고른 횟수다.
+        private int                         m_iGauge;
+        private int                         m_iPickGiven;
 
         // 260918_점령 재화 — 안전하게 조금씩과 위험을 감수하고 크게 한 방 사이에 실제 이득 차이를 만든다.
         // 이번 판 누적만 여기서 들고, 실제 보유 코인 반영(디스크 저장)은 스테이지가 끝날 때 CGameManager가 한 번만 한다.
@@ -75,6 +78,8 @@ namespace Client
         // 260920_맵 위 상호작용 아이템. 표가 없으면 아무것도 안 나올 뿐 판은 그대로 돈다.
         private readonly List<CFieldItem>   m_lstFieldItem  = new List<CFieldItem>();
         private CCSVData_FieldItemInfo      m_cFieldItemTable;
+        // 260920_점령 조각(2-21). 수명이 없어 그 웨이브 동안 맵에 그대로 남는다.
+        private readonly List<CShard>       m_lstShard      = new List<CShard>();
         private bool                        m_bFieldItemEnabled = true;     // 개발용 스위치(CGameConfig)
         private float                       m_fFieldItemTimer;              // 시간마다 하나씩 떨어뜨리는 타이머
         // 260917_탄 표. 없으면 탄을 쏘지 않을 뿐 판은 돈다.
@@ -123,6 +128,9 @@ namespace Client
 
         // 260920_필드 아이템을 주웠다 — 화면 연출(소리 · 진동)을 CGameManager가 낸다.
         public event Action<FIELD_ITEM_TYPE> OnFieldItemUsed;
+
+        // 260920_조각 게이지가 바뀌었다 (지금 모은 양, 다음 고르기까지 필요한 양)
+        public event Action<int, int> OnGaugeChanged;
 
         public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
@@ -255,12 +263,14 @@ namespace Client
             m_fEnemySlowScale = 1f;     // 260912_다음 판에 감속이 남아 있지 않게
             m_fEnemySlowTimer = 0f;
             m_fEnemyCardSlow  = 1f;
-            m_iCardGiven      = 0;
+            m_iGauge          = 0;
+            m_iPickGiven      = 0;
             OnCardReady       = null;
             OnMassStun        = null;
             m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
             OnCoinGained      = null;
             OnFieldItemUsed   = null;
+            OnGaugeChanged    = null;
             m_fFieldItemTimer = 0f;
 
             Collect_Player();
@@ -376,6 +386,7 @@ namespace Client
             Tick_Web();
             Tick_Soul();
             Tick_FieldItem();
+            Tick_Shard();
             Tick_FieldItemSpawn(fDeltaTime);
 
             m_fRemainTime -= fDeltaTime;
@@ -408,13 +419,15 @@ namespace Client
             // 260920_점령을 비우므로 점령률도 0으로 돌아간다. 카드 지점(strCardRatio)도 같이 되돌려
             // 웨이브마다 다시 준다 — 안 그러면 2·3웨이브에서는 카드가 아예 안 나온다(2-10-1).
             m_cGrid.Reset(m_cMapInfo.iBorderThick);
-            m_iCardGiven = 0;
+            m_iGauge     = 0;
+            m_iPickGiven = 0;
             Respawn_Player();
 
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
                                             Get_Texture(m_cMapInfo.Get_RevealTex(iWave)));
 
             Collect_All(m_lstFieldItem);       // 260920_지난 웨이브에 못 주운 것은 판과 함께 사라진다
+            Collect_All(m_lstShard);           // 조각도 마찬가지 — 그 웨이브 안에 주우라는 압박이 된다
             Spawn_WaveFieldItems();
             m_fFieldItemTimer = 0f;
 
@@ -496,22 +509,25 @@ namespace Client
         // 260905_소모품은 인벤토리에서 개수를 깎는 쪽(CGameManager)이 먼저 판단하고,
         // 실제 효과만 여기서 플레이어에게 건다.
         /// <returns> 효과를 걸었으면 true </returns>
-        // 260912_카드 — 점령률이 정해 둔 지점을 넘으면 한 번씩 준다. 이미 지나친 지점은 다시 주지 않는다.
-        // 260920_다만 웨이브가 넘어가면 판을 다시 깔면서 이 기록도 지운다(Enter_Wave) — 웨이브마다 처음부터다.
-        private void Check_CardReady()
+        // 260920_3지선다는 이제 점령률이 아니라 **조각 게이지**가 연다(2-21).
+        // 점령률은 저절로 차올라 "땅을 먹으면 알아서 주는" 수동적인 보상이었다 —
+        // 조각은 미점령 지역에 떨어지므로 위험한 바깥으로 다시 나가야 성장한다.
+        /// <summary> 조각을 주웠을 때 부른다. 한 번에 많이 주우면 연달아 여러 번 열릴 수도 있다. </summary>
+        private void Add_Gauge(int iAmount)
         {
-            if (OnCardReady == null || m_cMapInfo == null)
+            if (iAmount <= 0 || m_cMapInfo == null)
                 return;
 
-            List<float> lstRatio = m_cMapInfo.lstCardRatio;
-            if (m_iCardGiven >= lstRatio.Count)
-                return;
+            m_iGauge += iAmount;
 
-            if (m_cGrid.OWNED_RATIO < lstRatio[m_iCardGiven])
-                return;
+            while (m_iGauge >= GAUGE_NEED)
+            {
+                m_iGauge -= GAUGE_NEED;
+                ++m_iPickGiven;
+                OnCardReady?.Invoke();
+            }
 
-            ++m_iCardGiven;
-            OnCardReady.Invoke();
+            OnGaugeChanged?.Invoke(m_iGauge, GAUGE_NEED);
         }
 
         // 260912_카드 효과. 고른 판이 끝날 때까지 유지된다.
@@ -852,6 +868,7 @@ namespace Client
             Collect_All(m_lstWeb);
             Collect_All(m_lstSoul);
             Collect_All(m_lstFieldItem);
+            Collect_All(m_lstShard);
         }
 
         // 목록 세 개가 같은 일을 하므로 하나로 묶는다.
@@ -913,7 +930,10 @@ namespace Client
                 {
                     // 260920_잡은 자리에 확률로 아이템을 떨어뜨린다. 걷어내기 전에 위치를 먼저 읽어야 한다.
                     if (cEnemy != null)
+                    {
                         Drop_FieldItem(cEnemy.transform.position);
+                        Drop_Shard(cEnemy.transform.position);
+                    }
 
                     m_lstEnemy.RemoveAt(i);
                     continue;
@@ -1322,6 +1342,103 @@ namespace Client
         public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f)
             => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer, fScale);
 
+        #region 점령 조각 · 게이지 (260920)
+        /// <summary> 다음 고르기까지 필요한 조각 수. 고를수록 늘어난다(뱀서라이크의 레벨업 곡선과 같은 모양). </summary>
+        public int GAUGE_NEED => m_cMapInfo == null
+                               ? 1
+                               : Mathf.Max(1, m_cMapInfo.iGaugeBase + m_cMapInfo.iGaugeAdd * m_iPickGiven);
+        public int GAUGE => m_iGauge;
+
+        /// <summary>
+        /// 점령한 만큼 조각을 **미점령 지역에** 뿌린다 — 방금 먹은 땅값을 위험한 바깥에 두고 오는 셈이다.
+        /// 크게 먹을수록 조각이 많지만 그만큼 넓게 흩어져 회수가 위험해진다(2-18의 재화 배율과 같은 결).
+        /// </summary>
+        private void Spawn_CaptureShard(int iCapturedCount)
+        {
+            if (m_cMapInfo == null || m_cMapInfo.iCellPerShard <= 0)
+                return;
+
+            int iCount = iCapturedCount / m_cMapInfo.iCellPerShard;
+            for (int i = 0; i < iCount; ++i)
+                Spawn_Shard(null, 1);
+        }
+
+        /// <summary> 몬스터를 잡은 자리에 떨어뜨린다 — 런 스킬 무기를 고를 이유가 된다. </summary>
+        private void Drop_Shard(Vector2 vWorldPos)
+        {
+            if (m_cMapInfo == null || m_cMapInfo.iShardPerKill <= 0)
+                return;
+
+            for (int i = 0; i < m_cMapInfo.iShardPerKill; ++i)
+                Spawn_Shard(m_cGrid.World_ToCell(vWorldPos), 1);
+        }
+
+        /// <param name="vNearCell"> 이 칸 근처에 놓는다. null이면 맵 전체에서 무작위 </param>
+        private void Spawn_Shard(Vector2Int? vNearCell, int iValue)
+        {
+            if (m_cMapInfo == null || Has_Prefab(PREFAB_SHARD) == false)
+                return;
+
+            Vector2Int vDesired = vNearCell ?? new Vector2Int(UnityEngine.Random.Range(0, m_cMapInfo.iGridWidth),
+                                                              UnityEngine.Random.Range(0, m_cMapInfo.iGridHeight));
+            if (m_cGrid.Try_Find_NearestCell(vDesired, CELL_STATE.EMPTY, SPAWN_SEARCH_RADIUS,
+                                             out Vector2Int vCell) == false)
+                return;
+
+            CShardDesc cDesc = new CShardDesc
+            {
+                eObjectType   = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName = PREFAB_SHARD,
+                cGrid         = m_cGrid,
+                vCell         = vCell,
+                iValue        = iValue,
+            };
+
+            GameObject goShard = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goShard == null)
+                return;
+
+            CShard cShard = goShard.GetComponent<CShard>();
+            if (cShard != null)
+                m_lstShard.Add(cShard);
+        }
+
+        /// <summary>
+        /// 줍는 판정. 가까이 갔거나, 그 칸을 점령해 내 땅이 됐으면 주운 것이다 —
+        /// **크게 한 번에 먹으면 그 안의 조각이 전부 딸려 온다**(260920 결정, 2-20의 픽업 규칙과 같다).
+        /// </summary>
+        private void Tick_Shard()
+        {
+            if (m_cPlayer == null)
+                return;
+
+            Vector2 vPlayerPos   = m_cPlayer.transform.position;
+            float   fPickupRange = (SOUL_PICKUP_RADIUS_BASE + m_cPlayer.PICKUP_RADIUS) * m_cGrid.CELL_SIZE;
+            int     iGained      = 0;
+
+            for (int i = m_lstShard.Count - 1; i >= 0; --i)
+            {
+                CShard cShard = m_lstShard[i];
+
+                if (cShard == null || cShard.IS_EXPIRED == true)
+                {
+                    m_lstShard.RemoveAt(i);
+                    continue;
+                }
+
+                bool bInOwned = m_cGrid.Get_Cell(cShard.CELL) == CELL_STATE.OWNED;
+                if (bInOwned == false && Vector2.Distance(cShard.POS, vPlayerPos) > fPickupRange)
+                    continue;
+
+                cShard.Expire();
+                iGained += cShard.VALUE;
+            }
+
+            // 한꺼번에 여러 개를 먹어도 게이지 계산은 한 번만 한다.
+            Add_Gauge(iGained);
+        }
+        #endregion 점령 조각 · 게이지 (260920)
+
         #region 필드 아이템 (260920)
         public void Set_FieldItemTable(CCSVData_FieldItemInfo cTable, bool bEnabled)
         {
@@ -1471,6 +1588,19 @@ namespace Client
         /// <summary> 전체 자석 — 맵 위 픽업을 전부 그 자리에서 먹는다. 다른 아이템도 같이 발동한다. </summary>
         private void Collect_AllPickup()
         {
+            // 260920_흩어진 조각을 한 번에 거두는 것이 이 아이템의 가장 큰 쓸모다(2-21).
+            int iGained = 0;
+            for (int i = m_lstShard.Count - 1; i >= 0; --i)
+            {
+                CShard cShard = m_lstShard[i];
+                if (cShard == null || cShard.IS_EXPIRED == true)
+                    continue;
+
+                cShard.Expire();
+                iGained += cShard.VALUE;
+            }
+            Add_Gauge(iGained);
+
             for (int i = m_lstSoul.Count - 1; i >= 0; --i)
             {
                 CSoul cSoul = m_lstSoul[i];
@@ -1533,10 +1663,8 @@ namespace Client
                 return;
 
             Grant_CaptureReward(iCapturedCount);
+            Spawn_CaptureShard(iCapturedCount);
 
-            // 260912_웨이브를 넘기기 전에 카드부터 본다.
-            // 순서가 반대면 판이 넘어가면서 점령률이 초기화돼 카드를 영영 못 받는다.
-            Check_CardReady();
 
             CWaveInfo cWave = m_cMapInfo.Get_Wave(m_iWave);
             if (cWave != null && m_cGrid.OWNED_RATIO >= cWave.fClearRatio)

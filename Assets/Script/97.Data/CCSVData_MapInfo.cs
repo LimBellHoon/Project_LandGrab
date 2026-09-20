@@ -58,8 +58,10 @@ namespace Client
         public int              iCoinPerStar;
         // 260918_점령 한 칸당 기본 코인. CaptureRewardInfo.csv의 배율과 곱해져 실제 지급액이 된다.
         public int              iCoinPerCell;
-        // 260912_이 점령률을 넘을 때마다 카드를 한 번 고른다. 웨이브가 아니라 판 전체 기준이다.
-        public List<float>      lstCardRatio = new List<float>();
+        // 260920_3지선다 게이지 — 조각을 이만큼 모으면 한 번 고른다(2-21).
+        // 예전의 strCardRatio(점령률 지점)를 대신한다 — 점령률은 이제 웨이브 클리어 조건으로만 쓴다.
+        public int              iGaugeBase;     // 첫 번째 고르기에 필요한 조각 수
+        public int              iGaugeAdd;      // 한 번 고를 때마다 늘어나는 요구량
         // 260917_이 맵을 클리어하면 얻거나 강화하는 캐릭터(CharacterInfo.csv ID). 0이면 잔향/파밍 스테이지.
         public int               iCharacterID;
         // 260920_맵 위 상호작용 아이템(FieldItemInfo.csv)이 이 맵에서 얼마나 나오는가.
@@ -67,6 +69,9 @@ namespace Client
         public int               iFieldItemOnWave;      // 웨이브 시작에 까는 개수 (0이면 안 깐다)
         public float             fFieldItemCool;        // 시간마다 하나 (초, 0이면 안 나온다)
         public float             fFieldItemDropRate;    // 몬스터 처치 시 드랍 확률 (0~1)
+        // 260920_점령 조각(2-21). 점령한 칸 수를 이 값으로 나눈 만큼 조각이 미점령 지역에 뿌려진다.
+        public int               iCellPerShard;         // 몇 칸을 먹어야 조각 하나인가
+        public int               iShardPerKill;         // 몬스터 하나를 잡으면 떨어지는 조각 수
         public List<string>     lstLayerTex = new List<string>();
         public List<CWaveInfo>  lstWave     = new List<CWaveInfo>();
 
@@ -134,12 +139,16 @@ namespace Client
                 strShapeMask    = CCSV_Utility.To_String(arrField, 9),
                 iCoinPerStar    = CCSV_Utility.To_Int(arrField, 14, 50),
                 iCoinPerCell    = CCSV_Utility.To_Int(arrField, 15, 1),
-                lstCardRatio    = CCSV_Utility.To_FloatList(arrField, 16),
-                iCharacterID    = CCSV_Utility.To_Int(arrField, 17),
-                // 260920_필드 아이템 등장 규칙. 열을 뒤에 붙였으므로 앞 열 번호는 그대로다.
-                iFieldItemOnWave   = CCSV_Utility.To_Int(arrField, 18, 1),
-                fFieldItemCool     = CCSV_Utility.To_Float(arrField, 19, 25f),
-                fFieldItemDropRate = CCSV_Utility.To_Float(arrField, 20, 0.15f),
+                iCharacterID    = CCSV_Utility.To_Int(arrField, 16),
+                // 260920_필드 아이템 등장 규칙(2-20)
+                iFieldItemOnWave   = CCSV_Utility.To_Int(arrField, 17, 1),
+                fFieldItemCool     = CCSV_Utility.To_Float(arrField, 18, 25f),
+                fFieldItemDropRate = CCSV_Utility.To_Float(arrField, 19, 0.15f),
+                // 260920_점령 조각 · 3지선다 게이지(2-21)
+                iCellPerShard      = CCSV_Utility.To_Int(arrField, 20, 40),
+                iShardPerKill      = CCSV_Utility.To_Int(arrField, 21, 1),
+                iGaugeBase         = CCSV_Utility.To_Int(arrField, 22, 6),
+                iGaugeAdd          = CCSV_Utility.To_Int(arrField, 23, 3),
             };
 
             if (cInfo.iMapID <= 0)
