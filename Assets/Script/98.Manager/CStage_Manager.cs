@@ -51,7 +51,6 @@ namespace Client
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
 
         private readonly List<CEnemy>       m_lstEnemy      = new List<CEnemy>();
-        private readonly List<Vector2Int>   m_lstEnemyCell  = new List<Vector2Int>();  // 점령 판정용 재사용 버퍼
 
         // 260912_감속 스킬. 몬스터는 스테이지가 들고 있으므로 지속 시간도 여기서 잰다.
         // 도중에 새로 소환되는 몬스터에게도 같은 배율을 걸어야 해서 값을 남겨 둔다.
@@ -738,7 +737,6 @@ namespace Client
 
             m_cPlayer.OnCapture     += On_PlayerCapture;
             m_cPlayer.OnDead        += On_PlayerDead;
-            m_cPlayer.GetEnemyCells  = Get_EnemyCells;  // 몬스터가 있는 영역은 점령되지 않는다
 
             return true;
         }
@@ -976,15 +974,34 @@ namespace Client
                 m_cPlayer.Lose_Life();
         }
 
-        /// <summary> 점령 판정에 넘길 몬스터 셀 목록. 매 호출마다 버퍼를 재사용해 GC를 만들지 않는다. </summary>
-        private IReadOnlyList<Vector2Int> Get_EnemyCells()
+        /// <summary>
+        /// 260920_점령한 땅 안에 갇힌 몬스터를 죽인다(2-3).
+        /// 죽이는 길은 기존과 같다 — HP를 모두 깎아 bCollect가 서면 Tick_Enemy가 목록에서 걷어내고,
+        /// 그 자리에 조각 · 아이템이 떨어진다(2-20, 2-21). 새 회수 경로를 만들지 않는다.
+        /// </summary>
+        /// <returns> 이번에 죽인 마리 수 </returns>
+        private int Kill_EnemiesInOwned()
         {
-            m_lstEnemyCell.Clear();
+            int iKilled = 0;
 
             for (int i = 0; i < m_lstEnemy.Count; ++i)
-                m_lstEnemyCell.Add(m_lstEnemy[i].CUR_CELL);
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
 
-            return m_lstEnemyCell;
+                if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) != CELL_STATE.OWNED)
+                    continue;
+
+                cEnemy.Damage(cEnemy.HP);
+                ++iKilled;
+            }
+
+            // 가두는 것도 '때린 것'이다 — 분노 게이지가 오른다(회전탄 · 몽둥이와 같은 자리).
+            for (int i = 0; i < iKilled; ++i)
+                m_cPlayer?.On_MonsterHit();
+
+            return iKilled;
         }
         #endregion 몬스터
 
@@ -1673,6 +1690,10 @@ namespace Client
         {
             if (m_eState != STAGE_STATE.PLAYING)
                 return;
+
+            // 260920_가둔 몬스터는 죽는다(2-3). 보상보다 먼저 처리해 둔다 —
+            // 죽은 자리에 떨어지는 조각 · 아이템이 이번 점령의 결과로 같이 읽힌다.
+            Kill_EnemiesInOwned();
 
             Grant_CaptureReward(iCapturedCount);
             Spawn_CaptureShard(iCapturedCount);

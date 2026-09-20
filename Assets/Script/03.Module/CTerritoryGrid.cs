@@ -372,7 +372,7 @@ namespace Client
         /// </summary>
         /// <param name="lstEnemyCell"> 점령 판정에 쓸 몬스터 셀 목록 (없으면 null) </param>
         /// <param name="iCapturedCount"> CAPTURE일 때 새로 점령한 셀 개수 </param>
-        public STEP_RESULT Step_To(Vector2Int vCell, IReadOnlyList<Vector2Int> lstEnemyCell, out int iCapturedCount)
+        public STEP_RESULT Step_To(Vector2Int vCell, out int iCapturedCount)
         {
             iCapturedCount = 0;
 
@@ -397,7 +397,7 @@ namespace Client
                     if (IS_DRAWING == false)
                         return STEP_RESULT.SAFE;
 
-                    iCapturedCount = Capture(lstEnemyCell);
+                    iCapturedCount = Capture();
                     return STEP_RESULT.CAPTURE;
             }
         }
@@ -406,11 +406,15 @@ namespace Client
         #region 점령 (플러드필)
         /// <summary>
         /// 트레일이 안전 지대에 닿아 도형이 닫혔을 때 호출한다.
-        /// 트레일을 점령지로 승격시킨 뒤, 몬스터가 없는 미점령 영역을 전부 점령한다.
+        /// 트레일을 점령지로 승격시킨 뒤, **가장 넓은 영역 하나만 남기고 나머지를 전부 점령한다.**
+        ///
+        /// 260920_예전에는 몬스터가 서 있는 영역을 점령에서 뺐다. 그런데 몬스터는 계속 돌아다니므로
+        /// **애써 가둔 도형이 아무 설명 없이 점령되지 않는 일**이 잦았다(가둔 것이 오히려 손해였다).
+        /// 이제 가두면 무조건 먹고, **그 안에 있던 몬스터는 죽는다** — 죽이는 것은 몬스터를 들고 있는
+        /// CStage_Manager가 한다(여기는 칸만 안다). 점령이 곧 공격 수단이 됐다.
         /// </summary>
-        /// <param name="lstEnemyCell"> 살아있는 몬스터가 서 있는 셀. null이면 가장 큰 영역만 남긴다. </param>
         /// <returns> 이번에 새로 점령한 셀 개수 </returns>
-        public int Capture(IReadOnlyList<Vector2Int> lstEnemyCell)
+        public int Capture()
         {
             if (m_lstTrail.Count == 0)
                 return 0;
@@ -432,15 +436,10 @@ namespace Client
                 return iCapturedCount;
             }
 
-            // 3. 몬스터가 서 있는 영역에 '안전' 표시 — 이 영역은 점령되지 않는다.
-            bool bAnySafe = Mark_EnemyRegions(lstEnemyCell);
+            // 3. 가장 넓은 영역 하나만 남긴다 — 그게 '아직 안 먹은 바깥'이다.
+            m_lstRegionSafe[Find_LargestRegion()] = true;
 
-            // 몬스터가 하나도 없다면 가장 넓은 영역만 남기고 나머지를 먹는다.
-            // (몬스터 없는 프로토타입/디버그 상황에서도 규칙이 성립하도록)
-            if (bAnySafe == false)
-                m_lstRegionSafe[Find_LargestRegion()] = true;
-
-            // 4. 안전 표시가 없는 영역 = 플레이어가 가둔 영역 → 전부 점령
+            // 4. 남기지 않은 영역 = 플레이어가 가둔 영역 → 전부 점령
             for (int i = 0; i < m_arrCell.Length; ++i)
             {
                 int iRegion = m_arrRegion[i];
@@ -508,30 +507,6 @@ namespace Client
             }
 
             return iRegionId;
-        }
-
-        private bool Mark_EnemyRegions(IReadOnlyList<Vector2Int> lstEnemyCell)
-        {
-            if (lstEnemyCell == null)
-                return false;
-
-            bool bAnySafe = false;
-
-            for (int i = 0; i < lstEnemyCell.Count; ++i)
-            {
-                Vector2Int vCell = lstEnemyCell[i];
-                if (Is_InBounds(vCell.x, vCell.y) == false)
-                    continue;
-
-                int iRegion = m_arrRegion[To_Index(vCell.x, vCell.y)];
-                if (iRegion < 0)
-                    continue;   // 몬스터가 점령지 위에 있는 예외 상황 — 무시
-
-                m_lstRegionSafe[iRegion] = true;
-                bAnySafe = true;
-            }
-
-            return bAnySafe;
         }
 
         private int Find_LargestRegion()

@@ -111,7 +111,7 @@ namespace Client
         private static void Test_CaptureWithoutEnemy()
         {
             CTerritoryGrid cGrid = Make_Grid();
-            int iCaptured = Walk_ClosedLoop(cGrid, null, out CMoveHandler _);
+            int iCaptured = Walk_ClosedLoop(cGrid, out CMoveHandler _);
 
             // 선분 16칸 + 갇힌 주머니 (x 4~9, y 1~4) 24칸 = 40칸
             Check("점령 칸 수(몬스터 없음)", iCaptured, 40);
@@ -122,17 +122,16 @@ namespace Client
             Check("선분이 점령지로 승격", cGrid.Get_Cell(10, 3) == CELL_STATE.OWNED);
         }
 
-        // 몬스터가 들어있는 영역은 점령되지 않고, 반대쪽(몬스터 없는 넓은 영역)이 점령된다
+        // 260920_몬스터가 안에 있어도 그대로 점령한다 — 갇힌 몬스터는 CStage_Manager가 죽인다(2-3)
         private static void Test_CaptureWithEnemy()
         {
             CTerritoryGrid cGrid = Make_Grid();
-            List<Vector2Int> lstEnemy = new List<Vector2Int> { new Vector2Int(6, 2) };   // 주머니 안에 몬스터
-            int iCaptured = Walk_ClosedLoop(cGrid, lstEnemy, out CMoveHandler _);
+            int iCaptured = Walk_ClosedLoop(cGrid, out CMoveHandler _);
 
-            // 선분 16칸 + 몬스터가 없는 바깥 영역 284칸 = 300칸
-            Check("점령 칸 수(몬스터 있음)", iCaptured, 300);
-            Check("몬스터가 있는 영역은 미점령", cGrid.Get_Cell(6, 2) == CELL_STATE.EMPTY);
-            Check("몬스터 없는 영역이 점령됨", cGrid.Get_Cell(15, 15) == CELL_STATE.OWNED);
+            // 몬스터가 있든 없든 결과가 같다 — 가장 넓은 영역(바깥)만 남고 주머니는 먹힌다
+            Check("점령 칸 수(몬스터가 있어도 같다)", iCaptured, 40);
+            Check("몬스터가 있던 영역도 점령된다", cGrid.Get_Cell(6, 2) == CELL_STATE.OWNED);
+            Check("가장 넓은 바깥은 남는다", cGrid.Get_Cell(15, 15) == CELL_STATE.EMPTY);
         }
 
         // 사망 시 그리던 선분이 원상복구되는가
@@ -141,7 +140,7 @@ namespace Client
             CTerritoryGrid cGrid = Make_Grid();
             CMoveHandler cMove = Make_Move(cGrid);
 
-            Walk(cGrid, cMove, MOVE_DIR.UP, 4, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 4);
             Check("선분을 그리는 중", cGrid.IS_DRAWING);
             Check("선분 칸 수", cGrid.TRAIL_COUNT, 4);
 
@@ -157,21 +156,21 @@ namespace Client
             CTerritoryGrid cGrid = Make_Grid();
             CMoveHandler cMove = Make_Move(cGrid);
 
-            Walk(cGrid, cMove, MOVE_DIR.UP, 4, null);       // (10,1)~(10,4)
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 2, null);     // (9,4), (8,4)
+            Walk(cGrid, cMove, MOVE_DIR.UP, 4);       // (10,1)~(10,4)
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 2);     // (9,4), (8,4)
 
             // (9,4)는 이미 자기 선분 → 밟으면 즉사
-            STEP_RESULT eResult = cGrid.Step_To(new Vector2Int(9, 4), null, out int _);
+            STEP_RESULT eResult = cGrid.Step_To(new Vector2Int(9, 4), out int _);
             Check("자기 선분 밟기 = DEAD", eResult == STEP_RESULT.DEAD);
 
             // 선분을 그리던 중 안전 지대를 밟으면 도형이 닫힌 것이므로 CAPTURE
             Check("그리는 중 안전 지대 복귀 = CAPTURE",
-                  cGrid.Step_To(new Vector2Int(0, 0), null, out int _) == STEP_RESULT.CAPTURE);
+                  cGrid.Step_To(new Vector2Int(0, 0), out int _) == STEP_RESULT.CAPTURE);
 
             // 선분이 없는 상태에서 안전 지대 위 이동은 SAFE
             CTerritoryGrid cCleanGrid = Make_Grid();
             Check("안전 지대 이동 = SAFE",
-                  cCleanGrid.Step_To(new Vector2Int(0, 0), null, out int _) == STEP_RESULT.SAFE);
+                  cCleanGrid.Step_To(new Vector2Int(0, 0), out int _) == STEP_RESULT.SAFE);
         }
 
         // 이동 규칙: 맵 밖 차단 · 안전 지대에서 정지 · 미점령 지대에서 정지 불가 · 180도 반전 차단
@@ -189,14 +188,14 @@ namespace Client
             Check("안전 지대에서 정지", cMove.CUR_CELL == new Vector2Int(10, 0));
 
             // 미점령 지대로 진입 후에는 입력이 없어도 계속 전진
-            Walk(cGrid, cMove, MOVE_DIR.UP, 2, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 2);
             Check("선을 그리기 시작", cMove.CUR_CELL == new Vector2Int(10, 2));
 
-            Walk(cGrid, cMove, MOVE_DIR.NONE, 1, null);
+            Walk(cGrid, cMove, MOVE_DIR.NONE, 1);
             Check("미점령 지대에서는 정지 불가", cMove.CUR_CELL == new Vector2Int(10, 3));
 
             // 180도 반전은 자기 선분을 밟게 되므로 차단하고 진행 방향을 유지한다
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 1, null);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 1);
             Check("180도 반전 차단", cMove.CUR_CELL == new Vector2Int(10, 4));
         }
         // 260902_점령지 내부는 통과 불가, 영토의 선(경계)만 따라 이동
@@ -210,7 +209,7 @@ namespace Client
             Check("미점령 칸은 경계 아님", cGrid.Is_Boundary(new Vector2Int(10, 10)) == false);
 
             // ㄷ자로 한 번 점령 → 주머니(x 4~9, y 1~4)가 통째로 점령지가 된다
-            Walk_ClosedLoop(cGrid, null, out CMoveHandler cMove);
+            Walk_ClosedLoop(cGrid, out CMoveHandler cMove);
             Check("점령 후 위치", cMove.CUR_CELL == new Vector2Int(3, 0));
 
             Check("점령지 한가운데는 경계 아님", cGrid.Is_Boundary(new Vector2Int(6, 2)) == false);
@@ -227,7 +226,7 @@ namespace Client
             Check("경계 위로는 이동 가능", cMove.CUR_CELL == new Vector2Int(2, 0));
 
             // 선 위에서 미점령 지대로 나가는 것은 여전히 가능해야 한다
-            Walk(cGrid, cMove, MOVE_DIR.UP, 2, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 2);
             Check("선에서 미점령 지대로 진입 가능", cMove.CUR_CELL == new Vector2Int(2, 2));
             Check("나가면 다시 선을 그린다", cGrid.IS_DRAWING);
         }
@@ -235,7 +234,7 @@ namespace Client
         private static void Test_LineFollow()
         {
             CTerritoryGrid cGrid = Make_Grid();
-            Walk_ClosedLoop(cGrid, null, out CMoveHandler cMove);
+            Walk_ClosedLoop(cGrid, out CMoveHandler cMove);
             // 이 시점의 점령 모양: 아래 테두리(y=0) 위에 x 3~10 · y 1~5 블록이 얹힌 계단
 
             // (3,0)에서 오른쪽은 블록 내부 → 블록의 왼쪽 벽을 타고 자동으로 올라간다
@@ -267,13 +266,13 @@ namespace Client
             // 선 위에서 미점령 지대로 나가는 것은 자동 추적보다 우선한다
             cMove.Teleport(new Vector2Int(15, 0));
             cMove.Tick(1f, MOVE_DIR.UP, out Vector2Int vArrived);
-            cGrid.Step_To(vArrived, null, out int _);
+            cGrid.Step_To(vArrived, out int _);
             Check("미점령 지대 진입이 우선", cMove.CUR_CELL == new Vector2Int(15, 1));
             Check("나가면 선을 그린다", cGrid.IS_DRAWING);
 
             // 그리는 중에는 자동 추적을 하지 않는다 (좌우로 꺾이면 도형이 뭉개진다)
-            Walk(cGrid, cMove, MOVE_DIR.UP, 2, null);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 1, null);      // 180도 반전 = 막힘
+            Walk(cGrid, cMove, MOVE_DIR.UP, 2);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 1);      // 180도 반전 = 막힘
             Check("그리는 중에는 자동 추적 안 함", cMove.CUR_CELL == new Vector2Int(15, 4));
         }
         // 260902_몬스터 — 미점령 지대만 다니고, 점령지에 튕기고, 나온 플레이어를 쫓는다
@@ -315,7 +314,7 @@ namespace Client
 
             // ⑤ 점령 판정과 겹쳐 점령지 안에 갇히면 가장 가까운 미점령 칸으로 탈출한다
             CTerritoryGrid cBlockGrid = Make_Grid();
-            Walk_ClosedLoop(cBlockGrid, null, out CMoveHandler _);   // x 3~10 · y 1~5 블록 생성
+            Walk_ClosedLoop(cBlockGrid, out CMoveHandler _);   // x 3~10 · y 1~5 블록 생성
             Check("갇힘 상황 준비", cBlockGrid.Get_Cell(new Vector2Int(6, 2)) == CELL_STATE.OWNED);
 
             CEnemyMoveHandler cTrapped = new CEnemyMoveHandler();
@@ -640,7 +639,7 @@ namespace Client
             Check("갱신 직후에는 깨끗함", cGrid.IS_DIRTY == false);
 
             CMoveHandler cMove = Make_Move(cGrid);
-            Walk(cGrid, cMove, MOVE_DIR.UP, 1, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 1);
             Check("선을 그리면 더러워짐", cGrid.IS_DIRTY);
             Check("바뀐 칸만 올라옴", cGrid.DIRTY_CELLS.Count, 1);
             Check("한 칸만 바뀌면 전체 갱신이 아님", cGrid.IS_FULL_DIRTY == false);
@@ -649,9 +648,9 @@ namespace Client
             Check("목록도 비워짐", cGrid.DIRTY_CELLS.Count, 0);
 
             // 점령은 한 번에 많이 바뀌므로 전체 갱신을 요청한다
-            Walk(cGrid, cMove, MOVE_DIR.UP, 4, null);
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7, null);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 5, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 4);
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 5);
             Check("점령은 전체 갱신", cGrid.IS_FULL_DIRTY);
         }
         // 260904_진행도 / 순차 해금
@@ -3313,19 +3312,19 @@ namespace Client
             cMove.Initialize(cGrid, new Vector2Int(cMapInfo.iGridWidth / 2, cMapInfo.iBorderThick - 1), STEP_SPEED);
 
             // 1차 점령 — 오른쪽 아래 사각형
-            Walk(cGrid, cMove, MOVE_DIR.UP, 30, null);
-            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 20, null);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 30, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 30);
+            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 20);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 30);
 
             // 260902_이제 점령지 내부를 가로지를 수 없으므로 '선'을 따라 우회해서 다음 출발점으로 간다
-            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 5, null);
+            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 5);
 
             // 2차 점령 — 위쪽 큰 ㄱ자
-            Walk(cGrid, cMove, MOVE_DIR.UP, 60, null);
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 20, null);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 25, null);
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 10, null);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 35, null);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 60);
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 20);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 25);
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 10);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 35);
 
             // 실제 런타임과 동일한 경로로 마스크를 만든다.
             GameObject goOverlay = new GameObject("Overlay_Preview");
@@ -3401,19 +3400,17 @@ namespace Client
         }
 
         /// <summary> (10,0)에서 출발해 ㄷ자로 돌아 안전 지대로 복귀하는 닫힌 도형. 점령 칸 수 반환. </summary>
-        private static int Walk_ClosedLoop(CTerritoryGrid cGrid, IReadOnlyList<Vector2Int> lstEnemy,
-                                           out CMoveHandler cMove)
+        private static int Walk_ClosedLoop(CTerritoryGrid cGrid, out CMoveHandler cMove)
         {
             cMove = Make_Move(cGrid);
 
-            Walk(cGrid, cMove, MOVE_DIR.UP, 5, lstEnemy);       // (10,1)~(10,5)
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7, lstEnemy);     // (9,5)~(3,5)
-            return Walk(cGrid, cMove, MOVE_DIR.DOWN, 5, lstEnemy);  // (3,4)~(3,1), 마지막 (3,0)에서 점령
+            Walk(cGrid, cMove, MOVE_DIR.UP, 5);       // (10,1)~(10,5)
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7);     // (9,5)~(3,5)
+            return Walk(cGrid, cMove, MOVE_DIR.DOWN, 5);  // (3,4)~(3,1), 마지막 (3,0)에서 점령
         }
 
         /// <summary> 지정 방향으로 iStep칸 이동시키며 도착할 때마다 규칙을 적용한다. 마지막 점령 칸 수 반환. </summary>
-        private static int Walk(CTerritoryGrid cGrid, CMoveHandler cMove, MOVE_DIR eDir, int iStep,
-                                IReadOnlyList<Vector2Int> lstEnemy)
+        private static int Walk(CTerritoryGrid cGrid, CMoveHandler cMove, MOVE_DIR eDir, int iStep)
         {
             int iCaptured = 0;
 
@@ -3422,7 +3419,7 @@ namespace Client
                 if (cMove.Tick(1f, eDir, out Vector2Int vArrived) == false)
                     continue;
 
-                if (cGrid.Step_To(vArrived, lstEnemy, out int iCount) == STEP_RESULT.CAPTURE)
+                if (cGrid.Step_To(vArrived, out int iCount) == STEP_RESULT.CAPTURE)
                     iCaptured = iCount;
             }
 

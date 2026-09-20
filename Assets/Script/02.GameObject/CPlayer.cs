@@ -106,8 +106,7 @@ namespace Client
         // 260916_OnLifeChanged는 Add_Life에도 불려 '맞았다'만 골라 듣기 어렵다.
         /// <summary> 실제로 맞아 HP가 줄었을 때만. 카메라 흔들림 같은 피격 연출은 이걸 들을 것. </summary>
         public event Action OnDamaged;
-        /// <summary> 점령 판정에 쓸 몬스터 셀 목록 공급자 (없으면 null) </summary>
-        public Func<IReadOnlyList<Vector2Int>> GetEnemyCells;
+        // 260920_점령 판정에 몬스터를 더는 넘기지 않는다 — 가두면 무조건 먹고, 갇힌 몬스터는 죽는다(2-3).
 
         #region Engine.CGameObject
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -211,7 +210,6 @@ namespace Client
             OnDead          = null;
             OnEvade         = null;
             OnDamaged       = null;
-            GetEnemyCells   = null;
             m_cGrid         = null;
             m_cImpact.Clear();
 
@@ -223,8 +221,7 @@ namespace Client
         private STEP_RESULT Handle_ArriveCell(Vector2Int vCell)
         {
             // 규칙 판정 자체는 그리드가 소유한다. 플레이어는 결과에 반응만 한다.
-            STEP_RESULT eResult = m_cGrid.Step_To(vCell, GetEnemyCells != null ? GetEnemyCells() : null,
-                                                  out int iCapturedCount);
+            STEP_RESULT eResult = m_cGrid.Step_To(vCell, out int iCapturedCount);
 
             switch (eResult)
             {
