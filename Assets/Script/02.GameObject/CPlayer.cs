@@ -19,6 +19,8 @@ namespace Client
         // 260912_마감 스킬이 점령지를 찾아 나가는 한계. 맵을 통째로 훑지 않게 막는다.
         private const int   SEAL_MAX_RADIUS  = 40;      // 셀
         private const int   SEAL_MAX_STEP    = 120;     // 셀
+        // 260920_점령 직후 경계선으로 되돌릴 때 찾아볼 반경(셀). 한 칸 옆이 보통이라 넉넉하다.
+        private const int   BOUNDARY_SEARCH_RADIUS = 24;
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
@@ -230,7 +232,11 @@ namespace Client
                     break;
 
                 case STEP_RESULT.CAPTURE:
-                    m_vLastSafeCell = vCell;
+                    // 260920_점령하고 나면 방금 그은 선이 점령지 '안쪽'이 되는 일이 잦다.
+                    // 그대로 두면 이동 규칙(2-3)의 예외에 걸려 내부를 마음대로 돌아다니게 된다 —
+                    // 월보(런 스킬)를 공짜로 얻은 셈이라, 가장 가까운 경계선으로 되돌려 놓는다.
+                    Snap_ToBoundary();
+                    m_vLastSafeCell = m_cMoveHandler.CUR_CELL;
                     OnCapture?.Invoke(iCapturedCount);
                     break;
 
@@ -642,6 +648,18 @@ namespace Client
             OnLifeChanged?.Invoke(m_iLife);
         }
 
+        /// <summary> 점령 직후 내부에 남았으면 가장 가까운 경계 칸으로 옮긴다. 이미 경계면 아무 일도 없다. </summary>
+        private void Snap_ToBoundary()
+        {
+            Vector2Int vCur = m_cMoveHandler.CUR_CELL;
+            if (m_cGrid.Is_Boundary(vCur) == true)
+                return;
+
+            if (m_cGrid.Try_Find_NearestBoundary(vCur, BOUNDARY_SEARCH_RADIUS, out Vector2Int vCell) == false)
+                return;
+
+            m_cMoveHandler.Snap_To(vCell);
+        }
         #endregion 규칙 판정
 
         private void Refresh_InvincibleBlink()

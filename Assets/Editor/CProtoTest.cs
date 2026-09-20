@@ -56,6 +56,8 @@ namespace Client
             Test_FieldItem();
             Test_Gauge();
             Test_MoveStyle();
+            Test_TrailZoom();
+            Test_SnapToBoundary();
             Test_StartArea();
             Test_CharacterCard();
             Test_Skill();
@@ -943,6 +945,61 @@ namespace Client
             Check("두 번째 구간(15%)", Mathf.Approximately(cTable.Get_Multiplier(0.15f), 1.2f));
             Check("세 번째 구간(80%)", Mathf.Approximately(cTable.Get_Multiplier(0.8f), 5.0f));
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
+        }
+
+        // 260920_선 길이 줌아웃(2-10) — 길게 나갈수록 시야가 넓어진다
+        private static void Test_TrailZoom()
+        {
+            CCameraTrailZoom cZoom = new CCameraTrailZoom();
+            cZoom.Initialize(0.01f, 1.5f, 0.2f);
+
+            Check("선이 없으면 그대로", Mathf.Approximately(cZoom.Get_TargetRate(0), 1f));
+            Check("10칸이면 10% 넓게", Mathf.Approximately(cZoom.Get_TargetRate(10), 1.1f));
+            Check("상한을 넘지 않는다", Mathf.Approximately(cZoom.Get_TargetRate(9999), 1.5f));
+
+            // 한 칸 늘 때마다 화면이 튀지 않게 천천히 따라붙는다
+            float fFirst = cZoom.Tick(50, 0.02f);
+            Check("곧바로 목표까지 가지 않는다", fFirst < 1.4f && fFirst > 1f);
+
+            for (int i = 0; i < 200; ++i)
+                cZoom.Tick(50, 0.02f);
+            Check("시간이 지나면 목표에 닿는다", Mathf.Abs(cZoom.RATE - 1.5f) < 0.01f);
+
+            // 선을 거두면(점령 · 사망) 원래 시야로 돌아온다
+            for (int i = 0; i < 200; ++i)
+                cZoom.Tick(0, 0.02f);
+            Check("선을 거두면 1배로 돌아온다", Mathf.Abs(cZoom.RATE - 1f) < 0.01f);
+
+            cZoom.Set_Enabled(false);
+            Check("끄면 곧바로 1배", Mathf.Approximately(cZoom.Tick(50, 0.02f), 1f));
+        }
+
+        // 260920_점령 직후 경계선으로 되돌린다(2-3) — 내부에 남으면 월보를 공짜로 얻은 셈이 된다
+        private static void Test_SnapToBoundary()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 5);
+
+            Vector2Int vCenter = cGrid.START_CENTER;
+            Check("섬 한가운데는 경계가 아니다", cGrid.Is_Boundary(vCenter) == false);
+
+            Check("가장 가까운 경계를 찾는다",
+                  cGrid.Try_Find_NearestBoundary(vCenter, 24, out Vector2Int vFound));
+            Check("찾은 칸은 경계다", cGrid.Is_Boundary(vFound));
+            Check("섬 반경(5칸) 안에서 찾는다",
+                  Mathf.Max(Mathf.Abs(vFound.x - vCenter.x), Mathf.Abs(vFound.y - vCenter.y)) <= 5);
+
+            // 이미 경계에 서 있으면 그 자리를 그대로 돌려준다
+            Vector2Int vEdge = new Vector2Int(vCenter.x, vCenter.y - 5);
+            cGrid.Try_Find_NearestBoundary(vEdge, 24, out Vector2Int vSame);
+            Check("경계에 있으면 제자리", vSame == vEdge);
+
+            // 옮긴 뒤에는 이동 핸들러의 현재 칸도 그 자리가 된다
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, vCenter, 10f);
+            cMove.Snap_To(vFound);
+            Check("옮긴 칸이 현재 칸", cMove.CUR_CELL == vFound);
+            Check("옮기면 이동 중이던 것은 취소", cMove.IS_MOVING == false);
         }
 
         // 260920_시작 섬(2-3) — 가운데에서 시작하고, 외벽은 점령지가 아니다

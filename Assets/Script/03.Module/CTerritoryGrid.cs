@@ -303,6 +303,40 @@ namespace Client
         }
         public bool Is_Boundary(Vector2Int vCell) => Is_Boundary(vCell.x, vCell.y);
 
+        /// <summary>
+        /// 260920_가장 가까운 점령지 경계 칸을 찾는다. 점령 직후 플레이어가 '내부'에 남았을 때
+        /// 선 위로 되돌려 놓는 데 쓴다(2-3) — 안전한 곳은 경계선 위뿐이라는 규칙을 지키기 위해서다.
+        /// </summary>
+        public bool Try_Find_NearestBoundary(Vector2Int vFrom, int iMaxRadius, out Vector2Int vFound)
+        {
+            vFound = vFrom;
+
+            if (Is_Boundary(vFrom) == true)
+                return true;
+
+            for (int r = 1; r <= iMaxRadius; ++r)
+            {
+                for (int dy = -r; dy <= r; ++dy)
+                {
+                    for (int dx = -r; dx <= r; ++dx)
+                    {
+                        // 이미 살펴본 안쪽은 건너뛴다 — 테두리만 본다.
+                        if (Mathf.Abs(dx) != r && Mathf.Abs(dy) != r)
+                            continue;
+
+                        Vector2Int vCell = new Vector2Int(vFrom.x + dx, vFrom.y + dy);
+                        if (Is_InBounds(vCell.x, vCell.y) == false || Is_Boundary(vCell) == false)
+                            continue;
+
+                        vFound = vCell;
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
         public void Clear_Dirty()
         {
             IS_DIRTY      = false;

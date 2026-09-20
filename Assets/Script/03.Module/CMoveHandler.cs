@@ -114,6 +114,20 @@ namespace Client
         public MOVE_STYLE MOVE_STYLE_NOW => m_eMoveStyle;
 
         /// <summary>
+        /// 260920_지금 칸을 그대로 갈아 끼운다(이동 중이던 것은 취소). 점령 직후 경계선으로 되돌릴 때 쓴다.
+        /// 규칙 판정(Step_To)을 거치지 않으므로 **이미 안전하다고 확인된 칸에만** 쓸 것.
+        /// </summary>
+        public void Snap_To(Vector2Int vCell)
+        {
+            m_vCurCell    = vCell;
+            m_vNextCell   = vCell;
+            m_bMoving     = false;
+            m_bFollowing  = false;
+            m_fProgress   = 0f;
+            m_ePendingDir = MOVE_DIR.NONE;
+        }
+
+        /// <summary>
         /// 대각선 입력을 두 칸으로 나눈다. 갈 수 있는 축을 먼저 밟고 나머지를 예약한다 —
         /// 한 축이 막혀 있으면 나머지 한 축으로만 간다(코너에 끼지 않는다).
         /// </summary>
@@ -270,7 +284,9 @@ namespace Client
             }
 
             // 260902_점령지 '내부'는 통과할 수 없다 — 영토의 선(경계)만 따라 움직인다.
-            // 단, 점령 직후 자기가 내부에 갇힌 경우에는 선으로 빠져나가야 하므로 허용한다.
+            // 단, 내부에 갇힌 경우에는 선으로 빠져나가야 하므로 허용한다. 260920_점령 직후에는
+            // CPlayer가 경계선으로 되돌려 놓으므로(Snap_To) 이 예외는 사실상 안전망으로만 남는다 —
+            // 예전에는 이 예외 덕에 내부에 선 동안 '월보를 공짜로 얻은 것처럼' 마음대로 돌아다닐 수 있었다.
             // (선을 그리는 중에는 현재 칸이 TRAIL이라 Is_Boundary가 false → 도형을 닫는 이동은 항상 통과)
             // 260916_런 스킬 '월보'를 들고 있으면 이 제한 자체를 끈다.
             if (m_bAllowOwnedInterior == false
