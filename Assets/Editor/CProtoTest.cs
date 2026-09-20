@@ -947,31 +947,35 @@ namespace Client
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
         }
 
-        // 260920_선 길이 줌아웃(2-10) — 길게 나갈수록 시야가 넓어진다
+        // 260920_줌아웃(2-10) — 선 길이와 점령률 둘 다 시야를 넓힌다
         private static void Test_TrailZoom()
         {
-            CCameraTrailZoom cZoom = new CCameraTrailZoom();
-            cZoom.Initialize(0.01f, 1.5f, 0.2f);
+            CCameraZoomOut cZoom = new CCameraZoomOut();
+            cZoom.Initialize(0.01f, 0.5f, 1.5f, 0.2f);
 
-            Check("선이 없으면 그대로", Mathf.Approximately(cZoom.Get_TargetRate(0), 1f));
-            Check("10칸이면 10% 넓게", Mathf.Approximately(cZoom.Get_TargetRate(10), 1.1f));
-            Check("상한을 넘지 않는다", Mathf.Approximately(cZoom.Get_TargetRate(9999), 1.5f));
+            Check("아무것도 없으면 그대로", Mathf.Approximately(cZoom.Get_TargetRate(0, 0f), 1f));
+            Check("선 10칸이면 10% 넓게", Mathf.Approximately(cZoom.Get_TargetRate(10, 0f), 1.1f));
+            Check("점령률 50%면 25% 넓게", Mathf.Approximately(cZoom.Get_TargetRate(0, 0.5f), 1.25f));
+            Check("둘은 더해진다", Mathf.Approximately(cZoom.Get_TargetRate(10, 0.5f), 1.35f));
+            Check("상한을 넘지 않는다", Mathf.Approximately(cZoom.Get_TargetRate(9999, 1f), 1.5f));
+            Check("점령률이 오르면 시야도 넓어진다",
+                  cZoom.Get_TargetRate(0, 0.7f) > cZoom.Get_TargetRate(0, 0.2f));
 
             // 한 칸 늘 때마다 화면이 튀지 않게 천천히 따라붙는다
-            float fFirst = cZoom.Tick(50, 0.02f);
+            float fFirst = cZoom.Tick(50, 0f, 0.02f);
             Check("곧바로 목표까지 가지 않는다", fFirst < 1.4f && fFirst > 1f);
 
             for (int i = 0; i < 200; ++i)
-                cZoom.Tick(50, 0.02f);
+                cZoom.Tick(50, 0f, 0.02f);
             Check("시간이 지나면 목표에 닿는다", Mathf.Abs(cZoom.RATE - 1.5f) < 0.01f);
 
-            // 선을 거두면(점령 · 사망) 원래 시야로 돌아온다
+            // 선을 거두면(점령 · 사망) 점령률 몫만 남는다
             for (int i = 0; i < 200; ++i)
-                cZoom.Tick(0, 0.02f);
-            Check("선을 거두면 1배로 돌아온다", Mathf.Abs(cZoom.RATE - 1f) < 0.01f);
+                cZoom.Tick(0, 0.2f, 0.02f);
+            Check("선을 거두면 점령률 몫만 남는다", Mathf.Abs(cZoom.RATE - 1.1f) < 0.01f);
 
             cZoom.Set_Enabled(false);
-            Check("끄면 곧바로 1배", Mathf.Approximately(cZoom.Tick(50, 0.02f), 1f));
+            Check("끄면 곧바로 1배", Mathf.Approximately(cZoom.Tick(50, 1f, 0.02f), 1f));
         }
 
         // 260920_점령 직후 경계선으로 되돌린다(2-3) — 내부에 남으면 월보를 공짜로 얻은 셈이 된다

@@ -59,8 +59,8 @@ namespace Client
         private CCameraShake        m_cCameraShake  = new CCameraShake();
         // 260916_점령 펀치줌. Shake와 같은 계산을 쓰지만 위치가 아니라 크기를 건드린다.
         private CCameraPunch        m_cCameraPunch  = new CCameraPunch();
-        // 260920_선 길이에 따라 시야를 넓힌다(2-10)
-        private CCameraTrailZoom    m_cTrailZoom    = new CCameraTrailZoom();
+        // 260920_선 길이 · 점령률에 따라 시야를 넓힌다(2-10)
+        private CCameraZoomOut      m_cZoomOut      = new CCameraZoomOut();
         private Camera              m_cCamera;
         // 260916_효과음. 스테이지가 아니라 앱 전체 수명이라 스테이지마다 다시 만들지 않는다(2-12).
         private CAudio_Manager      m_cAudioManager = new CAudio_Manager();
@@ -170,8 +170,10 @@ namespace Client
             if (fZoom < 1f)
                 m_cCamera.orthographicSize *= fZoom;
 
-            // 260920_그리는 선이 길수록 물러난다. 펀치와 같은 자리에서 곱하므로 둘이 서로를 몰라도 겹친다.
-            m_cCamera.orthographicSize *= m_cTrailZoom.Tick(m_cStageManager.TRAIL_COUNT, Time.deltaTime);
+            // 260920_그리는 선이 길수록 · 점령한 땅이 넓을수록 물러난다.
+            // 펀치와 같은 자리에서 곱하므로 둘이 서로를 몰라도 겹친다.
+            m_cCamera.orthographicSize *= m_cZoomOut.Tick(m_cStageManager.TRAIL_COUNT,
+                                                          m_cStageManager.OWNED_RATIO, Time.deltaTime);
         }
 
         // 260916_카메라 흔들림 / 펀치줌 / 효과음 / 햅틱. 같은 이벤트를 여러 손맛 시스템이 함께 듣는다 —
@@ -759,9 +761,9 @@ namespace Client
             m_cCameraPunch.Set_Enabled(m_cConfig.CAMERA_PUNCH_ENABLED);
             m_cCameraPunch.Reset();
 
-            m_cTrailZoom.Initialize(m_cConfig.TRAIL_ZOOM_PER_CELL, m_cConfig.TRAIL_ZOOM_MAX,
-                                    m_cConfig.TRAIL_ZOOM_FOLLOW_TIME);
-            m_cTrailZoom.Set_Enabled(m_cConfig.TRAIL_ZOOM_ENABLED);
+            m_cZoomOut.Initialize(m_cConfig.TRAIL_ZOOM_PER_CELL, m_cConfig.ZOOM_PER_OWNED_RATIO,
+                                  m_cConfig.TRAIL_ZOOM_MAX, m_cConfig.TRAIL_ZOOM_FOLLOW_TIME);
+            m_cZoomOut.Set_Enabled(m_cConfig.TRAIL_ZOOM_ENABLED);
 
             Vector2 vStart = m_cStageManager.PLAYER != null
                            ? (Vector2)m_cStageManager.PLAYER.transform.position
