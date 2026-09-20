@@ -568,6 +568,21 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 292507b0617413947b2199845e2dc182, type: 3}
   - {fileID: 21300000, guid: 25a48788c21a07b418c15930e59f1b3c, type: 3}
   - {fileID: 21300000, guid: 68fc9db2adbf9f44a841cd25380918cc, type: 3}
+  m_arrRunSkillIcon:
+  - {fileID: 21300000, guid: 977093ee1d24ecc498dc66efaf123dcb, type: 3}
+  - {fileID: 21300000, guid: ae9eb02ae4d95bd42854731c53c32498, type: 3}
+  - {fileID: 21300000, guid: 89c915bb6dd122c4c91cfebc9f5e5c91, type: 3}
+  - {fileID: 21300000, guid: 3c41ac7f7035e23429ab574ef2512c28, type: 3}
+  - {fileID: 21300000, guid: 81cd6a10963882547bb947aa861b071e, type: 3}
+  - {fileID: 21300000, guid: 3758192f785f4624f8a9eae1b818b147, type: 3}
+  - {fileID: 21300000, guid: 3d62748daefab7c438acb77c5ad23adb, type: 3}
+  - {fileID: 21300000, guid: aa19c7fece6a9b748b8f4e68a67e00dc, type: 3}
+  - {fileID: 21300000, guid: 47ccde68eb64e6f459d298c570ce1712, type: 3}
+  - {fileID: 21300000, guid: d61c34b38fa21084f806acf812617a85, type: 3}
+  - {fileID: 21300000, guid: 2801ed5e319b03046803993e2834908e, type: 3}
+  - {fileID: 21300000, guid: 62ba7762aecc8d547b27b528a528d71d, type: 3}
+  - {fileID: 21300000, guid: 9a034b9e53e2e0048bcd9ceeb65a6404, type: 3}
+  - {fileID: 21300000, guid: e64a1f6965584b74fa9325f004cc59e4, type: 3}
 --- !u!1 &7758002729275111925
 GameObject:
   m_ObjectHideFlags: 0

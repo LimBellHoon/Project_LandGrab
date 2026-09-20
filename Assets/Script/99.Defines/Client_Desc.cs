@@ -168,7 +168,8 @@ namespace Client
     /// <summary> 지금까지 웨이브를 깨서 드러낸 보상 이미지를 훑어보는 화면. 새 저장 데이터 없이 별 기록 + MapInfo를 읽는다. </summary>
     public class CUI_CardDesc : CUIDesc
     {
-        public CCSVData_MapInfo  cMapTable { get; set; }
+        // 260920_카드는 캐릭터에 딸려 있다(CharacterInfo.csv의 strCardTex, 2-17-2)
+        public CCSVData_CharacterInfo cCharacterTable { get; set; }
         public CProgress_Manager cProgress { get; set; }
         // 260918_한 장을 누르면 크게 보기를 연다 — 화면을 여는 것은 CGameManager다(2-7)
         public Action<IReadOnlyList<CCardViewEntry>, int> OnOpenViewer { get; set; }
@@ -176,9 +177,9 @@ namespace Client
         public override void OnReturn()
         {
             base.OnReturn();
-            cMapTable    = null;
-            cProgress    = null;
-            OnOpenViewer = null;
+            cCharacterTable = null;
+            cProgress       = null;
+            OnOpenViewer    = null;
         }
     }
 

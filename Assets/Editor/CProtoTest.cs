@@ -56,6 +56,7 @@ namespace Client
             Test_FieldItem();
             Test_Gauge();
             Test_MoveStyle();
+            Test_CharacterCard();
             Test_Skill();
             Test_Inventory();
             Test_SkillUpgrade();
@@ -942,6 +943,40 @@ namespace Client
             Check("두 번째 구간(15%)", Mathf.Approximately(cTable.Get_Multiplier(0.15f), 1.2f));
             Check("세 번째 구간(80%)", Mathf.Approximately(cTable.Get_Multiplier(0.8f), 5.0f));
             Check("표보다 큰 비율은 마지막 구간", Mathf.Approximately(cTable.Get_Multiplier(999f), 5.0f));
+        }
+
+        // 260920_캐릭터별 카드(2-17-2) — 표에 캐릭터를 더하면 카드 화면에 그대로 따라 붙는다
+        private static void Test_CharacterCard()
+        {
+            const string TAB = "\t";
+            string strCsv =
+                  string.Join(TAB, "iCharacterID", "strName", "strPrefabName", "iMaxLevel",
+                                   "fSpeedRateBase", "fSpeedRatePerLevel", "fMaxHpRateBase", "fMaxHpRatePerLevel",
+                                   "fEvasionBonusBase", "fEvasionBonusPerLevel", "strDesc",
+                                   "iFragmentPerClear", "iFragmentCostBase", "iFragmentCostAdd",
+                                   "strStarLevel", "strStarDesc", "eMoveStyle", "strCardTex", "strCardLevel", "NONE") + "\n"
+                + string.Join(TAB, "1", "테스트", "Prefab_A", "10", "1", "0", "1", "0", "0", "0", "",
+                                   "10", "20", "5", "3|6|10", "-", "FOUR_WAY",
+                                   "Tex_A|Tex_B|Tex_C", "1|3|6", "") + "\n"
+                + string.Join(TAB, "2", "카드없음", "Prefab_B", "10", "1", "0", "1", "0", "0", "0", "",
+                                   "10", "20", "5", "3|6|10", "-", "EIGHT_WAY", "", "", "");
+
+            CCSVData_CharacterInfo cTable = new CCSVData_CharacterInfo();
+            cTable.Read_CSVData(new TextAsset(strCsv));
+
+            CCharacterInfo cInfo = cTable.Get_Info(1);
+            Check("카드 목록을 읽는다", cInfo != null && cInfo.CARD_COUNT == 3);
+            Check("첫 장 이름", cInfo.Get_CardTex(0), "Tex_A");
+            Check("해금 레벨을 읽는다", cInfo.Get_CardUnlockLevel(2), 6);
+            Check("안 적은 장은 1레벨로 본다", cTable.Get_Info(2).Get_CardUnlockLevel(0), 1);
+
+            // 미보유(레벨 0)면 한 장도 안 열린다 — 보유해야 첫 장이 열린다
+            Check("미보유는 한 장도 없다", CUI_Card.Count_OpenCard(cInfo, 0), 0);
+            Check("1레벨이면 첫 장만", CUI_Card.Count_OpenCard(cInfo, 1), 1);
+            Check("3레벨이면 두 장", CUI_Card.Count_OpenCard(cInfo, 3), 2);
+            Check("만렙이면 전부", CUI_Card.Count_OpenCard(cInfo, 10), 3);
+            Check("카드가 없는 캐릭터는 0장", CUI_Card.Count_OpenCard(cTable.Get_Info(2), 10), 0);
+            Check("이동 방식 열이 밀리지 않았다", cTable.Get_Info(2).eMoveStyle == MOVE_STYLE.EIGHT_WAY);
         }
 
         // 260920_캐릭터별 이동 방식(2-22) — 대각선은 가로 · 세로 두 칸으로 밟는다

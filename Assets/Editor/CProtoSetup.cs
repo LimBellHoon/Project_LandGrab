@@ -1664,9 +1664,119 @@ namespace Client
         }
 
         // 260918_\uc218\uc9d1\ud55c \uce74\ub4dc(\uc6e8\uc774\ube0c \ubcf4\uc0c1) \uac24\ub7ec\ub9ac. \ubaa9\ub85d\uc740 MapInfo.csv + \ubcc4 \uae30\ub85d\uc744 \ubcf4\uace0 \ub7f0\ud0c0\uc784\uc5d0 \ub9cc\ub4e0\ub2e4.
+        // 260920_카드 화면 — 위 서브 탭 둘([캐릭터] / [갤러리]) + 격자(2-17-2).
+        // 두 탭이 같은 격자 · 같은 칸 모양을 쓴다. 무엇을 채울지는 CUI_Card가 정한다.
         private static void Create_CardUI()
         {
-            Create_ListUI<CUI_Card>(UI_CARD_GALLERY, PATH_PREFAB_UI_CARD_GALLERY, "\uce74\ub4dc", 130f);
+            GameObject goRoot = Create_UIObject(UI_CARD_GALLERY, null);
+            Stretch_Full(goRoot.GetComponent<RectTransform>());
+
+            GameObject goTitle = Create_UIObject("Title", goRoot.transform);
+            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
+            trTitle.anchorMin = new Vector2(0f, 1f);
+            trTitle.anchorMax = new Vector2(1f, 1f);
+            trTitle.pivot     = new Vector2(0.5f, 1f);
+            trTitle.offsetMin = new Vector2(32f, -90f);
+            trTitle.offsetMax = new Vector2(-32f, -20f);
+            Text txtTitle = Make_Text(goTitle, "카드", 36, TextAnchor.MiddleLeft);
+
+            // 서브 탭 둘 — 가운데에 나란히. 눌린 쪽 색은 런타임에 CUI_Card가 칠한다.
+            Button btnTabCharacter = Make_SubTab(goRoot.transform, "Btn_TabCharacter", "캐릭터", -130f);
+            Button btnTabGallery   = Make_SubTab(goRoot.transform, "Btn_TabGallery",   "갤러리",  130f);
+
+            // 격자 — 3열. 세로 화면이라 넷을 넘기면 얼굴이 안 읽힌다.
+            GameObject goScroll = Create_UIObject("Scroll", goRoot.transform);
+            RectTransform trScroll = goScroll.GetComponent<RectTransform>();
+            trScroll.anchorMin = new Vector2(0f, 0f);
+            trScroll.anchorMax = new Vector2(1f, 1f);
+            trScroll.offsetMin = new Vector2(24f, 20f);
+            trScroll.offsetMax = new Vector2(-24f, -210f);
+            goScroll.AddComponent<RectMask2D>();
+            ScrollRect cScroll = goScroll.AddComponent<ScrollRect>();
+            cScroll.horizontal = false;
+
+            GameObject goContent = Create_UIObject("Content", goScroll.transform);
+            RectTransform trContent = goContent.GetComponent<RectTransform>();
+            trContent.anchorMin = new Vector2(0f, 1f);
+            trContent.anchorMax = new Vector2(1f, 1f);
+            trContent.pivot     = new Vector2(0.5f, 1f);
+            trContent.offsetMin = Vector2.zero;
+            trContent.offsetMax = Vector2.zero;
+
+            GridLayoutGroup cGrid = goContent.AddComponent<GridLayoutGroup>();
+            cGrid.cellSize        = new Vector2(196f, 276f);
+            cGrid.spacing         = new Vector2(14f, 14f);
+            cGrid.padding         = new RectOffset(6, 6, 6, 6);
+            cGrid.constraint      = GridLayoutGroup.Constraint.FixedColumnCount;
+            cGrid.constraintCount = 3;
+
+            ContentSizeFitter cFitter = goContent.AddComponent<ContentSizeFitter>();
+            cFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            cScroll.content = trContent;
+
+            // 칸 템플릿 — 그림 + 이름 + 오른쪽 위 상태. 꺼 둔 채로 남겨 두고 런타임에 복제한다.
+            GameObject goCell = Create_UIObject("Btn_CellTemplate", goContent.transform);
+            goCell.AddComponent<Image>().color = new Color(0.14f, 0.18f, 0.28f, 1f);
+            Button cCell = goCell.AddComponent<Button>();
+
+            GameObject goPortrait = Create_UIObject("Img_Portrait", goCell.transform);
+            RectTransform trPortrait = goPortrait.GetComponent<RectTransform>();
+            Stretch_Full(trPortrait);
+            trPortrait.offsetMin = new Vector2(6f, 48f);
+            trPortrait.offsetMax = new Vector2(-6f, -6f);
+            RawImage imgPortrait = goPortrait.AddComponent<RawImage>();
+            imgPortrait.raycastTarget = false;
+
+            GameObject goName = Create_UIObject("Txt_Name", goCell.transform);
+            RectTransform trName = goName.GetComponent<RectTransform>();
+            trName.anchorMin = new Vector2(0f, 0f);
+            trName.anchorMax = new Vector2(1f, 0f);
+            trName.pivot     = new Vector2(0.5f, 0f);
+            trName.anchoredPosition = new Vector2(0f, 6f);
+            trName.sizeDelta = new Vector2(-8f, 38f);
+            Make_Text(goName, "이름", 24, TextAnchor.MiddleCenter).raycastTarget = false;
+
+            GameObject goBadge = Create_UIObject("Txt_Badge", goCell.transform);
+            RectTransform trBadge = goBadge.GetComponent<RectTransform>();
+            trBadge.anchorMin = new Vector2(1f, 1f);
+            trBadge.anchorMax = new Vector2(1f, 1f);
+            trBadge.pivot     = new Vector2(1f, 1f);
+            trBadge.anchoredPosition = new Vector2(-8f, -8f);
+            trBadge.sizeDelta = new Vector2(96f, 32f);
+            Make_Text(goBadge, "0/0", 20, TextAnchor.MiddleRight).raycastTarget = false;
+
+            goCell.SetActive(false);
+
+            CUI_Card cUI = goRoot.AddComponent<CUI_Card>();
+            SerializedObject cSerialized = new SerializedObject(cUI);
+            cSerialized.FindProperty("m_trContent").objectReferenceValue       = goContent.transform;
+            cSerialized.FindProperty("m_btnTemplate").objectReferenceValue     = cCell;
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue        = txtTitle;
+            cSerialized.FindProperty("m_btnTabCharacter").objectReferenceValue = btnTabCharacter;
+            cSerialized.FindProperty("m_btnTabGallery").objectReferenceValue   = btnTabGallery;
+            cSerialized.ApplyModifiedPropertiesWithoutUndo();
+
+            PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_CARD_GALLERY);
+            Object.DestroyImmediate(goRoot);
+        }
+
+        /// <summary> 화면 위쪽에 나란히 놓는 서브 탭 버튼. </summary>
+        private static Button Make_SubTab(Transform trParent, string strName, string strLabel, float fOffsetX)
+        {
+            GameObject goTab = Create_UIObject(strName, trParent);
+            RectTransform trTab = goTab.GetComponent<RectTransform>();
+            trTab.anchorMin = new Vector2(0.5f, 1f);
+            trTab.anchorMax = new Vector2(0.5f, 1f);
+            trTab.pivot     = new Vector2(0.5f, 1f);
+            trTab.anchoredPosition = new Vector2(fOffsetX, -110f);
+            trTab.sizeDelta = new Vector2(240f, 76f);
+            goTab.AddComponent<Image>().color = new Color(0.16f, 0.26f, 0.34f);
+
+            GameObject goLabel = Create_UIObject("Label", goTab.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Make_Text(goLabel, strLabel, 28, TextAnchor.MiddleCenter).raycastTarget = false;
+
+            return goTab.AddComponent<Button>();
         }
 
 

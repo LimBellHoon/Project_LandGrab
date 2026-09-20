@@ -8,27 +8,39 @@ using Engine;
 namespace Client
 {
     // 260918_카드 갤러리 (로비의 별도 탭 — LOBBY_TAB.CARD)
+    // 260920_캐릭터 수집 화면으로 다시 짰다 — 위 서브 탭 둘 + 격자(2-17-2)
     /// <summary>
-    /// 지금까지 웨이브를 깨서 드러낸 보상 이미지를 훑어보기만 하는 화면이다. 장착 개념이 없어
-    /// 가방(CUI_Inventory)과 따로 뺐다.
+    /// [캐릭터] 탭은 캐릭터를 그림 + 이름으로 늘어놓는다. **못 가진 캐릭터도 어둡게 보여 준다** —
+    /// 무엇을 모을 수 있는지 보여야 모으고 싶어진다(가방 캐릭터 탭과 같은 결, 2-17).
+    /// [갤러리] 탭은 지금까지 연 카드를 전부 격자로 편다.
     ///
-    /// 새 저장 데이터를 만들지 않는다 — 별(=달성한 웨이브 수, 2-7)과 MapInfo.csv의 이미지 스택(2-5)을
-    /// 그대로 읽어, 별 개수만큼의 웨이브 보상이 이미 드러난 것으로 본다.
-    /// 목록은 CUI_Upgrade와 같은 방식으로 프리팹의 비활성 템플릿을 복제해 만든다.
+    /// **카드는 캐릭터에 딸려 있다**(`CharacterInfo.csv`의 `strCardTex`). 표에 캐릭터를 한 줄 더하면
+    /// 두 탭 모두에 그대로 따라 붙는다 — 이 클래스는 고치지 않는다.
+    /// 무엇을 보여 줄지는 표가, 크게 보기는 `CUI_CardViewer`가 맡는다(2-7).
     /// </summary>
     public class CUI_Card : CUI
     {
         [SerializeField] private Transform  m_trContent;
-        [SerializeField] private Button     m_btnTemplate;      // 복제 원본 (항상 비활성)
+        [SerializeField] private Button     m_btnTemplate;      // 격자 칸 템플릿 (항상 비활성)
         [SerializeField] private Text       m_txtTitle;
+        // 260920_위 서브 탭 둘. 눌린 쪽만 밝게 칠한다.
+        [SerializeField] private Button     m_btnTabCharacter;
+        [SerializeField] private Button     m_btnTabGallery;
+
+        private static readonly Color COLOR_TAB_ON    = new Color(0.25f, 0.80f, 0.95f);
+        private static readonly Color COLOR_TAB_OFF   = new Color(0.16f, 0.26f, 0.34f);
+        // 못 가졌거나 아직 안 열린 칸 — 지우지 않고 어둡게만 둔다
+        private static readonly Color COLOR_CELL_LOCK = new Color(0.35f, 0.38f, 0.45f);
+        private static readonly Color COLOR_CELL_OPEN = new Color(1f, 1f, 1f);
 
         private readonly List<Button> m_lstButton = new List<Button>();
-        // 260918_크게 보기에 넘길 목록. 갤러리에 보이는 순서 그대로다
+        // 크게 보기에 넘길 목록. 화면에 보이는 순서 그대로다
         private readonly List<CCardViewEntry> m_lstEntry = new List<CCardViewEntry>();
         private System.Action<IReadOnlyList<CCardViewEntry>, int> m_OnOpenViewer;
 
-        private CCSVData_MapInfo  m_cMapTable;
-        private CProgress_Manager m_cProgress;
+        private CCSVData_CharacterInfo m_cCharacterTable;
+        private CProgress_Manager      m_cProgress;
+        private CARD_TAB               m_eTab = CARD_TAB.CHARACTER;
 
         #region Engine.CUI
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -43,110 +55,222 @@ namespace Client
 
             if (m_trContent == null || m_btnTemplate == null)
             {
-                Debug.LogError("[CUI_Card] 프리팹에 Content / 버튼 템플릿이 연결돼 있지 않습니다. "
+                Debug.LogError("[CUI_Card] 프리팹에 Content / 칸 템플릿이 연결돼 있지 않습니다. "
                              + "Tools/LandGrab/Setup Assets 를 실행하세요.");
                 return false;
             }
 
-            m_cMapTable    = cDesc.cMapTable;
-            m_cProgress    = cDesc.cProgress;
-            m_OnOpenViewer = cDesc.OnOpenViewer;
+            m_cCharacterTable = cDesc.cCharacterTable;
+            m_cProgress       = cDesc.cProgress;
+            m_OnOpenViewer    = cDesc.OnOpenViewer;
 
             m_btnTemplate.gameObject.SetActive(false);
-            Build_List();
+
+            Bind_Tab(m_btnTabCharacter, CARD_TAB.CHARACTER);
+            Bind_Tab(m_btnTabGallery,   CARD_TAB.GALLERY);
+
+            Set_Tab(CARD_TAB.CHARACTER);
             return true;
         }
 
         public override void Hide()
         {
             Clear_List();
-            m_cMapTable    = null;
-            m_cProgress    = null;
-            m_OnOpenViewer = null;
+            m_cCharacterTable = null;
+            m_cProgress       = null;
+            m_OnOpenViewer    = null;
 
             base.Hide();
         }
         #endregion Engine.CUI
 
+        private void Bind_Tab(Button cButton, CARD_TAB eTab)
+        {
+            if (cButton == null)
+                return;
+
+            cButton.onClick.RemoveAllListeners();
+            cButton.onClick.AddListener(() => Set_Tab(eTab));
+        }
+
+        private void Set_Tab(CARD_TAB eTab)
+        {
+            m_eTab = eTab;
+
+            Paint_Tab(m_btnTabCharacter, eTab == CARD_TAB.CHARACTER);
+            Paint_Tab(m_btnTabGallery,   eTab == CARD_TAB.GALLERY);
+
+            Build_List();
+        }
+
+        private static void Paint_Tab(Button cButton, bool bOn)
+        {
+            Image cImage = cButton != null ? cButton.GetComponent<Image>() : null;
+            if (cImage != null)
+                cImage.color = bOn == true ? COLOR_TAB_ON : COLOR_TAB_OFF;
+        }
+
         private void Build_List()
         {
             Clear_List();
 
-            if (m_cMapTable == null || m_cProgress == null)
+            if (m_cCharacterTable == null || m_cProgress == null)
             {
-                Set_Title("MapInfo.csv를 읽지 못했습니다");
+                Set_Title("CharacterInfo.csv를 읽지 못했습니다");
                 return;
             }
 
-            IReadOnlyList<CMapInfo> lstMap = m_cMapTable.ALL;
-            int iCount = 0;
+            if (m_eTab == CARD_TAB.CHARACTER)
+                Build_Characters();
+            else
+                Build_Gallery();
+        }
 
-            for (int i = 0; i < lstMap.Count; ++i)
+        // ── [캐릭터] 탭 — 못 가진 캐릭터도 어둡게 보여 준다
+        private void Build_Characters()
+        {
+            IReadOnlyList<CCharacterInfo> lstInfo = m_cCharacterTable.ALL;
+            int iOwned = 0;
+
+            for (int i = 0; i < lstInfo.Count; ++i)
             {
-                CMapInfo cMapInfo = lstMap[i];
-                // 260918_별 = 달성한 웨이브 수(2-7) — 그만큼의 보상 이미지가 이미 드러난 것이다.
-                int iStar = m_cProgress.Get_Star(cMapInfo.iMapID);
+                CCharacterInfo cInfo = lstInfo[i];
+                if (cInfo == null)
+                    continue;
 
-                for (int iWave = 1; iWave <= iStar; ++iWave)
+                int  iLevel = m_cProgress.Get_CharacterLevel(cInfo.iCharacterID);
+                bool bOwned = iLevel > 0;
+                if (bOwned == true)
+                    ++iOwned;
+
+                // 대표 그림은 그 캐릭터의 첫 카드다. 못 가졌으면 그림은 그대로 두고 어둡게만 칠한다
+                // (실루엣처럼 보여야 '무엇을 모을 수 있는지'가 읽힌다).
+                int iOpen = Count_OpenCard(cInfo, iLevel);
+                GameObject goCell = Make_Cell(cInfo.strName, cInfo.Get_CardTex(0), bOwned,
+                                              bOwned == true ? $"{iOpen}/{cInfo.CARD_COUNT}" : "미보유");
+
+                Button cButton = goCell.GetComponent<Button>();
+                CCharacterInfo cPicked = cInfo;
+                cButton.onClick.AddListener(() => Open_CharacterCards(cPicked));
+            }
+
+            Set_Title($"카드   (캐릭터 {iOwned}/{lstInfo.Count})");
+        }
+
+        // ── [갤러리] 탭 — 지금까지 연 카드를 전부 편다
+        private void Build_Gallery()
+        {
+            IReadOnlyList<CCharacterInfo> lstInfo = m_cCharacterTable.ALL;
+            int iOpen  = 0;
+            int iTotal = 0;
+
+            for (int i = 0; i < lstInfo.Count; ++i)
+            {
+                CCharacterInfo cInfo = lstInfo[i];
+                if (cInfo == null)
+                    continue;
+
+                int iLevel = m_cProgress.Get_CharacterLevel(cInfo.iCharacterID);
+
+                for (int iCard = 0; iCard < cInfo.CARD_COUNT; ++iCard)
                 {
-                    string strTex = cMapInfo.Get_RevealTex(iWave);
-                    if (string.IsNullOrEmpty(strTex) == true)
+                    ++iTotal;
+
+                    bool   bOpen   = cInfo.Is_CardUnlocked(iLevel, iCard);
+                    string strTex  = cInfo.Get_CardTex(iCard);
+                    string strName = $"{cInfo.strName}  {iCard + 1}";
+
+                    if (bOpen == true)
+                        ++iOpen;
+
+                    GameObject goCell = Make_Cell(bOpen == true ? strName : "???", strTex, bOpen,
+                                                  bOpen == true ? string.Empty : $"Lv.{cInfo.Get_CardUnlockLevel(iCard)}");
+
+                    if (bOpen == false)
                         continue;
 
-                    ++iCount;
-                    Make_Row(cMapInfo, iWave, strTex);
+                    // 누르면 크게 보기 — 갤러리 순서 그대로 넘겨 좌우로 넘길 수 있게 한다
+                    int iIndex = m_lstEntry.Count;
+                    m_lstEntry.Add(new CCardViewEntry { strTexName = strTex, strCaption = strName });
+                    goCell.GetComponent<Button>().onClick.AddListener(() => m_OnOpenViewer?.Invoke(m_lstEntry, iIndex));
                 }
             }
 
-            Set_Title(iCount > 0 ? $"카드   (모은 카드 {iCount}장)"
-                                 : "카드   (스테이지에서 웨이브를 깨면 여기 모입니다)");
+            Set_Title($"카드   (모은 카드 {iOpen}/{iTotal}장)");
         }
 
-        private void Make_Row(CMapInfo cMapInfo, int iWave, string strTexName)
+        /// <summary> 캐릭터 한 명의 카드만 크게 보기로 연다. 아직 안 열린 장은 넘기지 않는다. </summary>
+        private void Open_CharacterCards(CCharacterInfo cInfo)
         {
-            GameObject goButton = Instantiate(m_btnTemplate.gameObject, m_trContent);
-            goButton.name = $"Btn_Card_{cMapInfo.iMapID}_{iWave}";
-            goButton.SetActive(true);
-
-            Button cButton = goButton.GetComponent<Button>();
-            m_lstButton.Add(cButton);
-
-            Text txtLabel = goButton.GetComponentInChildren<Text>();
-            string strCaption = $"{cMapInfo.strMapName}   {iWave}웨이브 보상";
-            if (txtLabel != null)
-                txtLabel.text = strCaption;
-
-            Add_Thumbnail(goButton, strTexName);
-
-            // 260918_누르면 크게 보기 — 갤러리 순서 그대로 넘겨 좌우로 넘길 수 있게 한다
-            int iIndex = m_lstEntry.Count;
-            m_lstEntry.Add(new CCardViewEntry { strTexName = strTexName, strCaption = strCaption });
-            cButton.onClick.AddListener(() => m_OnOpenViewer?.Invoke(m_lstEntry, iIndex));
-        }
-
-        // 260918_템플릿에 이미지 자리가 없어 런타임에 하나 붙인다 — 이 화면만을 위해 프리팹을 새로 만들지 않기 위해서다.
-        private static void Add_Thumbnail(GameObject goRow, string strTexName)
-        {
-            Texture texture = CGameInstance.Instance.Get_Texture(strTexName);
-            if (texture == null)
+            if (cInfo == null || m_OnOpenViewer == null)
                 return;
 
-            GameObject goThumb = new GameObject("Thumbnail", typeof(RectTransform));
-            goThumb.transform.SetParent(goRow.transform, false);
+            int iLevel = m_cProgress.Get_CharacterLevel(cInfo.iCharacterID);
+            List<CCardViewEntry> lstEntry = new List<CCardViewEntry>();
 
-            RectTransform trThumb = goThumb.GetComponent<RectTransform>();
-            trThumb.anchorMin        = new Vector2(1f, 0.5f);
-            trThumb.anchorMax        = new Vector2(1f, 0.5f);
-            trThumb.pivot            = new Vector2(1f, 0.5f);
-            trThumb.anchoredPosition = new Vector2(-8f, 0f);
-            trThumb.sizeDelta        = new Vector2(96f, 96f);
+            for (int i = 0; i < cInfo.CARD_COUNT; ++i)
+            {
+                if (cInfo.Is_CardUnlocked(iLevel, i) == false)
+                    continue;
 
-            RawImage imgThumb = goThumb.AddComponent<RawImage>();
-            imgThumb.texture       = texture;
-            imgThumb.raycastTarget = false;
+                lstEntry.Add(new CCardViewEntry
+                {
+                    strTexName = cInfo.Get_CardTex(i),
+                    strCaption = $"{cInfo.strName}  {i + 1}",
+                });
+            }
+
+            if (lstEntry.Count <= 0)
+                return;
+
+            m_OnOpenViewer.Invoke(lstEntry, 0);
         }
 
-        // 260918_클라우드 작업에서 호출만 있고 정의가 빠져 컴파일되지 않았다 — CUI_Inventory와 같은 모양으로 채웠다.
+        public static int Count_OpenCard(CCharacterInfo cInfo, int iLevel)
+        {
+            if (cInfo == null)
+                return 0;
+
+            int iCount = 0;
+            for (int i = 0; i < cInfo.CARD_COUNT; ++i)
+            {
+                if (cInfo.Is_CardUnlocked(iLevel, i) == true)
+                    ++iCount;
+            }
+
+            return iCount;
+        }
+
+        // 칸 하나 — 그림 · 이름 · 오른쪽 아래 상태. 두 탭이 같은 모양을 쓴다.
+        private GameObject Make_Cell(string strName, string strTexName, bool bOpen, string strBadge)
+        {
+            GameObject goCell = Instantiate(m_btnTemplate.gameObject, m_trContent);
+            goCell.name = $"Cell_{strName}";
+            goCell.SetActive(true);
+            m_lstButton.Add(goCell.GetComponent<Button>());
+
+            Set_Text(goCell, "Txt_Name",  strName);
+            Set_Text(goCell, "Txt_Badge", strBadge);
+
+            Transform trImage = goCell.transform.Find("Img_Portrait");
+            RawImage cImage = trImage != null ? trImage.GetComponent<RawImage>() : null;
+            if (cImage != null)
+            {
+                cImage.texture = CGameInstance.Instance.Get_Texture(strTexName);
+                cImage.color   = bOpen == true ? COLOR_CELL_OPEN : COLOR_CELL_LOCK;
+            }
+
+            return goCell;
+        }
+
+        private static void Set_Text(GameObject goCell, string strPath, string strValue)
+        {
+            Transform trPart = goCell.transform.Find(strPath);
+            Text cText = trPart != null ? trPart.GetComponent<Text>() : null;
+            if (cText != null)
+                cText.text = strValue;
+        }
+
         private void Set_Title(string strTitle)
         {
             if (m_txtTitle != null)

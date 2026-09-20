@@ -153,7 +153,7 @@ CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 | `RunSkillInfo.csv` | `CCSVData_RunSkillInfo` | 런 스킬 — 해금 · 레벨 · 투사체 무기 열 (2-11-1, 2-11-2) |
 | `AwakenInfo.csv` | `CCSVData_AwakenInfo` | 런 스킬 각성 — 액티브 + 짝 패시브 (2-11-2) |
 | `GachaInfo.csv` | `CCSVData_GachaInfo` | 장비 뽑기 — 비용 · 중복 환급 비율 (2-17-3) |
-| `CharacterInfo.csv` | `CCSVData_CharacterInfo` | 캐릭터 — 스킨 프리팹 · 레벨별 스탯 배율 (2-17) |
+| `CharacterInfo.csv` | `CCSVData_CharacterInfo` | 캐릭터 — 스킨 · 스탯 배율 · 이동 방식 · 카드 목록 (2-17, 2-22, 2-17-2) |
 | `CaptureRewardInfo.csv` | `CCSVData_CaptureRewardInfo` | 점령 재화 배율 — 한 번에 닫은 도형의 맵 대비 비율 구간별 (2-18) |
 | `FieldItemInfo.csv` | `CCSVData_FieldItemInfo` | 맵 위 상호작용 아이템 — 종류 · 가중치 · 수치 (2-20) |
 
@@ -1142,11 +1142,25 @@ CProgress_Manager.Try_Gacha → Pay(iCost) → EquipInfo.iGachaWeight로 하나 
 LOBBY_TAB.CARD → CGameManager.Open_TabCard → CUI_Card
 ```
 
-- **새 저장 데이터를 만들지 않았다** — `CProgress_Manager.Get_Star(iMapID)`(별 = 달성한 웨이브 수,
-  2-7)와 `CMapInfo.Get_RevealTex(iWave)`(2-5)를 그대로 읽어, 별 개수만큼의 웨이브 보상이 이미
-  드러난 것으로 본다
-- 썸네일은 `CGameInstance.Get_Texture`로 얻은 텍스처를 `RawImage`로 행마다 런타임에 하나씩
-  붙인다(목록 템플릿에 이미지 자리가 없어서)
+#### 260920_캐릭터 수집 화면으로 다시 짰다 — 서브 탭 둘 + 격자
+레퍼런스 게임의 캐릭터 수집 화면을 따라 목록형에서 격자형으로 바꿨다. 위에 서브 탭이 둘 있다(`CARD_TAB`).
+
+```
+[캐릭터]  캐릭터를 그림 + 이름으로 늘어놓는다. 누르면 그 캐릭터의 카드만 크게 보기로 넘긴다
+[갤러리]  지금까지 연 카드를 전부 격자로 편다. 누르면 전체 순서 그대로 크게 보기
+```
+
+- **카드는 캐릭터에 딸려 있다** — `CharacterInfo.csv`의 `strCardTex`(그림 목록) · `strCardLevel`(각 장이 열리는 레벨).
+  **표에 캐릭터를 한 줄 더하면 두 탭에 그대로 따라 붙는다** — `CUI_Card`는 고치지 않는다
+- 한 장이 열리는 조건은 `Is_CardUnlocked` 한곳이다 — **그 캐릭터를 갖고 있고(레벨 1 이상), 레벨이 그 장의 해금 레벨 이상**.
+  즉 캐릭터를 키우면 카드가 한 장씩 열린다
+- **못 가진 캐릭터 · 아직 안 열린 카드도 어둡게 보여 준다**(`COLOR_CELL_LOCK`). 무엇을 모을 수 있는지
+  보여야 모으고 싶어진다 — 가방 캐릭터 탭과 같은 결(2-17)
+- 칸 모양은 두 탭이 같다(`Img_Portrait` · `Txt_Name` · `Txt_Badge`) — 캐릭터 탭은 뱃지에 `연 장수/전체`,
+  갤러리 탭은 잠긴 칸에 `Lv.N`을 적는다
+- 격자는 3열이다. 세로 화면이라 넷을 넘기면 얼굴이 안 읽힌다
+- 예전에는 맵의 웨이브 보상 이미지(`Get_RevealTex`)를 별 개수만큼 보여 줬다. 카드의 주인이 맵에서
+  캐릭터로 바뀌면서 `CUI_CardDesc`도 `cMapTable` 대신 `cCharacterTable`을 받는다
 - 260918_**한 장을 누르면 크게 보기**(`CUI_CardViewer`, `Prefab_UI_CardViewer`, Popup 캔버스)가 화면 전체로 뜬다.
   갤러리 순서 그대로 **좌우로 밀거나 양옆 버튼으로 넘긴다**(화면 너비 8% 넘게 밀어야 넘어간다).
   끝에서 반대쪽으로 돌아가지 않는다. 여닫기는 `CGameManager.Open_CardViewer`/`Close_CardViewer`(2-7) —

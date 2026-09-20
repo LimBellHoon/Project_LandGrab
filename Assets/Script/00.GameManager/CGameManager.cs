@@ -596,9 +596,9 @@ namespace Client
             CUI_CardDesc cDesc = new CUI_CardDesc
             {
                 eObjectType = OBJECT_TYPE.UI_MAIN,
-                cMapTable    = m_cMapTable,
-                cProgress    = m_cProgressManager,
-                OnOpenViewer = Open_CardViewer,
+                cCharacterTable = m_cCharacterTable,
+                cProgress       = m_cProgressManager,
+                OnOpenViewer    = Open_CardViewer,
             };
 
             m_cTabUI = m_cGameInstance.Open_UI<CUI_Card>(cDesc, trParent);

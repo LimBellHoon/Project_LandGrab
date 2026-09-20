@@ -36,6 +36,24 @@ namespace Client
         // 260920_이 캐릭터의 이동 방식(2-22). 8방향은 한 번에 두 칸을 밟아 빠르므로 속도 배율을 낮게 잡는다
         public MOVE_STYLE eMoveStyle;
 
+        // 260920_이 캐릭터의 카드(일러스트) 목록과, 각 장이 열리는 레벨 (2-17-2)
+        // 캐릭터를 표에 한 줄 더하면 카드 화면에도 그대로 따라 붙는다 — UI 코드는 건드리지 않는다.
+        public List<string> lstCardTex   = new List<string>();
+        public List<int>    lstCardLevel = new List<int>();
+
+        public int CARD_COUNT => lstCardTex.Count;
+
+        public string Get_CardTex(int iIndex)
+            => iIndex >= 0 && iIndex < lstCardTex.Count ? lstCardTex[iIndex] : string.Empty;
+
+        /// <summary> 그 장이 열리는 레벨. 안 적었으면 1레벨(보유하면 바로)로 본다. </summary>
+        public int Get_CardUnlockLevel(int iIndex)
+            => iIndex >= 0 && iIndex < lstCardLevel.Count ? Mathf.Max(1, lstCardLevel[iIndex]) : 1;
+
+        /// <summary> 레벨 0은 미보유다 — 보유해야 첫 장이 열린다. </summary>
+        public bool Is_CardUnlocked(int iCharacterLevel, int iIndex)
+            => iCharacterLevel > 0 && iCharacterLevel >= Get_CardUnlockLevel(iIndex);
+
         // 260918_성급 스켈레톤 — 화면 틀만 만들어 둔다. 임계 레벨과 설명 텍스트뿐이고
         // 실제 스탯/효과는 아직 어디에도 걸려 있지 않다. 나중에 기획이 확정되면
         // Get_SpeedRate 등과 같은 자리에 실제 배율을 추가하면 된다.
@@ -119,6 +137,8 @@ namespace Client
                 iFragmentCostBase     = CCSV_Utility.To_Int(arrField, 12, 20),
                 iFragmentCostAdd      = CCSV_Utility.To_Int(arrField, 13, 5),
                 eMoveStyle            = CCSV_Utility.To_Enum(arrField, 16, MOVE_STYLE.FOUR_WAY),
+                lstCardTex            = CCSV_Utility.To_List(arrField, 17),
+                lstCardLevel          = CCSV_Utility.To_IntList(arrField, 18),
                 lstStarLevel          = CCSV_Utility.To_IntList(arrField, 14),
                 lstStarDesc           = CCSV_Utility.To_List(arrField, 15),
             };
