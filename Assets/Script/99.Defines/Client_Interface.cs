@@ -50,6 +50,12 @@ namespace Client
         /// <summary> 무작위 미점령 칸에 영혼 하나를 떨어뜨린다. </summary>
         void Spawn_Soul();
 
+        // 260921_분신(CRunSkillEffect_Decoy) — 어그로만 끄는 허수아비. 생성 · 수명 · 어그로는 스테이지가 본다.
+        /// <param name="vDir"> 달려 나갈 방향 </param>
+        /// <param name="fDuration"> 살아 있는 시간(초) </param>
+        /// <returns> 내보냈으면 true (프리팹이 없거나 이미 있으면 false) </returns>
+        bool Spawn_Decoy(Vector2 vPos, Vector2 vDir, float fDuration);
+
         // 260917_투사체 무기(CRunSkillEffect_Weapon). 몬스터 목록과 탄 풀은 스테이지가 들고 있다.
         /// <summary> 조준할 몬스터. 살아 있는 몬스터가 없으면 null. </summary>
         IImpactTarget Find_Enemy(Vector2 vFrom, TARGET_FIND eFind);

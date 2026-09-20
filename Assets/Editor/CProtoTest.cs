@@ -57,6 +57,8 @@ namespace Client
             Test_Gauge();
             Test_MoveStyle();
             Test_TrailZoom();
+            Test_MoveSkill();
+            Test_SpiralMove();
             Test_TrailHitRange();
             Test_SnapToBoundary();
             Test_StartArea();
@@ -217,12 +219,19 @@ namespace Client
             Check("점령 후 위치", cMove.CUR_CELL == new Vector2Int(3, 0));
 
             Check("점령지 한가운데는 경계 아님", cGrid.Is_Boundary(new Vector2Int(6, 2)) == false);
-            Check("점령지에 닿은 테두리도 내부가 됨", cGrid.Is_Boundary(new Vector2Int(4, 0)) == false);
+            // 260921_맵 끝에 닿은 칸도 '선'이다 — 더 먹을 것이 없는 쪽이라 여기도 영토의 가장자리다.
+            // 예전에는 맵 밖을 점령지로 세어 이 줄이 통째로 내부가 됐고, 가장자리를 따라 걸을 수 없었다.
+            Check("맵 끝에 닿은 점령지도 경계", cGrid.Is_Boundary(new Vector2Int(4, 0)));
             Check("현재 칸은 경계", cGrid.Is_Boundary(new Vector2Int(3, 0)));
 
-            // 오른쪽은 점령지 내부 → 가로지를 수 없다 (선을 타고 위로 우회한다)
+            // 260921_가장자리를 따라 걷는다 (예전에는 여기서 막혔다)
             cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
-            Check("점령지 내부로 진입 차단", cMove.CUR_CELL != new Vector2Int(4, 0));
+            Check("맵 가장자리를 따라 이동 가능", cMove.CUR_CELL == new Vector2Int(4, 0));
+
+            // 점령지 '내부'는 여전히 가로지를 수 없다 — 블록 위쪽 선에서 안으로 들어가 본다
+            cMove.Teleport(new Vector2Int(4, 5));
+            cMove.Tick(1f, MOVE_DIR.DOWN, out Vector2Int _);
+            Check("점령지 내부로 진입 차단", cMove.CUR_CELL != new Vector2Int(4, 4));
 
             // 왼쪽은 아직 미점령 지대와 맞닿은 '선' → 이동 가능
             cMove.Teleport(new Vector2Int(3, 0));
@@ -241,26 +250,22 @@ namespace Client
             Walk_ClosedLoop(cGrid, out CMoveHandler cMove);
             // 이 시점의 점령 모양: 아래 테두리(y=0) 위에 x 3~10 · y 1~5 블록이 얹힌 계단
 
-            // (3,0)에서 오른쪽은 블록 내부 → 블록의 왼쪽 벽을 타고 자동으로 올라간다
-            cMove.Teleport(new Vector2Int(3, 0));
-            for (int i = 0; i < 5; ++i)
-                cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
-
-            Check("막힌 방향 대신 이어지는 선을 따라감", cMove.CUR_CELL == new Vector2Int(3, 5));
-
-            // 블록 꼭대기에 도달하면 원래 누르던 방향으로 자연스럽게 복귀한다
-            cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
-            Check("길이 열리면 원래 방향으로 복귀", cMove.CUR_CELL == new Vector2Int(4, 5));
-
-            cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
-            Check("복귀 후 계속 진행", cMove.CUR_CELL == new Vector2Int(5, 5));
-
-            // 반대쪽도 대칭으로 동작 (블록 오른쪽 벽을 타고 올라감)
-            cMove.Teleport(new Vector2Int(10, 0));
+            // 260921_왼쪽 아래 모서리에서 왼쪽(맵 밖)을 누르면 이어지는 선은 위쪽 하나뿐 → 그쪽으로 따라간다
+            cMove.Teleport(new Vector2Int(0, 0));
             for (int i = 0; i < 5; ++i)
                 cMove.Tick(1f, MOVE_DIR.LEFT, out Vector2Int _);
 
-            Check("반대쪽 벽도 자동 추적", cMove.CUR_CELL == new Vector2Int(10, 5));
+            Check("막힌 방향 대신 이어지는 선을 따라감", cMove.CUR_CELL == new Vector2Int(0, 5));
+
+            cMove.Tick(1f, MOVE_DIR.LEFT, out Vector2Int _);
+            Check("막혀 있는 동안 계속 따라간다", cMove.CUR_CELL == new Vector2Int(0, 6));
+
+            // 반대쪽 모서리도 대칭으로 동작한다
+            cMove.Teleport(new Vector2Int(19, 19));
+            for (int i = 0; i < 5; ++i)
+                cMove.Tick(1f, MOVE_DIR.RIGHT, out Vector2Int _);
+
+            Check("반대쪽 모서리도 자동 추적", cMove.CUR_CELL == new Vector2Int(19, 14));
 
             // 갈림길에서는 멈춰서 플레이어가 고르게 한다 (양쪽 다 선이라 방향을 정할 수 없음)
             cMove.Teleport(new Vector2Int(15, 0));
@@ -979,6 +984,77 @@ namespace Client
             Check("끄면 곧바로 1배", Mathf.Approximately(cZoom.Tick(50, 1f, 0.02f), 1f));
         }
 
+        // 260921_이동 스킬 넷(2-11-3) — 선 긋기 · 방향 전환 · 어그로를 쓰는 스킬들
+        private static void Test_MoveSkill()
+        {
+            // 나선 가속 — 선이 길수록 빨라지고, 상한을 넘지 않는다
+            Check("선이 없으면 배율 1", Mathf.Approximately(CRunSkillEffect_SpiralRush.Get_Scale(0, 0.01f), 1f));
+            Check("10칸이면 10% 빠르게", Mathf.Approximately(CRunSkillEffect_SpiralRush.Get_Scale(10, 0.01f), 1.1f));
+            Check("아무리 길어도 2배까지", Mathf.Approximately(CRunSkillEffect_SpiralRush.Get_Scale(9999, 0.01f), 2f));
+            Check("수치가 0이면 효과 없음", Mathf.Approximately(CRunSkillEffect_SpiralRush.Get_Scale(50, 0f), 1f));
+
+            // 표에 네 줄이 제대로 들어갔는가
+            CCSVData_RunSkillInfo cTable = Load_RunSkillTable();
+            RUN_SKILL_TYPE[] arrType =
+            {
+                RUN_SKILL_TYPE.SPIRAL_RUSH, RUN_SKILL_TYPE.GHOST_STEP,
+                RUN_SKILL_TYPE.AFTERIMAGE,  RUN_SKILL_TYPE.DECOY,
+            };
+
+            for (int i = 0; i < arrType.Length; ++i)
+            {
+                CRunSkillInfo cInfo = cTable.Find_ByType(arrType[i]);
+                Check($"{arrType[i]} 표에 있다", cInfo != null);
+                Check($"{arrType[i]}는 이동 테마", cInfo != null && cInfo.eTheme == PICK_THEME.MOVE);
+                Check($"{arrType[i]} 효과 모듈이 만들어진다", CRunSkillEffect.Create(arrType[i]) != null);
+            }
+
+            // 잔상은 레벨이 오를수록 쿨이 짧아진다 — 무적 시간이 아니라 빈도가 는다
+            CRunSkillInfo cAfter = cTable.Find_ByType(RUN_SKILL_TYPE.AFTERIMAGE);
+            Check("잔상 — 레벨이 오르면 쿨이 준다", cAfter.Get_Value(5) < cAfter.Get_Value(1));
+
+            // 분신은 선을 긋는 중에만 나간다 (안전 지대에서는 끌 어그로가 없다)
+            CRunSkillInfo cDecoy = cTable.Find_ByType(RUN_SKILL_TYPE.DECOY);
+            Check("분신 — 레벨이 오르면 오래 남는다", cDecoy.Get_Value(3) > cDecoy.Get_Value(1));
+            Check("분신 — 쿨이 있다", cDecoy.fCool > 0f);
+        }
+
+        // 260921_나선형 이동(2-22) — 멈추지 못하고, 스스로 꺾어 소용돌이를 그린다
+        private static void Test_SpiralMove()
+        {
+            Check("시계 방향으로 꺾는다", CMoveHandler.Turn_Clockwise(MOVE_DIR.UP) == MOVE_DIR.RIGHT
+                                      && CMoveHandler.Turn_Clockwise(MOVE_DIR.RIGHT) == MOVE_DIR.DOWN
+                                      && CMoveHandler.Turn_Clockwise(MOVE_DIR.DOWN) == MOVE_DIR.LEFT
+                                      && CMoveHandler.Turn_Clockwise(MOVE_DIR.LEFT) == MOVE_DIR.UP);
+
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 5);
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, cGrid.START_CENTER + new Vector2Int(0, -5), 100f);
+            cMove.Set_MoveStyle(MOVE_STYLE.SPIRAL);
+
+            // 입력이 없어도 계속 간다 — 나선형은 멈추지 못한다
+            Vector2Int vStart = cMove.CUR_CELL;
+            Step_Until_Arrive(cMove, MOVE_DIR.NONE, out Vector2Int vFirst);
+            Check("입력이 없어도 움직인다", vFirst != vStart);
+
+            // 네 칸마다 스스로 꺾어 방향이 바뀐다
+            MOVE_DIR eDir = cMove.CUR_DIR;
+            bool bTurned = false;
+            for (int i = 0; i < 8; ++i)
+            {
+                Step_Until_Arrive(cMove, MOVE_DIR.NONE, out Vector2Int _);
+                if (cMove.CUR_DIR != eDir)
+                    bTurned = true;
+            }
+            Check("스스로 꺾어 소용돌이를 그린다", bTurned);
+
+            // 입력이 들어오면 그 방향이 우선이다 — 입력은 '언제 꺾을지'다
+            Step_Until_Arrive(cMove, MOVE_DIR.LEFT, out Vector2Int _);
+            Check("입력한 방향이 우선", cMove.CUR_DIR == MOVE_DIR.LEFT);
+        }
+
         // 260920_선 충돌은 몸 크기로 본다 — 중심 한 점으로만 보면 몸이 선을 덮어도 안 죽는다
         private static void Test_TrailHitRange()
         {
@@ -1553,8 +1629,9 @@ namespace Client
 
             // 해금되면 나온다 — 모든 맵을 깼다고 치면 전부가 후보다 (260917_투사체 무기 4종이 늘어 12종)
             // 260918_투사체 무기 4종은 가중치 0으로 뺐다(뱀서라이크가 아니다) — 마비 둘이 더해져 10종
-            List<CRunSkillInfo> lstAll = cTable.Pick_Random(14, eType => 0, iMapID => true);
-            Check("전부 해금되면 가중치 있는 9종이 후보", lstAll.Count, 9);
+            List<CRunSkillInfo> lstAll = cTable.Pick_Random(20, eType => 0, iMapID => true);
+            // 260921_이동 스킬 넷을 더했다(2-11-3)
+            Check("전부 해금되면 가중치 있는 13종이 후보", lstAll.Count, 13);
             Check("빠진 무기는 후보가 아니다", lstAll.Exists(cInfo => cInfo.eType == RUN_SKILL_TYPE.MAGIC_BOLT) == false);
 
             // 이미 만렙이면 후보에서 빠진다
@@ -1897,6 +1974,23 @@ namespace Client
             public CCSVData_ProjectileInfo          cProjectileTable;
 
             public void Spawn_Soul() { }
+
+            // 260921_분신 — 실제로 내보내지 않고 '몇 번 요청됐는지'만 센다(2-11-3)
+            public int     iDecoyCount;
+            public float   fLastDecoyDuration;
+            public Vector2 vLastDecoyDir;
+            public bool    bDecoyAllowed = true;
+
+            public bool Spawn_Decoy(Vector2 vPos, Vector2 vDir, float fDuration)
+            {
+                if (bDecoyAllowed == false)
+                    return false;
+
+                ++iDecoyCount;
+                fLastDecoyDuration = fDuration;
+                vLastDecoyDir      = vDir;
+                return true;
+            }
 
             public float fLastStun;
             public int   iStunCount;

@@ -42,6 +42,12 @@ namespace Client
                 case RUN_SKILL_TYPE.ORBIT:     cEffect = new CRunSkillEffect_Orbit();     break;
                 case RUN_SKILL_TYPE.CLUB:      cEffect = new CRunSkillEffect_Club();      break;
 
+                // 260921_이동 스킬 넷(2-11-3)
+                case RUN_SKILL_TYPE.SPIRAL_RUSH: cEffect = new CRunSkillEffect_SpiralRush(); break;
+                case RUN_SKILL_TYPE.GHOST_STEP:  cEffect = new CRunSkillEffect_GhostStep();  break;
+                case RUN_SKILL_TYPE.AFTERIMAGE:  cEffect = new CRunSkillEffect_Afterimage(); break;
+                case RUN_SKILL_TYPE.DECOY:       cEffect = new CRunSkillEffect_Decoy();      break;
+
                 // 260917_투사체 무기는 전부 같은 모듈이다 — 무엇을 쏠지는 표가 정한다.
                 case RUN_SKILL_TYPE.MAGIC_BOLT:
                 case RUN_SKILL_TYPE.LASER_BEAM:
@@ -547,5 +553,166 @@ namespace Client
         }
 
         private void Spawn_Shot(Vector2 vDir) => m_cHost?.Spawn_PlayerShot(PROJECTILE_ID, m_cOwner.POS, vDir);
+    }
+    // 260921_나선 가속 — 그리는 선이 길수록 빨라진다 (2-11-3)
+    /// <summary>
+    /// 길게 나가는 선택은 그 자체로 도박이다(돌아올 길이 멀어진다). 그 도박에 보상을 준다 —
+    /// 선이 길어질수록 빨라져서, 멀리 나갔다가 돌아오는 마지막 구간이 가장 빠르다.
+    /// 선을 거두면(점령 · 사망) 곧바로 원래 속도로 돌아온다.
+    /// 카메라도 선 길이에 따라 물러나므로(2-10) 빨라지는 것이 화면에서 같이 읽힌다.
+    /// </summary>
+    public class CRunSkillEffect_SpiralRush : CRunSkillEffect
+    {
+        private const float MAX_BONUS = 1.0f;       // 아무리 길어도 2배를 넘지 않는다
+
+        private float m_fPerCell;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+            m_fPerCell = cInfo.Get_Value(iLevel);
+        }
+
+        public override void Tick(float fDeltaTime)
+        {
+            if (m_cOwner == null)
+                return;
+
+            m_cOwner.Set_TrailSpeedScale(Get_Scale(m_cOwner.TRAIL_COUNT, m_fPerCell));
+        }
+
+        public override void Release() => m_cOwner?.Set_TrailSpeedScale(1f);
+
+        /// <summary> 선 길이에 대한 속도 배율. 화면 없이 테스트한다. </summary>
+        public static float Get_Scale(int iTrailCount, float fPerCell)
+        {
+            if (iTrailCount <= 0 || fPerCell <= 0f)
+                return 1f;
+
+            return 1f + Mathf.Min(iTrailCount * fPerCell, MAX_BONUS);
+        }
+    }
+
+    // 260921_유령 걸음 — 선을 긋기 시작하면 잠깐 통과 상태 (2-11-3)
+    /// <summary>
+    /// **가장 위험한 순간은 안전 지대를 벗어나는 그 순간**이다. 경계에 몬스터가 붙어 있으면
+    /// 나가자마자 죽어 아무것도 못 한다. 그래서 나가는 순간에만 짧게 통과 상태를 준다 —
+    /// 쿨타임을 따로 재지 않고 '선 긋기 시작'이 곧 발동 조건이다(CPlayer.OnDrawStart).
+    /// 통과는 기존 무적(Add_Invincible)을 그대로 쓴다 — 몬스터 · 적탄 판정이 모두 무적을 본다.
+    /// </summary>
+    public class CRunSkillEffect_GhostStep : CRunSkillEffect
+    {
+        private float m_fDuration;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+
+            if (m_cOwner != null && iLevel == 1)
+                m_cOwner.OnDrawStart += On_DrawStart;
+
+            m_fDuration = cInfo.Get_Value(iLevel);
+        }
+
+        public override void Release()
+        {
+            if (m_cOwner != null)
+                m_cOwner.OnDrawStart -= On_DrawStart;
+        }
+
+        private void On_DrawStart() => m_cOwner?.Add_Invincible(m_fDuration);
+    }
+
+    // 260921_잔상 — 방향을 꺾는 순간 짧게 무적 (2-11-3)
+    /// <summary>
+    /// 꺾는 순간이 가장 많이 죽는 자리다(속도가 잠깐 죽고, 쫓아오던 몬스터와 거리가 붙는다).
+    /// 다만 **제자리에서 좌우로 비비면 무적이 끊기지 않으므로** 자체 쿨타임을 둔다 —
+    /// 레벨이 오르면 무적이 길어지는 게 아니라 **쿨이 짧아진다**(길어지면 그냥 무적이 된다).
+    /// </summary>
+    public class CRunSkillEffect_Afterimage : CRunSkillEffect
+    {
+        private const float INVINCIBLE_TIME = 0.35f;
+
+        private float m_fCool;
+        private float m_fCoolTimer;
+
+        public float COOL_REMAIN => m_fCoolTimer;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+
+            if (m_cOwner != null && iLevel == 1)
+                m_cOwner.OnTurn += On_Turn;
+
+            m_fCool = Mathf.Max(0.2f, cInfo.Get_Value(iLevel));
+        }
+
+        public override void Tick(float fDeltaTime)
+        {
+            if (m_fCoolTimer > 0f)
+                m_fCoolTimer -= fDeltaTime;
+        }
+
+        public override void Release()
+        {
+            if (m_cOwner != null)
+                m_cOwner.OnTurn -= On_Turn;
+        }
+
+        private void On_Turn()
+        {
+            if (m_fCoolTimer > 0f)
+                return;
+
+            m_fCoolTimer = m_fCool;
+            m_cOwner?.Add_Invincible(INVINCIBLE_TIME);
+        }
+    }
+
+    // 260921_분신 — 어그로를 끄는 허수아비 (2-11-3)
+    /// <summary>
+    /// 이 게임에서 제일 무서운 것은 '돌아오는 길이 막히는 것'이다. 분신은 몬스터의 시선을
+    /// 잠깐 다른 곳으로 끌어 그 길을 연다 — 피해를 주지 않고 **시간을 사는** 스킬이다.
+    ///
+    /// 기본 분신은 플레이어가 가던 방향으로 한 획 달리고 사라진다(적에게 닿아도 사라진다).
+    /// 분신이 맞아도 본체는 멀쩡하다 — 애초에 피해 판정을 대신 받는 것이 목적이다.
+    /// 실제 소환 · 수명 · 어그로는 CStage_Manager가 한곳에서 본다(IRunSkillHost, 2-11-1).
+    /// </summary>
+    public class CRunSkillEffect_Decoy : CRunSkillEffect
+    {
+        private IRunSkillHost m_cHost;
+        private CRunSkillInfo m_cInfo;
+        private float         m_fCoolTimer;
+
+        public float COOL_REMAIN => m_fCoolTimer;
+        public float DURATION    => m_cInfo != null ? m_cInfo.Get_Value(m_iLevel) : 0f;
+
+        public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
+
+        public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+            m_cInfo = cInfo;
+        }
+
+        public override void Tick(float fDeltaTime)
+        {
+            if (m_cHost == null || m_cInfo == null || m_cOwner == null)
+                return;
+
+            if (m_fCoolTimer > 0f)
+            {
+                m_fCoolTimer -= fDeltaTime;
+                return;
+            }
+
+            // 선을 긋는 중에만 내보낸다 — 안전 지대 위에서는 끌 어그로가 없다.
+            if (m_cOwner.IS_DRAWING == false)
+                return;
+
+            if (m_cHost.Spawn_Decoy(m_cOwner.POS, m_cOwner.FACING, DURATION) == true)
+                m_fCoolTimer = m_cInfo.fCool;
+        }
     }
 }

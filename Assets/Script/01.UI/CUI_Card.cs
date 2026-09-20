@@ -45,6 +45,8 @@ namespace Client
         private CCSVData_CharacterInfo m_cCharacterTable;
         private CProgress_Manager      m_cProgress;
         private CARD_TAB               m_eTab = CARD_TAB.CHARACTER;
+        // 260920_[캐릭터] 탭에서 한 명을 고르면 그 캐릭터의 카드 격자로 들어간다(드릴다운). null이면 목록이다.
+        private CCharacterInfo         m_cOpenCharacter;
 
         #region Engine.CUI
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -100,6 +102,7 @@ namespace Client
         private void Set_Tab(CARD_TAB eTab)
         {
             m_eTab = eTab;
+            m_cOpenCharacter = null;        // 탭을 바꾸면 목록으로 돌아온다
 
             Paint_Tab(m_btnTabCharacter, eTab == CARD_TAB.CHARACTER);
             Paint_Tab(m_btnTabGallery,   eTab == CARD_TAB.GALLERY);
@@ -131,10 +134,12 @@ namespace Client
                 return;
             }
 
-            if (m_eTab == CARD_TAB.CHARACTER)
-                Build_Characters();
-            else
+            if (m_eTab == CARD_TAB.GALLERY)
                 Build_Gallery();
+            else if (m_cOpenCharacter != null)
+                Build_CharacterCards(m_cOpenCharacter);
+            else
+                Build_Characters();
         }
 
         // ── [캐릭터] 탭 — 못 가진 캐릭터도 어둡게 보여 준다
@@ -162,6 +167,8 @@ namespace Client
 
                 Button cButton = goCell.GetComponent<Button>();
                 CCharacterInfo cPicked = cInfo;
+                // 260920_누르면 그 캐릭터의 카드 격자로 들어간다 — 곧바로 크게 보기를 띄우면
+                // 무엇을 모았는지 한눈에 볼 수가 없다(대표 사진 한 장만 크게 뜬다).
                 cButton.onClick.AddListener(() => Open_CharacterCards(cPicked));
             }
 
@@ -210,31 +217,47 @@ namespace Client
             Set_Title($"카드   (모은 카드 {iOpen}/{iTotal}장)");
         }
 
-        /// <summary> 캐릭터 한 명의 카드만 크게 보기로 연다. 아직 안 열린 장은 넘기지 않는다. </summary>
+        /// <summary> 그 캐릭터의 카드 격자로 들어간다. 탭을 다시 누르면 목록으로 돌아온다. </summary>
         private void Open_CharacterCards(CCharacterInfo cInfo)
         {
-            if (cInfo == null || m_OnOpenViewer == null)
+            if (cInfo == null)
                 return;
 
+            m_cOpenCharacter = cInfo;
+            Build_List();
+        }
+
+        // ── [캐릭터] 탭 안쪽 — 한 명의 카드만 편다. 잠긴 장도 해금 레벨을 달고 그대로 보여 준다.
+        private void Build_CharacterCards(CCharacterInfo cInfo)
+        {
             int iLevel = m_cProgress.Get_CharacterLevel(cInfo.iCharacterID);
-            List<CCardViewEntry> lstEntry = new List<CCardViewEntry>();
+
+            // 첫 칸은 '뒤로' — 프리팹에 버튼을 새로 만들지 않고 같은 칸 모양을 그대로 쓴다(1-1).
+            GameObject goBack = Make_Cell("◀  목록", string.Empty, true, string.Empty);
+            goBack.GetComponent<Button>().onClick.AddListener(() =>
+            {
+                m_cOpenCharacter = null;
+                Build_List();
+            });
 
             for (int i = 0; i < cInfo.CARD_COUNT; ++i)
             {
-                if (cInfo.Is_CardUnlocked(iLevel, i) == false)
+                bool   bOpen   = cInfo.Is_CardUnlocked(iLevel, i);
+                string strTex  = cInfo.Get_CardTex(i);
+                string strName = $"{cInfo.strName}  {i + 1}";
+
+                GameObject goCell = Make_Cell(bOpen == true ? strName : "???", strTex, bOpen,
+                                              bOpen == true ? string.Empty : $"Lv.{cInfo.Get_CardUnlockLevel(i)}");
+
+                if (bOpen == false)
                     continue;
 
-                lstEntry.Add(new CCardViewEntry
-                {
-                    strTexName = cInfo.Get_CardTex(i),
-                    strCaption = $"{cInfo.strName}  {i + 1}",
-                });
+                int iIndex = m_lstEntry.Count;
+                m_lstEntry.Add(new CCardViewEntry { strTexName = strTex, strCaption = strName });
+                goCell.GetComponent<Button>().onClick.AddListener(() => m_OnOpenViewer?.Invoke(m_lstEntry, iIndex));
             }
 
-            if (lstEntry.Count <= 0)
-                return;
-
-            m_OnOpenViewer.Invoke(lstEntry, 0);
+            Set_Title($"{cInfo.strName}   ({Count_OpenCard(cInfo, iLevel)}/{cInfo.CARD_COUNT}장)");
         }
 
         public static int Count_OpenCard(CCharacterInfo cInfo, int iLevel)

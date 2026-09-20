@@ -22,6 +22,8 @@ namespace Client
         // m_ePendingDir이 그 두 번째 칸이다 — 첫 칸에 도착하면 입력과 상관없이 곧바로 이어 간다.
         private MOVE_STYLE      m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
         private MOVE_DIR        m_ePendingDir = MOVE_DIR.NONE;
+        // 260921_나선형(2-22) — 입력이 없으면 몇 칸마다 스스로 꺾는다. 그 칸 수를 센다.
+        private int             m_iSpiralStep;
 
         // 260916_런 스킬(뱀서라이크) — '월보'/'어디로든 신발'이 걸어 두는 플래그.
         // CPlayer가 CRunSkillEffect를 통해 켜고 끈다. 그리드 규칙 자체(Step_To)는 그대로 두고
@@ -100,6 +102,7 @@ namespace Client
 
             m_vCurCell   = m_vNextCell;
             m_bMoving    = false;
+            ++m_iSpiralStep;        // 260921_나선형이 '몇 칸 갔는지' 세는 자리
             vArrivedCell = m_vCurCell;
             return true;
         }
@@ -109,6 +112,68 @@ namespace Client
         {
             m_eMoveStyle  = eStyle;
             m_ePendingDir = MOVE_DIR.NONE;
+            m_iSpiralStep = 0;
+        }
+
+        // 260921_나선형 — 몇 칸을 가면 스스로 한 번 꺾는가. 소용돌이가 너무 촘촘하면 제자리를 맴돌고,
+        // 너무 성기면 그냥 네모를 그린다. 4칸이 화면에서 '나선'으로 읽히는 최소치였다.
+        private const int SPIRAL_TURN_STEP = 4;
+
+        /// <summary> 시계 방향으로 90도. 나선은 한쪽으로만 꺾어야 소용돌이가 된다. </summary>
+        public static MOVE_DIR Turn_Clockwise(MOVE_DIR eDir)
+        {
+            switch (eDir)
+            {
+                case MOVE_DIR.UP:    return MOVE_DIR.RIGHT;
+                case MOVE_DIR.RIGHT: return MOVE_DIR.DOWN;
+                case MOVE_DIR.DOWN:  return MOVE_DIR.LEFT;
+                case MOVE_DIR.LEFT:  return MOVE_DIR.UP;
+                default:             return MOVE_DIR.NONE;
+            }
+        }
+
+        /// <summary>
+        /// 260921_나선형 캐릭터의 방향 결정(2-22). **멈추지 못한다** — 입력이 없으면 가던 대로 가되,
+        /// SPIRAL_TURN_STEP칸마다 시계 방향으로 한 번 꺾어 소용돌이를 그린다.
+        /// 입력이 들어오면 그 방향이 우선이고 칸 수는 다시 센다 — 입력은 '어디로'가 아니라 '언제 꺾을지'다.
+        /// </summary>
+        private MOVE_DIR Resolve_Spiral(MOVE_DIR eDesiredDir)
+        {
+            if (eDesiredDir != MOVE_DIR.NONE && eDesiredDir != m_eCurDir && Can_Move(eDesiredDir) == true)
+            {
+                m_iSpiralStep = 0;
+                return eDesiredDir;
+            }
+
+            // 첫 걸음 — 갈 수 있는 쪽 아무 데나. 시작 섬 안쪽처럼 막힌 쪽을 고르면 그대로 멈춰 버린다.
+            if (m_eCurDir == MOVE_DIR.NONE)
+                return Find_SpiralDir(MOVE_DIR.UP);
+
+            if (m_iSpiralStep < SPIRAL_TURN_STEP && Can_Move(m_eCurDir) == true)
+                return m_eCurDir;
+
+            m_iSpiralStep = 0;
+            return Find_SpiralDir(Turn_Clockwise(m_eCurDir));
+        }
+
+        /// <summary>
+        /// 시계 방향으로 돌려 가며 갈 수 있는 첫 방향을 찾는다.
+        /// **나선형은 멈추지 못하는 것이 규칙**이라, 막혔다고 서 있으면 조작 자체가 성립하지 않는다.
+        /// 넷 다 막혀 있으면(사방이 벽) 그대로 돌려주고 평소 규칙(Try_StartMove)이 처리한다.
+        /// </summary>
+        private MOVE_DIR Find_SpiralDir(MOVE_DIR eStart)
+        {
+            MOVE_DIR eDir = eStart;
+
+            for (int i = 0; i < 4; ++i)
+            {
+                if (Can_Move(eDir) == true)
+                    return eDir;
+
+                eDir = Turn_Clockwise(eDir);
+            }
+
+            return eStart;
         }
 
         public MOVE_STYLE MOVE_STYLE_NOW => m_eMoveStyle;
@@ -163,6 +228,10 @@ namespace Client
 
                 if (Can_Move(ePending) == true)
                     eDesiredDir = ePending;
+            }
+            else if (m_eMoveStyle == MOVE_STYLE.SPIRAL)
+            {
+                eDesiredDir = Resolve_Spiral(eDesiredDir);
             }
             else
             {

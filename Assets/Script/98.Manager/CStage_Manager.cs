@@ -23,7 +23,8 @@ namespace Client
         private const string PREFAB_WEB         = "Prefab_Web";
         private const string PREFAB_SOUL        = "Prefab_Soul";
         private const string PREFAB_FIELD_ITEM  = "Prefab_FieldItem";
-        private const string PREFAB_SHARD       = "Prefab_Shard";
+        private const string PREFAB_SHARD       = "Prefab_Shard";
+        private const string PREFAB_DECOY       = "Prefab_Decoy";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
 
         // 260920_필드 아이템은 영혼과 같은 반경으로 줍는다(자석 보너스도 그대로 탄다).
@@ -88,6 +89,8 @@ namespace Client
         public void Set_DevMoveStyle(MOVE_STYLE? eStyle) => m_eDevMoveStyle = eStyle;
         // 260920_점령 조각(2-21). 수명이 없어 그 웨이브 동안 맵에 그대로 남는다.
         private readonly List<CShard>       m_lstShard      = new List<CShard>();
+        // 260921_분신(2-11-3). 한 번에 하나만 둔다 — 여러 개면 어그로가 흩어져 무엇을 노리는지 안 읽힌다.
+        private CDecoy                      m_cDecoy;
         private bool                        m_bFieldItemEnabled = true;     // 개발용 스위치(CGameConfig)
         private float                       m_fFieldItemTimer;              // 시간마다 하나씩 떨어뜨리는 타이머
         // 260917_탄 표. 없으면 탄을 쏘지 않을 뿐 판은 돈다.
@@ -400,6 +403,7 @@ namespace Client
             Tick_Soul();
             Tick_FieldItem();
             Tick_Shard();
+            Tick_Decoy();
             Tick_FieldItemSpawn(fDeltaTime);
 
             m_fRemainTime -= fDeltaTime;
@@ -888,6 +892,15 @@ namespace Client
             Collect_All(m_lstSoul);
             Collect_All(m_lstFieldItem);
             Collect_All(m_lstShard);
+            Collect_Decoy();
+        }
+
+        private void Collect_Decoy()
+        {
+            if (m_cDecoy != null)
+                CGameInstance.Instance.Collect_Object(m_cDecoy);
+
+            m_cDecoy = null;
         }
 
         // 목록 세 개가 같은 일을 하므로 하나로 묶는다.
@@ -958,7 +971,8 @@ namespace Client
                     continue;
                 }
 
-                cEnemy.Set_ChaseState(bExposed, vPlayerPos);
+                // 260921_분신이 살아 있으면 몬스터는 분신을 쫓는다(2-11-3).
+                cEnemy.Set_ChaseState(bExposed, m_cDecoy != null ? m_cDecoy.POS : vPlayerPos);
 
                 if (bHit == true)
                     continue;
@@ -1478,6 +1492,61 @@ namespace Client
             Add_Gauge(iGained);
         }
         #endregion 점령 조각 · 게이지 (260920)
+
+        #region 분신 (260921)
+        // 260921_분신은 피해를 주지도 받지도 않는다. 하는 일은 몬스터의 시선을 가져가는 것뿐이다(2-11-3).
+        public bool Spawn_Decoy(Vector2 vPos, Vector2 vDir, float fDuration)
+        {
+            if (m_cDecoy != null || m_cMapInfo == null || Has_Prefab(PREFAB_DECOY) == false)
+                return false;
+
+            CDecoyDesc cDesc = new CDecoyDesc
+            {
+                eObjectType   = OBJECT_TYPE.ENEMY_EFFECT,
+                strPrefabName = PREFAB_DECOY,
+                cGrid         = m_cGrid,
+                vStartPos     = vPos,
+                vDir          = vDir,
+                // 본체보다 조금 빠르게 달려 나가야 몬스터가 분신 쪽으로 방향을 튼다.
+                fSpeed        = m_cMapInfo.fPlayerSpeed * 1.1f,
+                fLifeTime     = fDuration,
+            };
+
+            GameObject goDecoy = CGameInstance.Instance.Reuse_Object(cDesc);
+            if (goDecoy == null)
+                return false;
+
+            m_cDecoy = goDecoy.GetComponent<CDecoy>();
+            return m_cDecoy != null;
+        }
+
+        private void Tick_Decoy()
+        {
+            if (m_cDecoy == null)
+                return;
+
+            if (m_cDecoy.IS_EXPIRED == true)
+            {
+                m_cDecoy = null;
+                return;
+            }
+
+            // 몬스터에게 닿으면 분신만 사라진다 — 본체는 멀쩡하다.
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                if (Vector2.Distance(cEnemy.POS, m_cDecoy.POS) > cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
+                    continue;
+
+                m_cDecoy.Expire();
+                m_cDecoy = null;
+                return;
+            }
+        }
+        #endregion 분신 (260921)
 
         #region 필드 아이템 (260920)
         public void Set_FieldItemTable(CCSVData_FieldItemInfo cTable, bool bEnabled)

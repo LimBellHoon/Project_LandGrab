@@ -57,6 +57,11 @@ namespace Client
         // 질주를 걸어도 다음 프레임에 덮어써져 아무 일도 일어나지 않는다.
         private float           m_fEnvSpeedScale   = 1f;
         private float           m_fSkillSpeedScale = 1f;
+        // 260921_나선 가속(런 스킬) — 그리는 선이 길수록 빨라진다. 다른 갈래에 덮어써지지 않게 따로 든다.
+        private float           m_fTrailSpeedScale = 1f;
+        // 260921_선 긋기 시작 · 방향 전환을 알아채기 위한 직전 상태
+        private bool            m_bWasDrawing;
+        private MOVE_DIR        m_ePrevDir = MOVE_DIR.NONE;
         private float           m_fSkillSpeedTimer;
         // 260912_카드로 얹은 속도. 판이 끝날 때까지 유지되므로 타이머가 없다.
         private float           m_fCardSpeedScale = 1f;
@@ -96,6 +101,20 @@ namespace Client
         public bool             IS_MOVING   => m_cMoveHandler.IS_MOVING;
         /// <summary> 260916_자석 스킬이 걸어 둔 습득 범위(셀). 픽업 쪽이 읽는다. </summary>
         public float            PICKUP_RADIUS => m_fPickupRadius;
+        // 260921_이동 런 스킬이 읽는 상태(2-11-3)
+        /// <summary> 지금 긋고 있는 선의 칸 수. 나선 가속이 본다 </summary>
+        public int              TRAIL_COUNT => m_cGrid != null ? m_cGrid.TRAIL_COUNT : 0;
+        /// <summary> 지금 선을 긋는 중인가(= 안전 지대 밖) </summary>
+        public bool             IS_DRAWING  => m_cGrid != null && m_cGrid.IS_DRAWING;
+        /// <summary> 지금 향하고 있는 방향. 멈춰 있으면 마지막 방향, 그것도 없으면 위쪽 </summary>
+        public Vector2          FACING
+        {
+            get
+            {
+                Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(m_cMoveHandler.CUR_DIR);
+                return vOffset == Vector2Int.zero ? Vector2.up : ((Vector2)vOffset).normalized;
+            }
+        }
 
         /// <summary> 새로 점령한 셀 개수를 전달 </summary>
         public event Action<int> OnCapture;
@@ -108,6 +127,12 @@ namespace Client
         // 260916_OnLifeChanged는 Add_Life에도 불려 '맞았다'만 골라 듣기 어렵다.
         /// <summary> 실제로 맞아 HP가 줄었을 때만. 카메라 흔들림 같은 피격 연출은 이걸 들을 것. </summary>
         public event Action OnDamaged;
+        // 260921_이동 런 스킬이 듣는 훅(2-11-1). 새 이벤트를 뚫은 이유는 기존 훅으로는
+        // '선을 긋기 시작한 순간'과 '방향을 꺾은 순간'을 가려낼 수 없어서다.
+        /// <summary> 안전 지대를 벗어나 선을 긋기 시작한 순간 (유령 걸음) </summary>
+        public event Action OnDrawStart;
+        /// <summary> 이동 방향이 바뀐 순간 (잔상) </summary>
+        public event Action OnTurn;
         // 260920_점령 판정에 몬스터를 더는 넘기지 않는다 — 가두면 무조건 먹고, 갇힌 몬스터는 죽는다(2-3).
 
         #region Engine.CGameObject
@@ -135,6 +160,9 @@ namespace Client
             m_fEnvSpeedScale   = 1f;
             m_fSkillSpeedScale = 1f;
             m_fSkillSpeedTimer = 0f;
+            m_fTrailSpeedScale = 1f;
+            m_bWasDrawing      = false;
+            m_ePrevDir         = MOVE_DIR.NONE;
             m_fCardSpeedScale  = 1f;
             m_cImpact.Clear();
 
@@ -199,6 +227,7 @@ namespace Client
             if (m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out Vector2Int vArrivedCell) == true)
                 Handle_ArriveCell(vArrivedCell);
 
+            Tick_MoveSignal();
             transform.position = m_cMoveHandler.WORLD_POS;
         }
 
@@ -211,6 +240,8 @@ namespace Client
             OnLifeChanged   = null;
             OnDead          = null;
             OnEvade         = null;
+            OnDrawStart     = null;
+            OnTurn          = null;
             OnDamaged       = null;
             m_cGrid         = null;
             m_cImpact.Clear();
@@ -265,6 +296,13 @@ namespace Client
 
             m_fSkillSpeedScale = fScale;
             m_fSkillSpeedTimer = fDuration;
+            Apply_Speed();
+        }
+
+        /// <summary> 260921_나선 가속 — 선 길이에 따른 배율. 1이면 없는 것과 같다. </summary>
+        public void Set_TrailSpeedScale(float fScale)
+        {
+            m_fTrailSpeedScale = Mathf.Max(0.1f, fScale);
             Apply_Speed();
         }
 
@@ -439,7 +477,25 @@ namespace Client
         {
             // 260917_탄 감속이 네 번째 갈래다. 스테이지가 넣는 환경 배율(거미줄)에 덮어써지지 않게 따로 곱한다.
             m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale * m_fCardSpeedScale
-                                 * m_cImpact.SPEED_SCALE;
+                                 * m_fTrailSpeedScale * m_cImpact.SPEED_SCALE;
+        }
+
+        // 260921_선 긋기 시작 · 방향 전환을 알린다. 상태를 비교하는 자리를 한곳에 모아 둔다 —
+        // 규칙(Step_To)과 무관한 '연출/스킬용 신호'라 판정 흐름에 끼워 넣지 않는다.
+        private void Tick_MoveSignal()
+        {
+            bool bDrawing = m_cGrid.IS_DRAWING;
+            if (bDrawing == true && m_bWasDrawing == false)
+                OnDrawStart?.Invoke();
+
+            m_bWasDrawing = bDrawing;
+
+            MOVE_DIR eDir = m_cMoveHandler.CUR_DIR;
+            if (eDir != MOVE_DIR.NONE && eDir != m_ePrevDir && m_ePrevDir != MOVE_DIR.NONE)
+                OnTurn?.Invoke();
+
+            if (eDir != MOVE_DIR.NONE)
+                m_ePrevDir = eDir;
         }
 
         // 260917_번쩍임(WHITE_OUT). 몸 색을 잠깐 밝힌다 — 무적 깜빡임은 알파만 쓰므로 서로 부딪히지 않는다.

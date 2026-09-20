@@ -286,7 +286,11 @@ namespace Client
         // 260902_영토의 '선'만 따라 이동
         /// <summary>
         /// 점령지의 경계('선')인가 — 점령지이면서 이웃 8칸 중 하나라도 점령지가 아닌 칸.
-        /// 맵 밖은 Get_Cell이 OWNED(벽)로 돌려주므로 바깥쪽 테두리는 경계에서 자동 제외된다.
+        ///
+        /// 260920_**맵 밖도 '점령지가 아닌 것'으로 센다.** 예전에는 Get_Cell이 맵 밖을 OWNED(벽)로
+        /// 돌려주는 것을 그대로 써서, 내 땅이 맵 가장자리에 닿으면 그 줄이 통째로 '내부'가 되어
+        /// **가장자리를 따라 걸을 수 없었다**(점령 직후 가장자리에 서면 움직일 곳이 없어 갇혔다).
+        /// 옛 규칙은 외곽 테두리가 통째로 점령지이던 시절의 것인데, 그 테두리는 260920에 없앴다(2-3).
         /// </summary>
         public bool Is_Boundary(int x, int y)
         {
@@ -295,7 +299,13 @@ namespace Client
 
             for (int d = 0; d < DIR8_COUNT; ++d)
             {
-                if (Get_Cell(x + ARR_DIR8_X[d], y + ARR_DIR8_Y[d]) != CELL_STATE.OWNED)
+                int nx = x + ARR_DIR8_X[d];
+                int ny = y + ARR_DIR8_Y[d];
+
+                if (Is_InBounds(nx, ny) == false)
+                    return true;    // 맵 끝 = 더 먹을 것이 없는 쪽. 여기도 내 땅의 '선'이다
+
+                if (m_arrCell[To_Index(nx, ny)] != CELL_STATE.OWNED)
                     return true;
             }
 

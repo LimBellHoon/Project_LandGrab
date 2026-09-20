@@ -347,6 +347,22 @@ namespace Client
         }
     }
 
+    // 260921_분신(CDecoy) — 어그로만 끄는 허수아비. 그리드 규칙을 타지 않아 셀이 아니라 월드 좌표로 움직인다.
+    public class CDecoyDesc : CGameObjectDesc
+    {
+        public CTerritoryGrid   cGrid       { get; set; }
+        public Vector2          vStartPos   { get; set; }
+        public Vector2          vDir        { get; set; }
+        public float            fSpeed      { get; set; }   // 초당 셀
+        public float            fLifeTime   { get; set; }   // 초
+
+        public override void OnReturn()
+        {
+            base.OnReturn();
+            cGrid = null;
+        }
+    }
+
     // 260920_점령 조각(CShard) — 게이지를 올리는 픽업. 수명이 없어 fLifeTime을 받지 않는다.
     public class CShardDesc : CGameObjectDesc
     {

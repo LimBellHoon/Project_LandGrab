@@ -68,6 +68,9 @@ namespace Client
         // 260920_점령 조각 — 3지선다 게이지를 올리는 픽업(2-21)
         private const string PATH_TEX_SHARD         = DIR_ART + "/Tex_Shard.png";
         private const string PATH_PREFAB_SHARD      = DIR_PREFAB + "/Prefab_Shard.prefab";
+        // 260921_분신 — 어그로만 끄는 허수아비(2-11-3)
+        private const string PATH_TEX_DECOY         = DIR_ART + "/Tex_Decoy.png";
+        private const string PATH_PREFAB_DECOY      = DIR_PREFAB + "/Prefab_Decoy.prefab";
         // 260904_스테이지 선택 UI
         // 260904_UI 프리팹 이름은 Engine이 강제한다.
         // Engine.CUI_Manager.Open<T>가 Desc의 strPrefabName을
@@ -115,7 +118,9 @@ namespace Client
             "Tex_RunSkill_MOONWALK", "Tex_RunSkill_EDGE_WRAP", "Tex_RunSkill_SOUL_COLLECTOR", "Tex_RunSkill_RAGE",
             "Tex_RunSkill_MAGNET", "Tex_RunSkill_EVASION", "Tex_RunSkill_ORBIT", "Tex_RunSkill_CLUB",
             "Tex_RunSkill_MAGIC_BOLT", "Tex_RunSkill_LASER_BEAM", "Tex_RunSkill_BOOMERANG", "Tex_RunSkill_BOUNCE_SHOT",
-            "Tex_RunSkill_STUN_SHOT",
+            "Tex_RunSkill_STUN_SHOT",
+            // 260921_이동 스킬 넷(2-11-3)
+            "Tex_RunSkill_SPIRAL_RUSH", "Tex_RunSkill_GHOST_STEP", "Tex_RunSkill_AFTERIMAGE", "Tex_RunSkill_DECOY",
         };
         private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
@@ -190,7 +195,8 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_ActorPrefab(PATH_PREFAB_SOUL, "Prefab_Soul", typeof(CSoul));
             iFail += Validate_ActorPrefab(PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", typeof(CFieldItem));
-            iFail += Validate_ActorPrefab(PATH_PREFAB_SHARD, "Prefab_Shard", typeof(CShard));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_SHARD, "Prefab_Shard", typeof(CShard));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_DECOY, "Prefab_Decoy", typeof(CDecoy));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
@@ -611,6 +617,10 @@ namespace Client
             Write_Png(PATH_TEX_SHARD, Make_CircleTexture(20, Color.white));
             Import_AsSprite(PATH_TEX_SHARD, 20);
 
+            // 260921_분신은 플레이어와 같은 모양을 흰색으로 구워 두고 CDecoy가 반투명하게 칠한다.
+            Write_Png(PATH_TEX_DECOY, Make_CircleTexture(BODY_SIZE, Color.white));
+            Import_AsSprite(PATH_TEX_DECOY, BODY_SIZE);
+
             // 260904_조이스틱. 바깥은 테두리 링, 손잡이는 꽉 찬 원.
             // 260920_속이 꽉 찬 흰 사각형. 게이지 · 배경 띠처럼 색만 칠해 쓰는 UI가 가져다 쓴다.
             Write_Png(PATH_TEX_WHITE, Make_SolidTexture(8));
@@ -924,8 +934,35 @@ namespace Client
                     return bCore || bSpark;
                 }
 
-                case 13:    // 전체 마비 — 가운데 점과 퍼지는 고리 둘
-                    return fDist < 0.14f || (fDist > 0.34f && fDist < 0.44f) || (fDist > 0.62f && fDist < 0.72f);
+                case 13:    // 260921_나선 가속 — 소용돌이(각도에 따라 반경이 커지는 띠)
+                {
+                    float fAngle = Mathf.Atan2(fV, fU);
+                    float fTurn  = (fAngle + Mathf.PI) / (Mathf.PI * 2f);       // 0~1
+                    float fBand  = Mathf.Abs(fDist - (0.18f + fTurn * 0.55f));
+                    return fBand < 0.09f && fDist < 0.78f;
+                }
+
+                case 14:    // 260921_유령 걸음 — 아래가 물결치는 유령
+                {
+                    bool bHead = fDist < 0.5f && fV > -0.05f;
+                    bool bBody = fAbsU < 0.5f && fV < 0f && fV > -0.55f - 0.12f * Mathf.Sin(fU * 18f);
+                    return bHead || bBody;
+                }
+
+                case 15:    // 260921_잔상 — 같은 모양이 옅게 겹쳐 따라오는 모습(세로 막대 셋)
+                    return (Mathf.Abs(fU + 0.42f) < 0.1f && fAbsV < 0.34f)
+                        || (Mathf.Abs(fU) < 0.12f && fAbsV < 0.5f)
+                        || (Mathf.Abs(fU - 0.42f) < 0.1f && fAbsV < 0.34f);
+
+                case 16:    // 260921_분신 — 나란히 선 두 사람(원 + 몸통 둘)
+                {
+                    float fLeft  = Mathf.Sqrt((fU + 0.32f) * (fU + 0.32f) + (fV - 0.34f) * (fV - 0.34f));
+                    float fRight = Mathf.Sqrt((fU - 0.32f) * (fU - 0.32f) + (fV - 0.34f) * (fV - 0.34f));
+                    bool bHead = fLeft < 0.22f || fRight < 0.22f;
+                    bool bBody = fV < 0.06f && fV > -0.62f
+                              && (Mathf.Abs(fU + 0.32f) < 0.2f || Mathf.Abs(fU - 0.32f) < 0.2f);
+                    return bHead || bBody;
+                }
 
                 default:    // 몽둥이 — 대각선 자루와 굵은 머리
                 {
@@ -1139,7 +1176,8 @@ namespace Client
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_ActorPrefab<CSoul>("Prefab_Soul", PATH_TEX_SOUL, PATH_PREFAB_SOUL, 14);
             Create_ActorPrefab<CFieldItem>("Prefab_FieldItem", PATH_TEX_FIELD_ITEM, PATH_PREFAB_FIELD_ITEM, 15);
-            Create_ActorPrefab<CShard>("Prefab_Shard", PATH_TEX_SHARD, PATH_PREFAB_SHARD, 14);
+            Create_ActorPrefab<CShard>("Prefab_Shard", PATH_TEX_SHARD, PATH_PREFAB_SHARD, 14);
+            Create_ActorPrefab<CDecoy>("Prefab_Decoy", PATH_TEX_DECOY, PATH_PREFAB_DECOY, 16);
             Create_StageSelectUI();
             Create_InGameUI();
             Create_LobbyUI();
@@ -1192,7 +1230,8 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_SOUL, "Prefab_Soul", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", CAddressableLabel.PREFAB);
-            Regist_Addressable(cSettings, PATH_PREFAB_SHARD, "Prefab_Shard", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_SHARD, "Prefab_Shard", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_DECOY, "Prefab_Decoy", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_LOBBY, UI_LOBBY, CAddressableLabel.PREFAB);
