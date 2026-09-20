@@ -24,6 +24,15 @@ namespace Client
                                  : eKind == PICK_KIND.AWAKEN ? cAwaken.iWeight : cRunSkill.iWeight;
         public bool     IS_NEW  => eKind == PICK_KIND.RUN_SKILL && iNextLevel <= 1;
 
+        // 260920_카드 색 테마(2-10-1). 각성은 카드 전체가 보라색이라 테마를 보지 않는다 —
+        // 화면이 eKind를 먼저 보고, 각성이 아닐 때만 이 값을 쓴다.
+        public PICK_THEME THEME => eKind == PICK_KIND.CARD ? cCard.eTheme
+                                 : cRunSkill != null ? cRunSkill.eTheme : PICK_THEME.COMBAT;
+
+        /// <summary> 고르면 되는 레벨. 레벨 개념이 없으면(카드 · 각성) 0. </summary>
+        public int      LEVEL   => eKind == PICK_KIND.RUN_SKILL && cRunSkill != null && cRunSkill.iMaxLevel > 1
+                                 ? iNextLevel : 0;
+
         public static CPickOption From_Card(CCardInfo cInfo)
             => new CPickOption { eKind = PICK_KIND.CARD, cCard = cInfo };
 

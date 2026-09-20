@@ -2333,11 +2333,28 @@ namespace Client
             }
             Check("레벨업 — 가진 스킬은 다음 레벨로 나온다", cLevelUp != null ? cLevelUp.iNextLevel : -1, 3);
             Check("레벨업 — NEW가 아니다", cLevelUp != null && cLevelUp.IS_NEW == false);
-            Check("레벨업 — 제목에 레벨", cLevelUp != null ? CUI_CardPick.Get_Title(cLevelUp) : "", "자석  Lv.3");
-            Check("새로 얻기 — 제목에 NEW",
-                  CUI_CardPick.Get_Title(CPickOption.From_RunSkill(cMagnet, 1)), "자석  NEW");
-            Check("레벨이 하나뿐인 스킬은 레벨을 안 붙인다",
-                  CUI_CardPick.Get_Title(CPickOption.From_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.MOONWALK), 1)), "월보  NEW");
+            // 260920_이름과 레벨은 칸이 나뉘었다(2-10-1) — 제목은 이름 그대로, 레벨은 따로 적는다
+            Check("제목은 이름 그대로", cLevelUp != null ? CUI_CardPick.Get_Title(cLevelUp) : "", "자석");
+            Check("레벨업 — 레벨 칸에 다음 레벨",
+                  cLevelUp != null ? CUI_CardPick.Get_LevelText(cLevelUp) : "", "Lv.3");
+            Check("새로 얻기 — 레벨 칸에 NEW",
+                  CUI_CardPick.Get_LevelText(CPickOption.From_RunSkill(cMagnet, 1)), "NEW");
+            Check("레벨이 하나뿐인 스킬도 처음 얻으면 NEW",
+                  CUI_CardPick.Get_LevelText(CPickOption.From_RunSkill(cSkillTable.Find_ByType(RUN_SKILL_TYPE.MOONWALK), 1)), "NEW");
+            Check("카드는 레벨 칸이 비어 있다",
+                  CUI_CardPick.Get_LevelText(CPickOption.From_Card(new CCardInfo())), "");
+
+            // 색은 테마가 정한다 — 각성만 종류와 무관하게 보라다
+            CRunSkillInfo cCombat = cSkillTable.Find_ByType(RUN_SKILL_TYPE.ORBIT);
+            CRunSkillInfo cMove   = cSkillTable.Find_ByType(RUN_SKILL_TYPE.MOONWALK);
+            Check("전투 스킬은 전투 테마", cCombat != null && cCombat.eTheme == PICK_THEME.COMBAT);
+            Check("이동 스킬은 이동 테마", cMove != null && cMove.eTheme == PICK_THEME.MOVE);
+            Check("전투와 이동은 색이 다르다",
+                  CUI_CardPick.Get_ThemeColor(CPickOption.From_RunSkill(cCombat, 1))
+               != CUI_CardPick.Get_ThemeColor(CPickOption.From_RunSkill(cMove, 1)));
+            Check("각성은 전투 · 이동 어느 색과도 다르다",
+                  CUI_CardPick.Get_ThemeColor(CPickOption.From_Awaken(new CAwakenInfo(), cCombat))
+               != CUI_CardPick.Get_ThemeColor(CPickOption.From_RunSkill(cCombat, 1)));
 
             // 만렙은 후보에서 빠진다
             dicLevel[RUN_SKILL_TYPE.MAGNET] = cMagnet.iMaxLevel;

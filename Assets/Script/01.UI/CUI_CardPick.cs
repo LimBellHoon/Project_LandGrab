@@ -77,15 +77,7 @@ namespace Client
                 goCard.SetActive(true);
                 m_lstSpawned.Add(goCard);
 
-                Text[] arrText = goCard.GetComponentsInChildren<Text>(true);
-                if (arrText.Length > 0)
-                    arrText[0].text = Get_Title(cInfo);
-                if (arrText.Length > 1)
-                    arrText[1].text = cInfo.DESC;
-
-                Color cTint = Get_Tint(cInfo);
-                Paint_Part(goCard, "Img_Icon", Get_Icon(cInfo), cTint);
-                Paint_Part(goCard, "Img_Glow", null, cTint);
+                Paint_Card(goCard, cInfo);
 
                 Button cButton = goCard.GetComponent<Button>();
                 if (cButton == null)
@@ -98,53 +90,74 @@ namespace Client
             }
         }
 
-        // 260917_런 스킬은 이름 옆에 '새로 얻는가 / 몇 레벨이 되는가'를 붙인다. 레벨이 하나뿐인 스킬은 붙이지 않는다.
-        public static string Get_Title(CPickOption cOption)
-        {
-            if (cOption.eKind == PICK_KIND.CARD)
-                return cOption.NAME;
+        // 260920_카드 세 종류(각성 / 액티브 / 패시브)의 **레이아웃은 전부 같다**. 다른 것은 색뿐이다.
+        //   각성  — 카드 전체가 보라색(머리띠도 본문도). 일반 카드와 한눈에 달라 보여야 한다
+        //   전투  — 파랑 (COMBAT)
+        //   이동  — 주황 (MOVE)
+        // 무엇이 전투이고 무엇이 이동인지는 표의 eTheme 열이 정한다 — 화면은 색만 고른다.
+        private static readonly Color THEME_COMBAT      = new Color(0.25f, 0.55f, 0.95f);
+        private static readonly Color THEME_MOVE        = new Color(1.00f, 0.58f, 0.15f);
+        private static readonly Color THEME_AWAKEN      = new Color(0.62f, 0.32f, 0.88f);
+        // 일반 카드의 본문은 밝은 아이보리, 각성만 짙은 보라 — 그래서 '카드 전체 색이 다르다'가 된다.
+        private static readonly Color BODY_NORMAL       = new Color(0.97f, 0.96f, 0.93f);
+        private static readonly Color BODY_AWAKEN       = new Color(0.20f, 0.10f, 0.30f);
+        private static readonly Color TEXT_ON_NORMAL    = new Color(0.15f, 0.15f, 0.18f);
+        private static readonly Color TEXT_ON_AWAKEN    = new Color(0.98f, 0.94f, 1.00f);
 
-            // 260917_각성은 어느 스킬이 바뀌는지가 먼저 읽혀야 한다
+        /// <summary> 머리띠 · 테두리에 쓰는 색. 각성이면 테마와 무관하게 보라다. </summary>
+        public static Color Get_ThemeColor(CPickOption cOption)
+        {
+            if (cOption == null)
+                return Color.white;
+
             if (cOption.eKind == PICK_KIND.AWAKEN)
-                return $"각성  {cOption.NAME}";
+                return THEME_AWAKEN;
+
+            return cOption.THEME == PICK_THEME.MOVE ? THEME_MOVE : THEME_COMBAT;
+        }
+
+        /// <summary> 이름. 각성만 무엇이 바뀌는지 앞에 붙인다 — 어느 스킬이 각성하는지가 먼저 읽혀야 한다. </summary>
+        public static string Get_Title(CPickOption cOption)
+            => cOption.eKind == PICK_KIND.AWAKEN ? $"각성  {cOption.NAME}" : cOption.NAME;
+
+        /// <summary> 현재 레벨. 새로 얻는 스킬은 NEW, 레벨이 없는 카드 · 각성은 빈 칸이다. </summary>
+        public static string Get_LevelText(CPickOption cOption)
+        {
+            if (cOption == null || cOption.eKind != PICK_KIND.RUN_SKILL)
+                return string.Empty;
 
             if (cOption.IS_NEW == true)
-                return $"{cOption.NAME}  NEW";
+                return "NEW";
 
-            return cOption.cRunSkill.iMaxLevel <= 1 ? cOption.NAME : $"{cOption.NAME}  Lv.{cOption.iNextLevel}";
+            return cOption.LEVEL > 0 ? $"Lv.{cOption.LEVEL}" : string.Empty;
         }
 
-        // 260917_런 스킬은 분류로 색을 가른다 — 액티브는 공격적인 주황, 패시브는 청록.
-        // 카드 다섯 색과 겹치지 않게 골랐다(카드는 종류마다 색이 따로 있다).
-        private static readonly Color TINT_RUN_ACTIVE  = new Color(1.00f, 0.50f, 0.20f);
-        private static readonly Color TINT_RUN_PASSIVE = new Color(0.30f, 0.95f, 0.90f);
-        // 260917_각성은 금색 — 언제 떠도 놓치면 아쉬운 선택이라 일반 픽과 한눈에 달라 보여야 한다(문서 3장)
-        private static readonly Color TINT_AWAKEN      = new Color(1.00f, 0.84f, 0.25f);
-
-        private static Color Get_Tint(CPickOption cOption)
+        // 이름 · 아이콘 · 설명 · 레벨 넷만 칠한다. 카드가 늘어도 여기 규칙은 그대로다.
+        private void Paint_Card(GameObject goCard, CPickOption cOption)
         {
-            if (cOption.eKind == PICK_KIND.AWAKEN)
-                return TINT_AWAKEN;
+            bool  bAwaken = cOption.eKind == PICK_KIND.AWAKEN;
+            Color cTheme  = Get_ThemeColor(cOption);
+            Color cText   = bAwaken ? TEXT_ON_AWAKEN : TEXT_ON_NORMAL;
 
-            if (cOption.eKind == PICK_KIND.RUN_SKILL)
-                return cOption.cRunSkill.IS_PASSIVE == true ? TINT_RUN_PASSIVE : TINT_RUN_ACTIVE;
+            Paint_Part(goCard, "Img_Header", null, cTheme);
+            Paint_Part(goCard, "Img_Body",   null, bAwaken ? BODY_AWAKEN : BODY_NORMAL);
+            Paint_Part(goCard, "Img_Glow",   null, cTheme);
+            Paint_Part(goCard, "Img_Icon",   Get_Icon(cOption), bAwaken ? THEME_AWAKEN : cTheme);
 
-            return Get_Tint(cOption.cCard.eType);
+            Set_Text(goCard, "Img_Header/Txt_Name", Get_Title(cOption), Color.white);
+            Set_Text(goCard, "Img_Body/Txt_Desc",   cOption.DESC,       cText);
+            Set_Text(goCard, "Img_Body/Txt_Level",  Get_LevelText(cOption), cTheme);
         }
 
-        // 260912_종류마다 색을 달리해 셋을 한눈에 가르게 한다.
-        // 글자만으로는 순간적으로 고르기 어렵다 — 색과 아이콘이 먼저 읽힌다.
-        private static Color Get_Tint(CARD_TYPE eType)
+        private static void Set_Text(GameObject goCard, string strPath, string strValue, Color cColor)
         {
-            switch (eType)
-            {
-                case CARD_TYPE.SHIELD:  return new Color(0.45f, 0.80f, 1.00f);
-                case CARD_TYPE.HEAL:    return new Color(0.45f, 1.00f, 0.60f);
-                case CARD_TYPE.SPEED:   return new Color(1.00f, 0.85f, 0.35f);
-                case CARD_TYPE.EVASION: return new Color(0.80f, 0.60f, 1.00f);
-                case CARD_TYPE.SLOW:    return new Color(1.00f, 0.55f, 0.55f);
-                default:                return Color.white;
-            }
+            Transform trPart = goCard.transform.Find(strPath);
+            Text cText = trPart != null ? trPart.GetComponent<Text>() : null;
+            if (cText == null)
+                return;
+
+            cText.text  = strValue;
+            cText.color = cColor;
         }
 
         private Sprite Get_Icon(CPickOption cOption)

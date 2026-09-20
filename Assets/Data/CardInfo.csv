@@ -1,11 +1,12 @@
-﻿iCardID	eType	strName	strDesc	fValue	iWeight	NONE
+﻿iCardID	eType	strName	strDesc	fValue	iWeight	eTheme	NONE
 ;== 카드 테이블 ==	점령률을 넘길 때마다 셋 중 하나를 고른다. 고른 판에서만 유지된다
 ;eType : Client_Enum.CARD_TYPE 이름과 철자가 같아야 한다
 ;fValue : SHIELD/HEAL은 개수, SPEED/EVASION은 더할 비율, SLOW는 몬스터에게 곱할 배율
 ;iWeight : 뽑힐 가중치. 클수록 자주 나온다. 0이면 안 나온다
-;---	type	이름	설명	수치	가중치	메모
-1	SHIELD	보호막	다음 피격 한 번을 막는다	1	10	즉시
-2	HEAL	회복	목숨을 하나 회복한다	1	7	즉시
-3	SPEED	가속	이동 속도가 15% 빨라진다	0.15	10	누적된다
-4	EVASION	회피	피격을 흘릴 확률이 오른다	0.08	10	누적된다
-5	SLOW	둔화	몬스터가 20% 느려진다	0.8	10	곱해서 누적
+;eTheme : 카드 색 테마(2-10-1) — COMBAT 파랑 / MOVE 주황. 각성은 보라색이라 여기 안 적는다 (260920)
+;---	type	이름	설명	수치	가중치	테마	메모
+1	SHIELD	보호막	다음 피격 한 번을 막는다	1	10	COMBAT	즉시
+2	HEAL	회복	목숨을 하나 회복한다	1	7	COMBAT	즉시
+3	SPEED	가속	이동 속도가 15% 빨라진다	0.15	10	MOVE	누적된다
+4	EVASION	회피	피격을 흘릴 확률이 오른다	0.08	10	MOVE	누적된다
+5	SLOW	둔화	몬스터가 20% 느려진다	0.8	10	COMBAT	곱해서 누적

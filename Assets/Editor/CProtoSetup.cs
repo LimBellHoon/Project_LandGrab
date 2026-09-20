@@ -1867,13 +1867,14 @@ namespace Client
             cLayout.childControlWidth  = true;
             cLayout.childControlHeight = true;
 
-            // 템플릿 — 꺼 둔 채로 프리팹에 남겨 두고 런타임에 복제한다.
+            // 260920_템플릿 — 꺼 둔 채로 프리팹에 남겨 두고 런타임에 복제한다.
+            // 카드 세 종류(각성 / 액티브 / 패시브)가 **같은 레이아웃**을 쓴다 — 색만 CUI_CardPick이 칠한다(2-10-1).
+            //   [머리띠 Img_Header + Txt_Name] / [본문 Img_Body + Img_Icon + Txt_Desc + Txt_Level]
             GameObject goCard = Create_UIObject("Btn_CardTemplate", goContent.transform);
-            goCard.AddComponent<Image>().color = new Color(0.09f, 0.11f, 0.20f, 0.97f);
+            goCard.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0f);      // 클릭 판정만 받는 투명 판
             Button cCard = goCard.AddComponent<Button>();
 
             // 260912_테두리 발광. 9슬라이스라 카드 크기가 달라져도 두께가 유지된다.
-            // 색은 런타임에 카드 종류에 맞춰 CUI_CardPick이 칠한다.
             GameObject goGlow = Create_UIObject("Img_Glow", goCard.transform);
             RectTransform trGlow = goGlow.GetComponent<RectTransform>();
             Stretch_Full(trGlow);
@@ -1884,36 +1885,59 @@ namespace Client
             imgGlow.type   = Image.Type.Sliced;
             imgGlow.raycastTarget = false;
 
-            // 아이콘 — 이름 아래, 설명 위
-            GameObject goIcon = Create_UIObject("Img_Icon", goCard.transform);
+            // 머리띠 — 이름이 들어간다. 여기 색이 곧 카드 색이다.
+            GameObject goHeader = Create_UIObject("Img_Header", goCard.transform);
+            RectTransform trHeader = goHeader.GetComponent<RectTransform>();
+            trHeader.anchorMin = new Vector2(0f, 1f);
+            trHeader.anchorMax = new Vector2(1f, 1f);
+            trHeader.pivot     = new Vector2(0.5f, 1f);
+            trHeader.anchoredPosition = Vector2.zero;
+            trHeader.sizeDelta = new Vector2(0f, 76f);
+            Image imgHeader = goHeader.AddComponent<Image>();
+            imgHeader.raycastTarget = false;
+
+            GameObject goName = Create_UIObject("Txt_Name", goHeader.transform);
+            Stretch_Full(goName.GetComponent<RectTransform>());
+            Make_Text(goName, "카드", 34, TextAnchor.MiddleCenter).raycastTarget = false;
+
+            // 본문 — 아이콘 · 설명 · 레벨. 일반 카드는 밝은 바탕, 각성만 짙은 보라가 된다.
+            GameObject goBody = Create_UIObject("Img_Body", goCard.transform);
+            RectTransform trBody = goBody.GetComponent<RectTransform>();
+            Stretch_Full(trBody);
+            trBody.offsetMax = new Vector2(0f, -70f);       // 머리띠 아래부터
+            Image imgBody = goBody.AddComponent<Image>();
+            imgBody.raycastTarget = false;
+
+            GameObject goIcon = Create_UIObject("Img_Icon", goBody.transform);
             RectTransform trIcon = goIcon.GetComponent<RectTransform>();
             trIcon.anchorMin = new Vector2(0.5f, 1f);
             trIcon.anchorMax = new Vector2(0.5f, 1f);
             trIcon.pivot     = new Vector2(0.5f, 1f);
-            trIcon.anchoredPosition = new Vector2(0f, -104f);
-            trIcon.sizeDelta = new Vector2(120f, 120f);
+            trIcon.anchoredPosition = new Vector2(0f, -30f);
+            trIcon.sizeDelta = new Vector2(128f, 128f);
             Image imgIcon = goIcon.AddComponent<Image>();
             imgIcon.preserveAspect = true;
             imgIcon.raycastTarget  = false;
 
-            GameObject goName = Create_UIObject("Txt_Name", goCard.transform);
-            RectTransform trName = goName.GetComponent<RectTransform>();
-            trName.anchorMin = new Vector2(0f, 1f);
-            trName.anchorMax = new Vector2(1f, 1f);
-            trName.pivot     = new Vector2(0.5f, 1f);
-            trName.anchoredPosition = new Vector2(0f, -26f);
-            trName.sizeDelta = new Vector2(-16f, 72f);
-            Make_Text(goName, "카드", 38, TextAnchor.MiddleCenter).raycastTarget = false;
-
-            GameObject goDesc = Create_UIObject("Txt_Desc", goCard.transform);
+            GameObject goDesc = Create_UIObject("Txt_Desc", goBody.transform);
             RectTransform trDesc = goDesc.GetComponent<RectTransform>();
             trDesc.anchorMin = new Vector2(0f, 0f);
             trDesc.anchorMax = new Vector2(1f, 1f);
-            trDesc.offsetMin = new Vector2(12f, 18f);
-            trDesc.offsetMax = new Vector2(-12f, -240f);
+            trDesc.offsetMin = new Vector2(12f, 54f);       // 아래는 레벨 칸을 비워 둔다
+            trDesc.offsetMax = new Vector2(-12f, -172f);
             Text txtDesc = Make_Text(goDesc, "설명", 24, TextAnchor.UpperCenter);
             txtDesc.raycastTarget = false;
             txtDesc.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+            // 현재 레벨 — 카드 맨 아래. 레벨이 없는 카드 · 각성은 빈 칸으로 둔다.
+            GameObject goLevel = Create_UIObject("Txt_Level", goBody.transform);
+            RectTransform trLevel = goLevel.GetComponent<RectTransform>();
+            trLevel.anchorMin = new Vector2(0f, 0f);
+            trLevel.anchorMax = new Vector2(1f, 0f);
+            trLevel.pivot     = new Vector2(0.5f, 0f);
+            trLevel.anchoredPosition = new Vector2(0f, 10f);
+            trLevel.sizeDelta = new Vector2(-16f, 40f);
+            Make_Text(goLevel, "Lv.1", 28, TextAnchor.MiddleCenter).raycastTarget = false;
 
             goCard.SetActive(false);
 

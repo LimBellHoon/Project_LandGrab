@@ -1,4 +1,4 @@
-﻿iSkillID	eType	eCategory	strName	strDesc	iUnlockMapID	iMaxLevel	fValueBase	fValuePerLevel	iWeight	iProjectileID	fCool	eFirePattern	fFireAngle	eTargetFind	NONE
+﻿iSkillID	eType	eCategory	strName	strDesc	iUnlockMapID	iMaxLevel	fValueBase	fValuePerLevel	iWeight	iProjectileID	fCool	eFirePattern	fFireAngle	eTargetFind	eTheme	NONE
 ;== 런 전용 스킬 (뱀서라이크) ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다
 ;장비/강화 스킬(SkillInfo.csv)과는 다른 표다 — 이쪽은 스테이지 클리어로 해금되고, 판 안에서 여러 개를 동시에 들고 레벨업한다
 ;해금된 스킬은 스테이지 내 3지선다에서 얻는다. 스테이지를 나가면 보유·레벨 전부 사라진다(런 전용)
@@ -8,17 +8,18 @@
 ;iProjectileID ~ eTargetFind : 투사체 무기만 쓴다(0이면 무기 아님). 일정 시간(fCool)마다 저절로 쏘고, 레벨 수치(기준값+레벨당증가)가 한 번에 쏘는 발 수다
 ;eFirePattern : SINGLE / SPREAD(fFireAngle 전체 각도) / RING / BURST(연발) / SPIN(쏠 때마다 fFireAngle만큼 돈다)
 ;eTargetFind : NEAREST 가장 가까운 몬스터 / HIGHEST_HP 체력이 가장 많은 몬스터 / CROWDED 가장 몰린 곳
-;---	타입	분류	이름	설명	해금맵	최대레벨	기준값	레벨당증가	가중치	탄ID	쿨	발사패턴	각도	조준	메모
-1	MOONWALK	PASSIVE	월보	점령한 곳(이미지) 위로도 이동할 수 있게 된다	0	1	0	0	10	0	0	-	0	-	on/off만 있고 레벨업 없음
-2	EVASION	PASSIVE	회피	회피율이 오른다	0	5	0.03	0.03	10	0	0	-	0	-	레벨당 +3%p
-3	MAGNET	PASSIVE	자석	아이템을 끌어당기는 범위가 넓어진다	0	5	1	0.4	10	0	0	-	0	-	기준값+레벨당증가 = 반경(셀)
-4	EDGE_WRAP	PASSIVE	어디로든 신발	맵 좌우 끝에서 반대편 끝으로 이동한다	1	1	0	0	10	0	0	-	0	-	on/off만 있고 레벨업 없음
-5	RAGE	PASSIVE	분노조절못해	달리거나 맞을 때마다 분노 게이지가 쌓이고, 가득 차면 잠깐 매우 빨라진다	1	5	1	0.25	10	0	0	-	0	-	레벨당 게이지 상승 배율 +25%
-6	SOUL_COLLECTOR	PASSIVE	영혼 수집가	떨어진 영혼을 주울 때마다 이번 판 한정으로 속도가 영구히 오른다	1	5	0.02	0.01	10	0	0	-	0	-	레벨당 영혼 1개당 속도 증가폭 +0.01
-7	ORBIT	ACTIVE	회전탄	주위를 도는 탄이 적탄을 없애고 몬스터에게 피해를 준다	1	5	1	1	10	20	0	-	0	-	레벨당 탄 개수 +1 (1레벨=1개). 탄은 ProjectileInfo 20
-8	CLUB	ACTIVE	몽둥이	좌우 양쪽을 크게 휘둘러 맞은 몬스터를 밀어낸다	1	5	3	0.9	10	22	0	-	0	-	레벨당 반경(셀) +0.9, 1레벨 3칸(예전의 3배). 좌우 양쪽에 한 번에. 판정은 ProjectileInfo 22, 넉백은 ImpactInfo 7
-9	MAGIC_BOLT	ACTIVE	마법탄	가장 가까운 몬스터에게 유도탄을 연달아 쏜다	0	5	1	1	0	4	1.4	BURST	0	NEAREST	레벨당 연발 +1 (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
-10	LASER_BEAM	ACTIVE	레이저	체력이 가장 많은 몬스터 쪽으로 예고선을 긋고 레이저를 쏜다	1	5	1	1	0	3	3.5	SPREAD	40	HIGHEST_HP	레벨당 줄기 +1 (부채꼴 40도) (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
-11	BOOMERANG	ACTIVE	부메랑	몬스터가 몰린 쪽으로 부메랑을 던진다	1	5	1	1	0	6	2.2	SPREAD	30	CROWDED	레벨당 +1 (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
-12	BOUNCE_SHOT	ACTIVE	튕기는 탄	사방으로 탄을 뿌린다. 맵 끝에서 튕긴다	1	5	3	1	0	2	2.5	RING	0	NEAREST	레벨당 +1 (1레벨 3발) (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
-13	STUN_SHOT	ACTIVE	마비탄	가장 가까운 몬스터에게 마비탄을 쏜다. 맞으면 잠깐 멈춘다	0	5	1	1	10	23	3	SPREAD	40	NEAREST	레벨당 발 수 +1 (부채꼴 40도). 피해 없이 세우기만 한다
+;eTheme : 카드 색 테마(2-10-1) — COMBAT 파랑 / MOVE 주황 (260920)
+;---	타입	분류	이름	설명	해금맵	최대레벨	기준값	레벨당증가	가중치	탄ID	쿨	발사패턴	각도	조준	테마	메모
+1	MOONWALK	PASSIVE	월보	점령한 곳(이미지) 위로도 이동할 수 있게 된다	0	1	0	0	10	0	0	-	0	-	MOVE	on/off만 있고 레벨업 없음
+2	EVASION	PASSIVE	회피	회피율이 오른다	0	5	0.03	0.03	10	0	0	-	0	-	MOVE	레벨당 +3%p
+3	MAGNET	PASSIVE	자석	아이템을 끌어당기는 범위가 넓어진다	0	5	1	0.4	10	0	0	-	0	-	MOVE	기준값+레벨당증가 = 반경(셀)
+4	EDGE_WRAP	PASSIVE	어디로든 신발	맵 좌우 끝에서 반대편 끝으로 이동한다	1	1	0	0	10	0	0	-	0	-	MOVE	on/off만 있고 레벨업 없음
+5	RAGE	PASSIVE	분노조절못해	달리거나 맞을 때마다 분노 게이지가 쌓이고, 가득 차면 잠깐 매우 빨라진다	1	5	1	0.25	10	0	0	-	0	-	MOVE	레벨당 게이지 상승 배율 +25%
+6	SOUL_COLLECTOR	PASSIVE	영혼 수집가	떨어진 영혼을 주울 때마다 이번 판 한정으로 속도가 영구히 오른다	1	5	0.02	0.01	10	0	0	-	0	-	MOVE	레벨당 영혼 1개당 속도 증가폭 +0.01
+7	ORBIT	ACTIVE	회전탄	주위를 도는 탄이 적탄을 없애고 몬스터에게 피해를 준다	1	5	1	1	10	20	0	-	0	-	COMBAT	레벨당 탄 개수 +1 (1레벨=1개). 탄은 ProjectileInfo 20
+8	CLUB	ACTIVE	몽둥이	좌우 양쪽을 크게 휘둘러 맞은 몬스터를 밀어낸다	1	5	3	0.9	10	22	0	-	0	-	COMBAT	레벨당 반경(셀) +0.9, 1레벨 3칸(예전의 3배). 좌우 양쪽에 한 번에. 판정은 ProjectileInfo 22, 넉백은 ImpactInfo 7
+9	MAGIC_BOLT	ACTIVE	마법탄	가장 가까운 몬스터에게 유도탄을 연달아 쏜다	0	5	1	1	0	4	1.4	BURST	0	NEAREST	COMBAT	레벨당 연발 +1 (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
+10	LASER_BEAM	ACTIVE	레이저	체력이 가장 많은 몬스터 쪽으로 예고선을 긋고 레이저를 쏜다	1	5	1	1	0	3	3.5	SPREAD	40	HIGHEST_HP	COMBAT	레벨당 줄기 +1 (부채꼴 40도) (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
+11	BOOMERANG	ACTIVE	부메랑	몬스터가 몰린 쪽으로 부메랑을 던진다	1	5	1	1	0	6	2.2	SPREAD	30	CROWDED	COMBAT	레벨당 +1 (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
+12	BOUNCE_SHOT	ACTIVE	튕기는 탄	사방으로 탄을 뿌린다. 맵 끝에서 튕긴다	1	5	3	1	0	2	2.5	RING	0	NEAREST	COMBAT	레벨당 +1 (1레벨 3발) (260918_뱀서라이크가 아니라 3지선다에서 뺐다 — 가중치 0. 코드와 각성은 남겨 둠)
+13	STUN_SHOT	ACTIVE	마비탄	가장 가까운 몬스터에게 마비탄을 쏜다. 맞으면 잠깐 멈춘다	0	5	1	1	10	23	3	SPREAD	40	NEAREST	COMBAT	레벨당 발 수 +1 (부채꼴 40도). 피해 없이 세우기만 한다

@@ -27,6 +27,8 @@ namespace Client
         public float            fValueBase;
         public float            fValuePerLevel;
         public int              iWeight;    // 3지선다 가중치. 0이면 안 나온다
+        // 260920_3지선다 카드의 색 테마(2-10-1)
+        public PICK_THEME       eTheme;
 
         // 260917_투사체 무기만 쓴다(CRunSkillEffect_Weapon). 레벨 수치(Get_Value)는 한 번에 쏘는 발 수다.
         public int              iProjectileID;  // ProjectileInfo.csv
@@ -150,6 +152,7 @@ namespace Client
                 fValueBase      = CCSV_Utility.To_Float(arrField, 7),
                 fValuePerLevel  = CCSV_Utility.To_Float(arrField, 8),
                 iWeight         = CCSV_Utility.To_Int(arrField, 9, 10),
+                eTheme          = CCSV_Utility.To_Enum(arrField, 15, PICK_THEME.COMBAT),
                 iProjectileID   = CCSV_Utility.To_Int(arrField, 10),
                 fCool           = CCSV_Utility.To_Float(arrField, 11, 1f),
                 eFirePattern    = CCSV_Utility.To_Enum(arrField, 12, FIRE_PATTERN.SINGLE),

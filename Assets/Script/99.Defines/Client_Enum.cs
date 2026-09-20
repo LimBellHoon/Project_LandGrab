@@ -84,6 +84,17 @@
         HEAL,       // 목숨 1 회복
     }
 
+    // 260920_3지선다 카드의 색 테마. 이름이 CardInfo.csv / RunSkillInfo.csv의 eTheme 열과 같아야 한다.
+    /// <summary>
+    /// 카드 레이아웃은 전부 같고 **색만 다르다**(2-10-1). 각성은 여기 없다 —
+    /// 각성은 PICK_KIND로 갈리고 카드 전체가 보라색이 된다.
+    /// </summary>
+    public enum PICK_THEME
+    {
+        COMBAT = 0,     // 전투 — 파랑 (무기 · 피해 · 방어처럼 싸움에 쓰는 것)
+        MOVE,           // 이동 — 주황 (속도 · 회피 · 이동 규칙처럼 움직임에 쓰는 것)
+    }
+
     // 260917_3지선다 한 칸의 종류. 카드와 런 스킬을 한 화면에 섞는다
     public enum PICK_KIND
     {

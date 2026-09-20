@@ -524,16 +524,34 @@ CStage_Manager.Apply_Pick   카드면 Apply_Card, 런 스킬이면 CPlayer.Add_R
 - **새로 얻는 스킬이면 그 분류(액티브/패시브)를 5개 미만으로 들고 있다**(`CRunSkillHandler.SLOT_PER_CATEGORY`).
   이미 가진 스킬의 레벨업은 슬롯을 새로 먹지 않으므로 상한과 상관없다 (Docs/Design_RunSkill_Awaken.md 2장 규칙 1)
 
-화면은 런 스킬 이름 옆에 **`NEW` 또는 `Lv.N`**(고르면 될 레벨)을 붙인다. 레벨이 하나뿐인 스킬(월보 · 신발)은 `NEW`만 붙는다.
-색은 분류로 가른다 — **액티브 주황, 패시브 청록**. 아이콘(`Tex_RunSkill_<RUN_SKILL_TYPE>`)은 흰색으로 구워 이 색을 곱한다.
-**런 스킬 종류를 더하면 `CProtoSetup.ARR_RUN_SKILL_ICON`과 `Is_RunSkillInk`에 `RUN_SKILL_TYPE` 순서대로 넣을 것.**
-
-260917_각성도 같은 자리에 금색으로 섞여 나온다(2-11-2).
-
+#### 카드 생김새 — 레이아웃은 하나, 색만 셋 (260920)
 카드는 **색과 아이콘이 먼저 읽히게** 만든다. 글자만으로는 순간적으로 고르기 어렵다.
-종류마다 아이콘(`Tex_Card_<CARD_TYPE>`)과 색이 정해져 있고, 테두리 발광도 같은 색으로 칠한다.
-발광은 9슬라이스(`Tex_CardGlow`)라 카드 크기가 달라져도 두께가 유지된다.
-**종류를 더하면 `CProtoSetup.ARR_CARD_ICON`과 `CUI_CardPick.Get_Tint` 두 곳에 같은 순서로 넣을 것.**
+그래서 **모든 카드가 똑같은 레이아웃**을 쓰고 색만 다르다 — 종류마다 다른 판을 만들면 어느 게 어느 건지
+매번 다시 읽어야 한다.
+
+```
+┌ Img_Header  (테마색 머리띠) ─┐   이름   Txt_Name
+│ Img_Body                     │   아이콘 Img_Icon
+│   아이콘 / 설명 / 레벨        │   설명   Txt_Desc
+└──────────────────────────────┘   레벨   Txt_Level  (NEW · Lv.N, 없으면 빈 칸)
+   Img_Glow — 테두리 발광(9슬라이스라 카드 크기가 달라져도 두께가 유지된다)
+```
+
+| 종류 | 색 | 무엇이 정하는가 |
+|---|---|---|
+| **각성** | **보라 — 카드 전체**(머리띠 + 본문 바탕까지 짙은 보라) | `PICK_KIND.AWAKEN` |
+| 전투 | 파랑 | `eTheme = COMBAT` |
+| 이동 | 주황 | `eTheme = MOVE` |
+
+- **각성만 본문 바탕색까지 바뀐다.** 일반 카드는 밝은 아이보리 바탕에 머리띠만 테마색이다 —
+  각성은 놓치면 아쉬운 선택이라(2-11-2) 한눈에 달라 보여야 한다
+- **무엇이 전투이고 무엇이 이동인지는 표가 정한다** — `CardInfo.csv` · `RunSkillInfo.csv`의 `eTheme` 열.
+  화면(`CUI_CardPick.Get_ThemeColor`)은 색만 고르므로, 분류를 바꾸고 싶으면 표만 고치면 된다
+- 액티브/패시브는 **색을 가르지 않는다**(260920에 바꿨다 — 예전엔 액티브 주황 · 패시브 청록이었다).
+  고르는 순간 중요한 것은 "지금 싸울 힘이 느는가, 움직임이 느는가"이지 쿨타임 유무가 아니다
+- 레벨은 이름 옆이 아니라 **카드 아래 제 칸**에 적는다. 새로 얻으면 `NEW`, 아니면 `Lv.N`(고르면 될 레벨)
+- 아이콘(`Tex_Card_<CARD_TYPE>` · `Tex_RunSkill_<RUN_SKILL_TYPE>`)은 흰색으로 구워 테마색을 곱한다.
+  **종류를 더하면 `CProtoSetup.ARR_CARD_ICON` · `ARR_RUN_SKILL_ICON`과 `Is_RunSkillInk`에 enum 순서대로 넣을 것**
 
 속도·회피·감속은 **누적**된다. 플레이어의 속도는 이제 세 갈래가 곱해진다 —
 거미줄(환경) × 질주(스킬) × 카드. 몬스터 감속도 스킬 × 카드다(2-11).
@@ -737,7 +755,8 @@ IRunSkillHost             맵 위에 뭔가를 놓아야 하는 효과(영혼 �
 
 #### 각성 — 만렙 액티브 + 짝 패시브 (Docs/Design_RunSkill_Awaken.md 규칙 3~5)
 `AwakenInfo.csv` 한 줄이 각성 하나다. 액티브가 **만렙**이고 짝 패시브를 `iPassiveLevel` 이상 들고 있으면
-3지선다에 **금색 "각성" 후보**로 나온다(`PICK_KIND.AWAKEN`). 자동으로 바뀌지 않는다 — 골라야 한다.
+3지선다에 **보라색 "각성" 후보**로 나온다(`PICK_KIND.AWAKEN`, 260920_금색에서 바꿨다 — 2-10-1).
+자동으로 바뀌지 않는다 — 골라야 한다.
 
 ```
 CCSVData_AwakenInfo.Collect_Candidates   만렙(RunSkillInfo의 iMaxLevel) · 짝 패시브 · 아직 안 함 · 가중치

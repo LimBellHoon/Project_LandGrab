@@ -19,6 +19,8 @@ namespace Client
         public string       strDesc;
         public float        fValue;
         public int          iWeight;    // 뽑힐 가중치. 0이면 안 나온다
+        // 260920_3지선다 카드의 색 테마(2-10-1). 레이아웃은 같고 색만 다르다
+        public PICK_THEME   eTheme;
     }
 
     public class CCSVData_CardInfo : CCSVData
@@ -61,6 +63,8 @@ namespace Client
                 strDesc = CCSV_Utility.To_String(arrField, 3),
                 fValue  = CCSV_Utility.To_Float(arrField, 4),
                 iWeight = CCSV_Utility.To_Int(arrField, 5, 10),
+                // 260920_카드 색 테마(2-10-1). 안 적으면 전투로 본다
+                eTheme  = CCSV_Utility.To_Enum(arrField, 6, PICK_THEME.COMBAT),
             };
 
             if (cInfo.iCardID <= 0 || cInfo.eType == CARD_TYPE.NONE)
