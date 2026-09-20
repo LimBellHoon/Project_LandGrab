@@ -466,32 +466,28 @@ namespace Client
     {
         private IRunSkillHost m_cHost;
         private CRunSkillInfo m_cInfo;
-        private float         m_fCoolTimer;
+        private int           m_iFiredCount;
 
-        public float COOL_REMAIN => m_fCoolTimer;
+        /// <summary> 지금까지 터뜨린 횟수 — 고른 횟수(레벨)와 같아야 한다. </summary>
+        public int   FIRED_COUNT => m_iFiredCount;
         public float DURATION    => m_cInfo != null ? m_cInfo.Get_Value(m_iLevel) : 0f;
 
         public override void Set_Host(IRunSkillHost cHost) => m_cHost = cHost;
 
+        // 260920_3지선다에서 고르는 그 순간에 딱 한 번 터진다. 쿨타임으로 반복하지 않는다 —
+        // 계속 도는 마비는 몬스터를 영영 세워 두어 피하는 재미가 사라졌다.
+        // 레벨을 올리면(다시 고르면) 그때 또 한 번, 더 긴 시간으로 터진다.
+        // Set_Host가 On_LevelChanged보다 먼저 불리므로(CPlayer.Add_RunSkill) 여기서 바로 쓸 수 있다.
         public override void On_LevelChanged(CRunSkillInfo cInfo, int iLevel)
         {
             base.On_LevelChanged(cInfo, iLevel);
             m_cInfo = cInfo;
-        }
 
-        public override void Tick(float fDeltaTime)
-        {
-            if (m_cHost == null || m_cInfo == null)
+            if (m_cHost == null)
                 return;
 
-            if (m_fCoolTimer > 0f)
-            {
-                m_fCoolTimer -= fDeltaTime;
-                return;
-            }
-
-            if (m_cHost.Stun_AllEnemies(DURATION) > 0)
-                m_fCoolTimer = m_cInfo.fCool;
+            m_cHost.Stun_AllEnemies(DURATION);
+            ++m_iFiredCount;
         }
     }
 

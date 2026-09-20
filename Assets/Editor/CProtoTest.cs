@@ -1562,24 +1562,22 @@ namespace Client
             cPlayer.Lose_Life();            // 회피 확률 1 — 반드시 회피한다
             Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
 
-            // ---- 260918_전체 마비: 몬스터가 없으면 기다리고, 있으면 쿨마다 레벨 시간만큼
+            // ---- 260920_전체 마비: 고르는 순간 1회만. 쿨타임으로 반복하지 않는다
             CRunSkillInfo cMassInfo = cSkillTable.Find_ByType(RUN_SKILL_TYPE.MASS_STUN);
             CFakeRunSkillHost cStunHost = new CFakeRunSkillHost();
+            cStunHost.lstEnemy.Add(new CFakeImpactTarget(Vector2.zero, 0.3f));
             cPlayer.Set_RunSkillHost(cStunHost);
             cPlayer.Add_RunSkill(cMassInfo);
             CRunSkillEffect_MassStun cMass = cPlayer.Find_RunSkillEffect(RUN_SKILL_TYPE.MASS_STUN) as CRunSkillEffect_MassStun;
             Check("전체 마비 모듈이 붙는다", cMass != null);
-            cMass?.Tick(20f);
-            Check("전체 마비 — 몬스터가 없으면 발동하지 않는다", cStunHost.iStunCount, 0);
-            Check("전체 마비 — 쿨을 찬 채로 기다린다", cMass != null && cMass.COOL_REMAIN <= 0f);
-            cStunHost.lstEnemy.Add(new CFakeImpactTarget(Vector2.zero, 0.3f));
-            cMass?.Tick(0.01f);
-            Check("전체 마비 — 몬스터가 있으면 곧바로", cStunHost.iStunCount, 1);
+            Check("전체 마비 — 고르는 순간 곧바로 터진다", cStunHost.iStunCount, 1);
             Check("전체 마비 — 1레벨은 1초", Mathf.Approximately(cStunHost.fLastStun, 1f));
-            cMass?.Tick(1f);
-            Check("전체 마비 — 쿨 동안은 다시 안 터진다", cStunHost.iStunCount, 1);
+            cMass?.Tick(30f);
+            Check("전체 마비 — 시간이 지나도 다시 터지지 않는다", cStunHost.iStunCount, 1);
             cPlayer.Add_RunSkill(cMassInfo);
+            Check("전체 마비 — 다시 고르면 그때 또 한 번", cStunHost.iStunCount, 2);
             Check("전체 마비 — 레벨이 오르면 시간이 는다", cMass != null && cMass.DURATION > 1f);
+            Check("전체 마비 — 터진 횟수는 고른 횟수와 같다", cMass != null && cMass.FIRED_COUNT == 2);
 
             CRunSkillInfo cStunShot = cSkillTable.Find_ByType(RUN_SKILL_TYPE.STUN_SHOT);
             Check("마비탄은 탄 23을 쏘는 무기", cStunShot != null && cStunShot.iProjectileID == 23);

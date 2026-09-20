@@ -369,9 +369,11 @@ namespace Client
             }
         }
 
-        // 260912_웨이브 진입 — 그 자리에서 이어서 한다.
-        // 판을 다시 깔지 않고, 플레이어도 몬스터도 있던 자리에 그대로 둔다.
-        // 바뀌는 것은 가림막 한 장과 '이번 웨이브에 새로 들어오는 몬스터'뿐이다.
+        // 260920_웨이브 진입 — 판을 다시 깐다.
+        // 점령한 칸을 비우고(가림막도 구멍 없는 상태로 돌아간다) 플레이어를 시작 칸에 다시 세운다.
+        // 화면에서 바뀌는 것은 '드러난 보상 위에 새 가림막이 덮인다'뿐이고, 지운 땅을 처음부터 다시 먹는다.
+        // 260912에는 점령을 유지한 채 이어서 했는데, 그러면 뒤 웨이브가 '조금만 더 먹으면 끝'이 되어
+        // 새 그림을 드러내는 맛이 없었다. 몬스터는 그대로 둔다 — 웨이브는 심해지기만 한다(2-5).
         /// <param name="iWave"> 1부터 시작 </param>
         private void Enter_Wave(int iWave)
         {
@@ -385,6 +387,12 @@ namespace Client
 
             m_iWave       = iWave;
             m_fRemainTime = cWave.fTimeLimit;
+
+            // 260920_점령을 비우므로 점령률도 0으로 돌아간다. 카드 지점(strCardRatio)도 같이 되돌려
+            // 웨이브마다 다시 준다 — 안 그러면 2·3웨이브에서는 카드가 아예 안 나온다(2-10-1).
+            m_cGrid.Reset(m_cMapInfo.iBorderThick);
+            m_iCardGiven = 0;
+            Respawn_Player();
 
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
                                             Get_Texture(m_cMapInfo.Get_RevealTex(iWave)));
@@ -467,8 +475,8 @@ namespace Client
         // 260905_소모품은 인벤토리에서 개수를 깎는 쪽(CGameManager)이 먼저 판단하고,
         // 실제 효과만 여기서 플레이어에게 건다.
         /// <returns> 효과를 걸었으면 true </returns>
-        // 260912_카드 — 점령률이 정해 둔 지점을 넘으면 한 번씩 준다.
-        // 이미 지나친 지점은 다시 주지 않는다. 웨이브를 넘겨 점령률이 0으로 돌아가도 마찬가지다.
+        // 260912_카드 — 점령률이 정해 둔 지점을 넘으면 한 번씩 준다. 이미 지나친 지점은 다시 주지 않는다.
+        // 260920_다만 웨이브가 넘어가면 판을 다시 깔면서 이 기록도 지운다(Enter_Wave) — 웨이브마다 처음부터다.
         private void Check_CardReady()
         {
             if (OnCardReady == null || m_cMapInfo == null)
