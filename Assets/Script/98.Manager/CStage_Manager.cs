@@ -1164,6 +1164,7 @@ namespace Client
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
             bool bHit = false;
+            bool bLineCut = false;      // 260922_선에 닿았다 — 회피로 흘리지 못한다(CPlayer.Lose_Life)
 
             m_bPlayerExposed = bExposed;
 
@@ -1205,6 +1206,7 @@ namespace Client
                 if (m_cGrid.Is_StateWithin(cEnemy.POS, cEnemy.HIT_RANGE, CELL_STATE.TRAIL) == true)
                 {
                     bHit = true;
+                    bLineCut = true;
                     continue;
                 }
 
@@ -1234,7 +1236,7 @@ namespace Client
             if (bHit == true)
             {
                 m_cStyle.Clear_Near();      // 260922_맞았으면 아슬아슬이 아니다
-                m_cPlayer.Lose_Life();
+                m_cPlayer.Lose_Life(bLineCut);
             }
         }
 

@@ -271,7 +271,7 @@ namespace Client
             switch (eResult)
             {
                 case STEP_RESULT.DEAD:
-                    Lose_Life();
+                    Lose_Life(true);    // 260922_자기 선 밟기 — 회피로 흘리지 못한다
                     break;
 
                 case STEP_RESULT.CAPTURE:
@@ -547,7 +547,10 @@ namespace Client
         // 260918_HP 풀(260916)에서 다시 목숨제로 돌렸다 — 선에 몬스터가 닿으면 곧바로 한 목숨을 잃는 것이
         // 이 장르(Qix)의 긴장이고, 판이 빨리 돌아 다시 도전하기도 좋다. 몬스터 · 탄마다 다르던 피해량은 없앴다.
         /// <summary> 몬스터 · 탄에 맞거나 자기 선을 밟았을 때. 보호막 · 회피가 막지 못하면 목숨 하나를 잃고 안전 칸에서 다시 시작한다. </summary>
-        public void Lose_Life()
+        /// <param name="bLineCut"> 260922_그리던 선이 끊겼다(몬스터가 선에 닿음 · 자기 선 밟기). 회피로 흘리지 못한다 —
+        /// 선이 끊기면 죽는 것이 이 장르의 규칙이고, 회피가 높으면 몬스터가 선을 지나가도 멀쩡해 규칙이 사라진 것처럼 보였다.
+        /// 보호막 · 무적은 그대로 막는다(유령 걸음 · 잔상처럼 '통과'를 약속한 효과라서) </param>
+        public void Lose_Life(bool bLineCut = false)
         {
             if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
                 return;
@@ -565,7 +568,7 @@ namespace Client
 
             // 260905_회피(능력치 강화). 성공하면 짧은 무적을 함께 준다 —
             // 몬스터와 겹쳐 있는 동안 매 프레임 판정하면 확률이 아무리 높아도 결국 죽는다.
-            if (m_fEvasion > 0f && UnityEngine.Random.value < m_fEvasion)
+            if (bLineCut == false && m_fEvasion > 0f && UnityEngine.Random.value < m_fEvasion)
             {
                 m_fInvincibleTimer = EVADE_GRACE_TIME;
                 OnEvade?.Invoke();

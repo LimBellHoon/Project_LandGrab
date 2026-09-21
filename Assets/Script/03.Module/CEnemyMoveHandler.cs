@@ -124,18 +124,24 @@ namespace Client
             m_vPos = vNext;
         }
 
-        // 점령지와 맵 밖(BLOCK)이 벽. 그리드 바깥은 World_ToCell이 테두리로 clamp하고
-        // 테두리는 점령지라 자동으로 막힌다.
+        // 점령지와 맵 밖(BLOCK)이 벽.
         // 260904_모양 마스크로 잘라낸 칸도 여기서 함께 막지 않으면 몬스터가 맵 밖으로 샌다.
+        // 260922_그리드 바깥도 직접 막는다. 예전에는 World_ToCell이 바깥을 테두리 칸으로 끌어당기고 그 테두리가
+        // 점령지라 저절로 막혔는데, 외벽을 점령지에서 뺀 뒤로(2-3) 테두리가 빈 땅이 되어 몬스터가 맵 밖으로 나갔다
         private bool Is_Blocked(Vector2 vWorld)
         {
+            if (m_cGrid.Is_WorldInside(vWorld) == false)
+                return true;
+
             CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorld));
             return eState == CELL_STATE.OWNED || eState == CELL_STATE.BLOCK;
         }
 
         private bool Escape_IfTrapped()
         {
-            if (m_cGrid.Get_Cell(CELL) != CELL_STATE.OWNED)
+            // 260922_이미 맵 밖에 나가 있으면(옛 버그로 나간 몬스터 · 넉백) 가장 가까운 빈 땅으로 데려온다
+            bool bOutside = m_cGrid.Is_WorldInside(m_vPos) == false;
+            if (bOutside == false && m_cGrid.Get_Cell(CELL) != CELL_STATE.OWNED)
                 return false;
 
             if (m_cGrid.Try_Find_NearestCell(CELL, CELL_STATE.EMPTY, ESCAPE_SEARCH_RADIUS, out Vector2Int vEscape) == false)

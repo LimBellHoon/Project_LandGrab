@@ -238,6 +238,17 @@ namespace Client
         }
         public Vector3 Cell_ToWorld(Vector2Int vCell) => Cell_ToWorld(vCell.x, vCell.y);
 
+        /// <summary>
+        /// 260922_월드 좌표가 맵 안인가. World_ToCell은 맵 밖을 가장자리 칸으로 끌어당기므로 그것만 보면
+        /// 맵 밖에 있어도 가장자리 칸의 상태가 나온다 — 외벽을 점령지에서 뺀 뒤로 몬스터가 이 틈으로 맵 밖에 나갔다.
+        /// </summary>
+        public bool Is_WorldInside(Vector2 vWorld)
+        {
+            float fX = (vWorld.x - m_vOrigin.x) / m_fCellSize;
+            float fY = (vWorld.y - m_vOrigin.y) / m_fCellSize;
+            return fX >= 0f && fY >= 0f && fX < m_iWidth && fY < m_iHeight;
+        }
+
         public Vector2Int World_ToCell(Vector3 vWorld)
         {
             int x = Mathf.FloorToInt((vWorld.x - m_vOrigin.x) / m_fCellSize);

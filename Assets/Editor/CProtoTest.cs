@@ -66,6 +66,7 @@ namespace Client
             Test_StopWhileDrawing();
             Test_PickRnD();
             Test_StyleTracker();
+            Test_EnemyStaysInside();
             Test_TrailHitRange();
             Test_SnapToBoundary();
             Test_StartArea();
@@ -1128,6 +1129,34 @@ namespace Client
             Check("나선형 — 둥글게 돌았다(가로 · 세로로 모두 퍼졌다)", vMax.x - vMin.x >= 6 && vMax.y - vMin.y >= 6);
             Check("나선형 — 도형 하나만큼 먹었다", iCaptured >= 30);
             Check("나선형 — 점령하면 칸 이동으로 돌아간다", cMove.IS_FREE == false);
+        }
+
+        // 260922_외벽이 점령지가 아니어도 몬스터는 맵 밖으로 나가지 않는다
+        private static void Test_EnemyStaysInside()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(20, 20, 1f, Vector2.zero, 0, null, 2);    // 테두리 없음
+
+            Check("맵 안 판정", cGrid.Is_WorldInside(new Vector2(0.1f, 19.9f)) == true
+                             && cGrid.Is_WorldInside(new Vector2(-0.1f, 5f)) == false
+                             && cGrid.Is_WorldInside(new Vector2(5f, 20.1f)) == false);
+
+            CEnemyMoveHandler cEnemy = new CEnemyMoveHandler();
+            cEnemy.Initialize(cGrid, new Vector2(1.5f, 5.5f), Vector2.left, 6f);
+            bool bInside = true;
+            for (int i = 0; i < 120; ++i)
+            {
+                cEnemy.Tick(0.02f, false, Vector2.zero, 0f);
+                bInside &= cGrid.Is_WorldInside(cEnemy.POS);
+            }
+            Check("몬스터 — 테두리가 빈 땅이어도 맵 밖으로 안 나간다", bInside);
+            Check("몬스터 — 벽에 튕겨 돌아온다", cEnemy.DIR.x > 0f);
+
+            // 이미 밖에 나가 있던 몬스터는 안으로 데려온다
+            CEnemyMoveHandler cOut = new CEnemyMoveHandler();
+            cOut.Initialize(cGrid, new Vector2(-3f, 5.5f), Vector2.left, 6f);
+            cOut.Tick(0.02f, false, Vector2.zero, 0f);
+            Check("몬스터 — 밖에 있던 것은 가장 가까운 빈 땅으로 돌아온다", cGrid.Is_WorldInside(cOut.POS) == true);
         }
 
         // 260922_현란한 동작 판정 — 보상 없이 알아보기만 한다
