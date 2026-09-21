@@ -475,7 +475,8 @@ namespace Client
             }
 
             Debug.Log($"  PASS  GameConfig — 속도 x{cConfig.PLAYER_SPEED_SCALE:0.##}"
-                    + $" / 전체해금 {cConfig.UNLOCK_ALL_STAGE} / 무료 {cConfig.FREE_SPEND}"
+                    + $" / 전체해금 {cConfig.UNLOCK_ALL_STAGE} / 캐릭터전체 {cConfig.UNLOCK_ALL_CHARACTER}"
+                    + $" / 디버그HUD {cConfig.DEBUG_HUD_VISIBLE} / 무료 {cConfig.FREE_SPEND}"
                     + $" / 시작코인 {cConfig.START_COIN}"
                     + $" / 흔들림 {cConfig.CAMERA_SHAKE_ENABLED}(피격{cConfig.TRAUMA_ON_HIT:0.##}"
                     + $"·사망{cConfig.TRAUMA_ON_DEATH:0.##})"

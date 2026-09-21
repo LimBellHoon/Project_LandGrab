@@ -19,5 +19,7 @@ MonoBehaviour:
   m_fViewCellHeight: 44
   m_fCameraFollowTime: 0.12
   m_bUnlockAllStage: 0
+  m_bUnlockAllCharacter: 1
+  m_bDebugHudVisible: 0
   m_bFreeSpend: 1
   m_iStartCoin: 0

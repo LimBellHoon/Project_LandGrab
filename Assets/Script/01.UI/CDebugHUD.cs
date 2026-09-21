@@ -5,10 +5,26 @@ namespace Client
     // 260901_땅따먹기 프로토타입: 임시 디버그 HUD (정식 UI 전까지만 사용)
     public class CDebugHUD : MonoBehaviour
     {
+        // 260921_F1로 켜고 끈다. 정식 HUD(CUI_InGame)와 겹치는 정보라 평소에는 가려 두고,
+        // 수치를 들여다볼 때만 띄운다. 처음 상태는 GameConfig.asset의 m_bDebugHudVisible(1-6).
+        private const KeyCode TOGGLE_KEY = KeyCode.F1;
+
         private GUIStyle m_cStyle;
+        private bool     m_bVisible;
+
+        private void Awake() => m_bVisible = CGameConfig.Load().DEBUG_HUD_VISIBLE;
+
+        private void Update()
+        {
+            if (Input.GetKeyDown(TOGGLE_KEY) == true)
+                m_bVisible = !m_bVisible;
+        }
 
         private void OnGUI()
         {
+            if (m_bVisible == false)
+                return;
+
             CStage_Manager cStage = CGameManager.STAGE_MANAGER;
             if (cStage == null || cStage.GRID == null)
                 return;
@@ -31,7 +47,7 @@ namespace Client
             GUILayout.Label($"점령률   {cStage.OWNED_RATIO:P1}  /  목표 {cStage.CLEAR_RATIO:P0}", m_cStyle);
             GUILayout.Label($"남은 시간 {cStage.REMAIN_TIME:F1}s     목숨 {cStage.LIFE}/{cStage.MAX_LIFE}     몬스터 {cStage.ENEMY_COUNT}", m_cStyle);
             GUILayout.Label($"상태     {cStage.STATE}", m_cStyle);
-            GUILayout.Label("WASD / 방향키로 이동", m_cStyle);
+            GUILayout.Label("WASD / 방향키로 이동     F1 디버그 끄기", m_cStyle);
             GUILayout.EndArea();
         }
     }

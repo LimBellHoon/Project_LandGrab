@@ -163,6 +163,10 @@ namespace Client
         [Tooltip("켜면 CharacterInfo.csv의 캐릭터를 전부 1레벨로 갖고 시작한다. 이동 방식 테스트용.")]
         [SerializeField] private bool m_bUnlockAllCharacter;
 
+        // 260921_좌상단 디버그 글자(CDebugHUD)를 처음부터 띄울지. 켜고 끄는 것은 플레이 중 F1로 한다.
+        [Tooltip("켜면 시작할 때부터 좌상단 디버그 정보가 보인다. 플레이 중에는 F1로 켜고 끈다.")]
+        [SerializeField] private bool m_bDebugHudVisible;
+
         // 260920_캐릭터를 바꾸지 않고 이동 방식만 바꿔 본다(2-22). NONE이면 캐릭터 표를 따른다.
         [Tooltip("FOUR_WAY / EIGHT_WAY를 고르면 장착한 캐릭터와 상관없이 그 방식으로 움직인다.")]
         [SerializeField] private DEV_MOVE_STYLE m_eDevMoveStyle = DEV_MOVE_STYLE.NONE;
@@ -224,6 +228,7 @@ namespace Client
         public bool  HAPTIC_ENABLED           => m_bHapticEnabled;
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  UNLOCK_ALL_CHARACTER => m_bUnlockAllCharacter;
+        public bool  DEBUG_HUD_VISIBLE    => m_bDebugHudVisible;
         /// <summary> 260920_개발용 이동 방식 덮어쓰기. null이면 캐릭터를 따른다(2-22). </summary>
         public MOVE_STYLE? DEV_MOVE_STYLE_OVERRIDE
             => m_eDevMoveStyle == DEV_MOVE_STYLE.NONE ? (MOVE_STYLE?)null
