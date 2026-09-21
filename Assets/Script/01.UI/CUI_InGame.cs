@@ -19,6 +19,9 @@ namespace Client
     public class CUI_InGame : CUI
     {
         private const float HANDLE_RATIO = 0.45f;   // 손잡이 지름 / 조이스틱 지름
+        // 260922_조이스틱은 반투명 — 누른 자리에 뜨므로 그 아래 맵(몬스터 · 선)을 가리면 안 된다
+        private const float JOYSTICK_BASE_ALPHA   = 0.35f;
+        private const float JOYSTICK_HANDLE_ALPHA = 0.6f;
 
         // 260916_화면 플래시 색. 피격/회피는 항상 같은 색이라 CGameConfig가 아니라 여기 상수로 둔다
         // (CEnemy의 기믹별 색과 같은 자리 — 세기·지속시간만 CGameConfig에서 조절한다).
@@ -109,6 +112,8 @@ namespace Client
             m_OnPause = cDesc.OnPause;
             m_cConfig = cDesc.cConfig;
             m_cCanvas = GetComponentInParent<Canvas>();
+            Set_Alpha(m_trJoystickBase, JOYSTICK_BASE_ALPHA);       // 260922_반투명 조이스틱
+            Set_Alpha(m_trJoystickHandle, JOYSTICK_HANDLE_ALPHA);
 
             // 260916_피격/회피 화면 플래시. 풀에서 재사용돼도 이전 판의 리스너가 남지 않도록
             // 먼저 끊고 다시 건다(스킬/소모품 버튼과 같은 이유).
@@ -401,6 +406,17 @@ namespace Client
             m_trJoystickBase.sizeDelta   = Vector2.one * fDiameter;
             m_trJoystickHandle.position  = cJoystick.HANDLE;
             m_trJoystickHandle.sizeDelta = Vector2.one * (fDiameter * HANDLE_RATIO);
+        }
+
+        private static void Set_Alpha(RectTransform trPart, float fAlpha)
+        {
+            Image cImage = trPart != null ? trPart.GetComponent<Image>() : null;
+            if (cImage == null)
+                return;
+
+            Color cColor = cImage.color;
+            cColor.a = fAlpha;
+            cImage.color = cColor;
         }
 
         private void Show_Joystick(bool bShow)

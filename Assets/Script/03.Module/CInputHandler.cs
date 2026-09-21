@@ -13,7 +13,8 @@ namespace Client
     public class CInputHandler
     {
         // 화면 크기가 제각각이라 픽셀을 그대로 적지 않고 화면 높이에 대한 비율로 잡는다.
-        private const float RADIUS_RATIO    = 0.12f;    // 화면 높이 대비 조이스틱 반경
+        // 260922_0.12 → 0.06. 화면 대비 너무 컸다. 반경이 곧 '끝까지 민 거리'라 절반이면 더 적게 밀어도 방향이 잡힌다
+        private const float RADIUS_RATIO    = 0.06f;    // 화면 높이 대비 조이스틱 반경
         private const float DEADZONE_RATIO  = 0.25f;    // 반경 대비 데드존
         private const float ACTIVE_HEIGHT   = 0.6f;     // 화면 아래 이 비율 안에서만 조이스틱을 잡는다
         private const float ACTIVE_WIDTH    = 0.55f;    // 오른쪽은 스킬/아이템 버튼 자리로 비워 둔다
