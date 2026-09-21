@@ -237,7 +237,8 @@ namespace Client
         /// <summary> 260920_개발용 이동 방식 덮어쓰기. null이면 캐릭터를 따른다(2-22). </summary>
         public MOVE_STYLE? DEV_MOVE_STYLE_OVERRIDE
             => m_eDevMoveStyle == DEV_MOVE_STYLE.NONE ? (MOVE_STYLE?)null
-             : m_eDevMoveStyle == DEV_MOVE_STYLE.EIGHT_WAY ? MOVE_STYLE.EIGHT_WAY : MOVE_STYLE.FOUR_WAY;
+             : m_eDevMoveStyle == DEV_MOVE_STYLE.EIGHT_WAY ? MOVE_STYLE.EIGHT_WAY
+             : m_eDevMoveStyle == DEV_MOVE_STYLE.SPIRAL    ? MOVE_STYLE.SPIRAL : MOVE_STYLE.FOUR_WAY;
         public bool  FREE_SPEND         => m_bFreeSpend;
         public int   START_COIN         => Mathf.Max(0, m_iStartCoin);
         public int   DEV_AUTO_FIRE_ID   => Mathf.Max(0, m_iDevAutoFireProjectileID);

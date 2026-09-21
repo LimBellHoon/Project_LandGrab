@@ -225,7 +225,14 @@ namespace Client
             m_cInputHandler.Tick();
 
             if (m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out Vector2Int vArrivedCell) == true)
+            {
                 Handle_ArriveCell(vArrivedCell);
+
+                // 260921_자유 각도 이동은 한 프레임에 칸을 여럿 지날 수 있다 — 전부 같은 프레임에 판정한다.
+                // 점령 · 사망으로 자리를 옮기면(Snap_To · Teleport) 남은 칸은 거기서 버려진다.
+                while (m_cMoveHandler.Try_PopArrived(out Vector2Int vMoreCell) == true)
+                    Handle_ArriveCell(vMoreCell);
+            }
 
             Tick_MoveSignal();
             transform.position = m_cMoveHandler.WORLD_POS;

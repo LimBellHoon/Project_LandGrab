@@ -39,6 +39,7 @@
         NONE = 0,
         FOUR_WAY,
         EIGHT_WAY,
+        SPIRAL,         // 260921_나선형도 캐릭터와 무관하게 확인할 수 있게
     }
 
     // 260920_캐릭터마다 다른 이동 방식 (CharacterInfo.csv의 eMoveStyle, 2-22)

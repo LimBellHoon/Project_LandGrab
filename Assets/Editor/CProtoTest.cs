@@ -61,6 +61,7 @@ namespace Client
             Test_MoveSkill();
             Test_SpiralMove();
             Test_DiagonalGlide();
+            Test_FreeEightWay();
             Test_TrailHitRange();
             Test_SnapToBoundary();
             Test_StartArea();
@@ -1085,73 +1086,103 @@ namespace Client
             Check("분신 — 쿨이 있다", cDecoy.fCool > 0f);
         }
 
-        // 260921_나선형 이동(2-22) — 멈추지 못하고, 스스로 꺾어 소용돌이를 그린다
+        // 260921_나선형 이동(2-22) — 내 땅 위에서는 조작하는 대로, 나가면 아르키메데스 나선으로 돌아 한 바퀴에 닫는다
         private static void Test_SpiralMove()
         {
-            Check("시계 방향으로 꺾는다", CMoveHandler.Turn_Clockwise(MOVE_DIR.UP) == MOVE_DIR.RIGHT
-                                      && CMoveHandler.Turn_Clockwise(MOVE_DIR.RIGHT) == MOVE_DIR.DOWN
-                                      && CMoveHandler.Turn_Clockwise(MOVE_DIR.DOWN) == MOVE_DIR.LEFT
-                                      && CMoveHandler.Turn_Clockwise(MOVE_DIR.LEFT) == MOVE_DIR.UP);
+            Check("나선 반지름은 돌수록 커진다 (r = a + bθ)",
+                  CMoveHandler.Get_SpiralRadius(Mathf.PI * 2f) > CMoveHandler.Get_SpiralRadius(Mathf.PI)
+                  && CMoveHandler.Get_SpiralRadius(Mathf.PI) > CMoveHandler.Get_SpiralRadius(0f));
 
             CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 5);
+            cGrid.Initialize(61, 61, 1f, Vector2.zero, 0, null, 5);
 
             CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, cGrid.START_CENTER + new Vector2Int(0, -5), 100f);
+            Vector2Int vStart = cGrid.START_CENTER + new Vector2Int(0, -5);
+            cMove.Initialize(cGrid, vStart, 10f);
             cMove.Set_MoveStyle(MOVE_STYLE.SPIRAL);
 
-            // 입력이 없어도 계속 간다 — 나선형은 멈추지 못한다
-            Vector2Int vStart = cMove.CUR_CELL;
-            Step_Until_Arrive(cMove, MOVE_DIR.NONE, out Vector2Int vFirst);
-            Check("입력이 없어도 움직인다", vFirst != vStart);
+            // 내 땅 위에서는 제멋대로 움직이지 않는다
+            Check("나선형 — 입력이 없으면 내 땅에서 멈춰 있다", Step_Until_Arrive(cMove, MOVE_DIR.NONE, out Vector2Int _) == false);
 
-            // 네 칸마다 스스로 꺾어 방향이 바뀐다
-            MOVE_DIR eDir = cMove.CUR_DIR;
-            bool bTurned = false;
-            for (int i = 0; i < 8; ++i)
+            // 나가는 것은 내 의지 — 아래로 한 번 누른 뒤 손을 뗀다
+            STEP_RESULT eResult = Run_Free(cGrid, cMove, MOVE_DIR.DOWN, 0.15f, out int iCaptured, out bool bConnected,
+                                           out Vector2Int vMin, out Vector2Int vMax);
+            Check("나선형 — 누르면 선을 긋기 시작한다", cGrid.IS_DRAWING == true && cMove.IS_FREE == true);
+
+            eResult = Run_Free(cGrid, cMove, MOVE_DIR.NONE, 20f, out iCaptured, out bConnected, out vMin, out vMax);
+            Check("나선형 — 한 바퀴 돌고 스스로 닫아 점령한다", eResult == STEP_RESULT.CAPTURE);
+            Check("나선형 — 지나간 칸이 4방향으로 이어진다", bConnected);
+            Check("나선형 — 둥글게 돌았다(가로 · 세로로 모두 퍼졌다)", vMax.x - vMin.x >= 6 && vMax.y - vMin.y >= 6);
+            Check("나선형 — 도형 하나만큼 먹었다", iCaptured >= 30);
+            Check("나선형 — 점령하면 칸 이동으로 돌아간다", cMove.IS_FREE == false);
+        }
+
+        // 260921_8방향은 선을 긋는 동안 곧게 비스듬히 간다 — 계단이 아니라 대각선 모양으로 점령한다
+        private static void Test_FreeEightWay()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(61, 61, 1f, Vector2.zero, 0, null, 5);
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, cGrid.START_CENTER + new Vector2Int(0, -5), 10f);
+            cMove.Set_MoveStyle(MOVE_STYLE.EIGHT_WAY);
+
+            Run_Free(cGrid, cMove, MOVE_DIR.DOWN, 0.15f, out int _, out bool _, out Vector2Int _, out Vector2Int _);
+            Vector2Int vFrom = cMove.CUR_CELL;
+            Run_Free(cGrid, cMove, MOVE_DIR.DOWN_RIGHT, 1f, out int _, out bool bConnected,
+                     out Vector2Int vMin, out Vector2Int vMax);
+            Vector2Int vTo = cMove.CUR_CELL;
+
+            Check("8방향 — 선을 긋는 동안 자유 이동", cMove.IS_FREE == true);
+            Check("8방향 — 두 축이 같은 만큼 간다(곧은 대각선)",
+                  vTo.x - vFrom.x >= 5 && Mathf.Abs((vTo.x - vFrom.x) - (vFrom.y - vTo.y)) <= 1);
+            Check("8방향 — 대각선도 칸은 4방향으로 이어진다", bConnected);
+
+            // 뒤로 꺾는 입력은 무시한다 — 자기 선을 밟는 즉사를 막는다
+            STEP_RESULT eResult = Run_Free(cGrid, cMove, MOVE_DIR.UP_LEFT, 0.3f, out int _, out bool _,
+                                           out Vector2Int _, out Vector2Int _);
+            Check("8방향 — 뒤로 꺾어 자기 선을 밟지 않는다", eResult != STEP_RESULT.DEAD);
+        }
+
+        /// <summary>
+        /// 자유 이동을 fSec초 돌리며 지나간 칸을 전부 규칙(Step_To)에 넘긴다 — CPlayer와 같은 순서.
+        /// 점령하면 그 칸에 세우고, 점령 · 사망이면 멈춘다.
+        /// </summary>
+        private static STEP_RESULT Run_Free(CTerritoryGrid cGrid, CMoveHandler cMove, MOVE_DIR eDir, float fSec,
+                                            out int iCaptured, out bool bConnected, out Vector2Int vMin, out Vector2Int vMax)
+        {
+            iCaptured  = 0;
+            bConnected = true;
+            vMin = vMax = cMove.CUR_CELL;
+            Vector2Int vPrev = cMove.CUR_CELL;
+
+            for (float t = 0f; t < fSec; t += 0.02f)
             {
-                Step_Until_Arrive(cMove, MOVE_DIR.NONE, out Vector2Int _);
-                if (cMove.CUR_DIR != eDir)
-                    bTurned = true;
+                if (cMove.Tick(0.02f, eDir, out Vector2Int vCell) == false)
+                    continue;
+
+                do
+                {
+                    bConnected &= Mathf.Abs(vCell.x - vPrev.x) + Mathf.Abs(vCell.y - vPrev.y) == 1;
+                    vPrev = vCell;
+                    vMin  = Vector2Int.Min(vMin, vCell);
+                    vMax  = Vector2Int.Max(vMax, vCell);
+
+                    STEP_RESULT eResult = cGrid.Step_To(vCell, out int iCount);
+                    if (eResult == STEP_RESULT.CAPTURE)
+                    {
+                        iCaptured = iCount;
+                        cMove.Snap_To(vCell);
+                        return eResult;
+                    }
+
+                    if (eResult == STEP_RESULT.DEAD)
+                        return eResult;
+                }
+                while (cMove.Try_PopArrived(out vCell) == true);
             }
-            Check("스스로 꺾어 소용돌이를 그린다", bTurned);
 
-            // 입력이 들어오면 그 방향이 우선이다 — 입력은 '언제 꺾을지'다
-            Step_Until_Arrive(cMove, MOVE_DIR.LEFT, out Vector2Int _);
-            Check("입력한 방향이 우선", cMove.CUR_DIR == MOVE_DIR.LEFT);
-
-            // 260921_변이 길어져야 소용돌이다 — 길이가 고정이면 같은 네모만 돌아 작은 네모를 점령하고 끝났다
-            Check("변 길이가 두 번 꺾을 때마다 는다",
-                  CMoveHandler.Get_SpiralLeg(0) == 4 && CMoveHandler.Get_SpiralLeg(1) == 4
-                  && CMoveHandler.Get_SpiralLeg(2) == 6 && CMoveHandler.Get_SpiralLeg(4) == 8);
-
-            // 넓은 빈 판에서 실제로 선을 그으며 돈다 — 자기 선을 밟지 않고, 변이 길어진다
-            CTerritoryGrid cOpen = new CTerritoryGrid();
-            cOpen.Initialize(81, 81, 1f, Vector2.zero, 0, null, 1);
-            CMoveHandler cSpiral = new CMoveHandler();
-            cSpiral.Initialize(cOpen, cOpen.START_CENTER + new Vector2Int(0, -1), 100f);
-            cSpiral.Set_MoveStyle(MOVE_STYLE.SPIRAL);
-
-            bool bDead = false;
-            int iLongest = 0, iRun = 0;
-            MOVE_DIR ePrev = cSpiral.CUR_DIR;
-            for (int i = 0; i < 12; ++i)
-            {
-                Step_Until_Arrive(cSpiral, MOVE_DIR.DOWN, out Vector2Int vCell);
-                bDead |= cOpen.Step_To(vCell, out int _) == STEP_RESULT.DEAD;
-            }
-            // 12칸 내리 누르고 있어도 꺾여야 한다 — 누르고 있는 방향이 자동 회전을 매번 되돌리면 안 된다
-            Check("누르고 있어도 스스로 꺾는다", cSpiral.CUR_DIR != MOVE_DIR.DOWN);
-            for (int i = 0; i < 60; ++i)
-            {
-                Step_Until_Arrive(cSpiral, MOVE_DIR.NONE, out Vector2Int vCell);
-                bDead |= cOpen.Step_To(vCell, out int _) == STEP_RESULT.DEAD;
-                if (cSpiral.CUR_DIR == ePrev) { ++iRun; }
-                else { ePrev = cSpiral.CUR_DIR; iRun = 1; }
-                iLongest = Mathf.Max(iLongest, iRun);
-            }
-            Check("소용돌이는 자기 선을 밟지 않는다", bDead == false);
-            Check("소용돌이의 변이 길어진다", iLongest > 4);
+            return cGrid.IS_DRAWING == true ? STEP_RESULT.DRAW : STEP_RESULT.SAFE;
         }
 
         // 260921_대각선은 두 칸을 밟아도 몸은 비스듬히 곧게 간다 — 칸대로 그리면 좌우 지그재그로 보였다
