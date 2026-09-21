@@ -42,6 +42,7 @@ namespace Client
             { HAPTIC_ID.STAGE_CLEAR, new CHapticDef(3, 0.12f) },
             { HAPTIC_ID.STAGE_FAIL,  new CHapticDef(2, 0.20f) },
             { HAPTIC_ID.MASS_STUN,   new CHapticDef(2, 0.08f) },     // 260918_전체 마비 — 짧게 두 번
+            { HAPTIC_ID.STYLISH,     new CHapticDef(1, 0f) },        // 260922_현란한 동작
         };
 
         private bool  m_bEnabled = true;

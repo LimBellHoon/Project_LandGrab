@@ -210,6 +210,22 @@ namespace Client
                                                           m_cStageManager.OWNED_RATIO, Time.deltaTime);
         }
 
+        // 260922_현란한 동작 — 글자 · 소리 · 진동 · 펀치. 가둬 잡기와 대형 점령만 흔든다(아슬아슬 · 연속 점령은 자주 떠서 어지럽다).
+        // 보상은 없다 — 알아보고 알려 주기만 한다
+        private void On_Stylish(STYLE_ACTION eAction, int iCount)
+        {
+            if (m_cConfig.STYLISH_ENABLED == false)
+                return;
+
+            (m_cInGameUI as CUI_InGame)?.Show_Callout(eAction, iCount);
+            m_cAudioManager.Play(SOUND_ID.STYLISH);
+            m_cHapticManager.Play(HAPTIC_ID.STYLISH);
+            m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_STYLISH);
+
+            if (eAction == STYLE_ACTION.TRAP || eAction == STYLE_ACTION.BIG_CAPTURE)
+                m_cCameraShake.Add_Trauma(m_cConfig.TRAUMA_ON_STYLISH);
+        }
+
         // 260916_카메라 흔들림 / 펀치줌 / 효과음 / 햅틱. 같은 이벤트를 여러 손맛 시스템이 함께 듣는다 —
         // 새 원인을 추가할 때도 여기 한 줄, CGameConfig에 값 하나만 늘면 된다(2-10-2, 2-12, 2-13).
         private void On_PlayerDamaged()
@@ -882,6 +898,7 @@ namespace Client
             m_cStageManager.OnCardReady    += On_CardReady;
             m_cStageManager.OnMassStun     += On_MassStun;     // 260918_전체 마비 연출
             m_cStageManager.OnFieldItemUsed += On_FieldItemUsed;  // 260920_맵 위 아이템
+            m_cStageManager.OnStylish       += On_Stylish;         // 260922_현란한 동작 피드백
             // 260921_시작 위치 슬롯 — 넘어갈 때 딸깍, 멈추면 한 음 + 펀치줌
             m_cStageManager.OnStartSlotHop  += () => m_cAudioManager.Play(SOUND_ID.SLOT_TICK);
             m_cStageManager.OnStartSelected += () =>

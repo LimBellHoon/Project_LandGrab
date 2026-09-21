@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 
 using UnityEngine;
 using UnityEngine.UI;
@@ -47,6 +48,29 @@ namespace Client
         // 260921_시작 위치 슬롯이 도는 동안 깜빡이는 안내(2-3)
         [SerializeField] private Text           m_txtTapToStart;
         private const float TAP_BLINK_SPEED = 5f;
+
+        // 260922_현란한 동작 글자("NEAR MISS!" 등). 꺼 둔 템플릿을 복제해 쓰고, 여럿이 뜨면 위로 쌓는다
+        [SerializeField] private Text           m_txtCallout;
+        private const int   CALLOUT_MAX       = 3;
+        private const float CALLOUT_LIFE      = 1.0f;
+        private const float CALLOUT_POP_TIME  = 0.14f;
+        private const float CALLOUT_POP_SCALE = 1.7f;
+        private const float CALLOUT_FADE_FROM = 0.65f;     // 이 시각부터 옅어진다
+        private const float CALLOUT_GAP       = 96f;       // 쌓일 때 한 줄 간격
+        private const float CALLOUT_RISE      = 40f;       // 사는 동안 떠오르는 거리
+        // 색은 시각 정체성이라 설정이 아니라 여기 둔다(플래시 색과 같은 자리, 2-10-3)
+        private static readonly Color COLOR_CALLOUT_NEAR  = new Color(0.45f, 0.95f, 1.00f);
+        private static readonly Color COLOR_CALLOUT_CHAIN = new Color(1.00f, 0.70f, 0.20f);
+        private static readonly Color COLOR_CALLOUT_TRAP  = new Color(1.00f, 0.35f, 0.45f);
+        private static readonly Color COLOR_CALLOUT_BIG   = new Color(1.00f, 0.90f, 0.30f);
+
+        private class CCallout
+        {
+            public Text  txt;
+            public float fAge;
+            public int   iSlot;
+        }
+        private readonly List<CCallout> m_lstCallout = new List<CCallout>();
 
         private CPlayer         m_cPlayer;
         private CStage_Manager  m_cStage;
@@ -144,6 +168,7 @@ namespace Client
             m_OnUseItem   = null;
             m_OnPause = null;
             m_cConfig = null;
+            Clear_Callout();     // 260922_떠 있던 동작 글자를 지운다 — 풀로 돌아간 뒤 다음 판에 남지 않게
             base.Hide();
         }
         #endregion Engine.CUI
@@ -158,7 +183,107 @@ namespace Client
             Refresh_Item();
             Refresh_Flash();
             Refresh_TapToStart();
+            Refresh_Callout();
         }
+
+        #region 260922_현란한 동작 글자
+        /// <summary> 띄울 글자. 화면 없이 테스트할 수 있게 공개해 둔다. </summary>
+        public static string Get_CalloutText(STYLE_ACTION eAction, int iCount)
+        {
+            switch (eAction)
+            {
+                case STYLE_ACTION.NEAR_MISS:   return "NEAR MISS!";
+                case STYLE_ACTION.CHAIN:       return $"CHAIN ×{iCount}";
+                case STYLE_ACTION.BIG_CAPTURE: return "HUGE!";
+                case STYLE_ACTION.TRAP:
+                    if (iCount <= 1) return "TRAP!";
+                    if (iCount == 2) return "DOUBLE TRAP!";
+                    if (iCount == 3) return "TRIPLE TRAP!";
+                    return $"MULTI TRAP ×{iCount}";
+                default: return string.Empty;
+            }
+        }
+
+        private static Color Get_CalloutColor(STYLE_ACTION eAction)
+        {
+            switch (eAction)
+            {
+                case STYLE_ACTION.NEAR_MISS:   return COLOR_CALLOUT_NEAR;
+                case STYLE_ACTION.CHAIN:       return COLOR_CALLOUT_CHAIN;
+                case STYLE_ACTION.TRAP:        return COLOR_CALLOUT_TRAP;
+                default:                       return COLOR_CALLOUT_BIG;
+            }
+        }
+
+        /// <summary> 새 글자는 맨 아래 자리에 뜨고, 먼저 뜬 것들은 한 줄씩 위로 밀린다. 넘치면 가장 오래된 것을 지운다. </summary>
+        public void Show_Callout(STYLE_ACTION eAction, int iCount)
+        {
+            if (m_txtCallout == null)
+                return;
+
+            if (m_lstCallout.Count >= CALLOUT_MAX)
+            {
+                Destroy(m_lstCallout[0].txt.gameObject);
+                m_lstCallout.RemoveAt(0);
+            }
+
+            for (int i = 0; i < m_lstCallout.Count; ++i)
+                ++m_lstCallout[i].iSlot;
+
+            Text txt = Instantiate(m_txtCallout, m_txtCallout.transform.parent);
+            txt.gameObject.SetActive(true);
+            txt.text  = Get_CalloutText(eAction, iCount);
+            txt.color = Get_CalloutColor(eAction);
+
+            m_lstCallout.Add(new CCallout { txt = txt, fAge = 0f, iSlot = 0 });
+        }
+
+        // 톡 튀어나왔다가(크게 → 제 크기) 조금 떠오르며 옅어진다. 멈춤 · 카드 고르기 중에도 끝까지 보이게 unscaled 시간을 쓴다
+        private void Refresh_Callout()
+        {
+            if (m_txtCallout == null)
+                return;
+
+            Vector2 vBase = m_txtCallout.rectTransform.anchoredPosition;
+
+            for (int i = m_lstCallout.Count - 1; i >= 0; --i)
+            {
+                CCallout cCallout = m_lstCallout[i];
+                cCallout.fAge += Time.unscaledDeltaTime;
+
+                if (cCallout.fAge >= CALLOUT_LIFE || cCallout.txt == null)
+                {
+                    if (cCallout.txt != null)
+                        Destroy(cCallout.txt.gameObject);
+                    m_lstCallout.RemoveAt(i);
+                    continue;
+                }
+
+                float fPop   = Mathf.Clamp01(cCallout.fAge / CALLOUT_POP_TIME);
+                float fScale = Mathf.Lerp(CALLOUT_POP_SCALE, 1f, 1f - (1f - fPop) * (1f - fPop));
+                cCallout.txt.rectTransform.localScale = Vector3.one * fScale;
+
+                float fLife = cCallout.fAge / CALLOUT_LIFE;
+                cCallout.txt.rectTransform.anchoredPosition = vBase + new Vector2(0f, cCallout.iSlot * CALLOUT_GAP + fLife * CALLOUT_RISE);
+
+                Color cColor = cCallout.txt.color;
+                cColor.a = cCallout.fAge < CALLOUT_FADE_FROM
+                         ? 1f : 1f - Mathf.InverseLerp(CALLOUT_FADE_FROM, CALLOUT_LIFE, cCallout.fAge);
+                cCallout.txt.color = cColor;
+            }
+        }
+
+        private void Clear_Callout()
+        {
+            for (int i = 0; i < m_lstCallout.Count; ++i)
+            {
+                if (m_lstCallout[i].txt != null)
+                    Destroy(m_lstCallout[i].txt.gameObject);
+            }
+
+            m_lstCallout.Clear();
+        }
+        #endregion 현란한 동작 글자
 
         // 260921_누르기를 기다리는 동안만 깜빡인다. 누른 뒤 멈추는 동안에는 지운다 — 이미 눌렀는데 또 누르라고 하면 헷갈린다
         private void Refresh_TapToStart()
@@ -290,7 +415,7 @@ namespace Client
         // 260905_스킬 버튼
         private void On_ClickSkill()
         {
-            m_cStage?.Try_UseSkill();
+            m_cStage?.Request_Skill();
         }
 
         // 쿼타임 덮개를 채워 언제 다시 쓸 수 있는지 보여 준다.

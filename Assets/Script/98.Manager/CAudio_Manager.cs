@@ -52,6 +52,8 @@ namespace Client
             // 260921_시작 위치 슬롯 — 짧은 딸깍, 멈추면 올라가는 한 음
             { SOUND_ID.SLOT_TICK,   new CSoundDef(WAVE_SHAPE.SQUARE,   900f,  900f, 0.03f, 0.35f) },
             { SOUND_ID.SLOT_STOP,   new CSoundDef(WAVE_SHAPE.TRIANGLE, 500f, 1100f, 0.25f, 0.70f) },
+            // 260922_현란한 동작 — 높게 튀어 오르는 짧은 한 음
+            { SOUND_ID.STYLISH,     new CSoundDef(WAVE_SHAPE.SQUARE,   800f, 1600f, 0.12f, 0.55f) },
         };
 
         private readonly Dictionary<SOUND_ID, AudioClip> m_dicClip = new Dictionary<SOUND_ID, AudioClip>();

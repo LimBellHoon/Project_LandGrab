@@ -82,6 +82,9 @@ namespace Client
         private int                         m_iGauge;
         private int                         m_iPickGiven;
         private readonly CPickQueue         m_cPickQueue = new CPickQueue();   // 260921_한 번에 한 장만
+        // 260922_현란한 동작 판정 — 알아보고 알려 주기만 한다(OnStylish)
+        private readonly CStyleTracker      m_cStyle = new CStyleTracker();
+        public event Action<STYLE_ACTION, int> OnStylish;
         // 260921_다시 뽑기 · 버리기(2-10-1). 판 전체에서 쓰는 횟수이고, 버린 것은 판이 끝날 때까지 안 나온다
         private int                         m_iRerollLeft;
         private int                         m_iBanishLeft;
@@ -311,6 +314,8 @@ namespace Client
             m_cPickQueue.Clear();
             OnCardReady       = null;
             OnMassStun        = null;
+            OnStylish         = null;     // 260922_현란한 동작
+            m_cStyle.Clear();
             OnStartSlotHop    = null;     // 260921_시작 위치 슬롯
             OnStartSelected   = null;
             m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
@@ -432,6 +437,7 @@ namespace Client
             }
 
             Tick_EnemySlow(fDeltaTime);
+            m_cStyle.Tick(fDeltaTime);
             Tick_Enemy();
             Tick_DevAutoFire(fDeltaTime);
             Tick_Projectile(fDeltaTime);
@@ -867,15 +873,16 @@ namespace Client
         }
 
 
-        public bool Try_UseSkill()
+        // 260922_스킬 버튼. 바로 못 쓰면 잠깐 기억했다가 쓸 수 있게 되는 순간 쓴다(CPlayer.Request_Skill)
+        public void Request_Skill()
         {
             if (m_eState != STAGE_STATE.PLAYING || m_bPaused == true)
-                return false;
+                return;
 
             if (m_eWavePhase != WAVE_PHASE.NONE || m_cPlayer == null)
-                return false;
+                return;
 
-            return m_cPlayer.Try_UseSkill();
+            m_cPlayer.Request_Skill();
         }
 
         public void Set_Pause(bool bPause)
@@ -1160,6 +1167,11 @@ namespace Client
 
             m_bPlayerExposed = bExposed;
 
+            // 260922_아슬아슬 — 선을 긋는 중에만 센다. 안전 지대로 돌아오면 붙어 있던 것은 잊는다
+            if (bExposed == false)
+                m_cStyle.Clear_Near();
+            m_cStyle.Begin_Near();
+
             // 260904_피격이 확정돼도 루프를 끊지 않는다 — break로 빠지면 뒤쪽 몬스터의 추적 상태가 갱신되지
             // 않아, 플레이어가 안전 지대로 돌아간 뒤에도 한 프레임 더 추적 속도로 달려든다.
             // 260916_회전탄/몽둥이에 죽은 몬스터(bCollect)를 여기서 걷어낸다 — 다음 프레임이면
@@ -1201,12 +1213,29 @@ namespace Client
                     && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
                 {
                     bHit = true;
+                    continue;
+                }
+
+                // 260922_아슬아슬 — 몸 판정보다 조금 더 가까이(몸 · 선 어느 쪽이든) 붙었다가 맞지 않고 떨어지면
+                if (bExposed == true)
+                {
+                    float fNear = cEnemy.HIT_RANGE + CStyleTracker.NEAR_MARGIN;
+                    bool bNear = Vector2.Distance(cEnemy.POS, vPlayerPos) <= fNear * m_cGrid.CELL_SIZE
+                              || m_cGrid.Is_StateWithin(cEnemy.POS, fNear, CELL_STATE.TRAIL) == true;
+
+                    if (m_cStyle.Report_Near(cEnemy.GetInstanceID(), bNear) == true)
+                        OnStylish?.Invoke(STYLE_ACTION.NEAR_MISS, 1);
                 }
             }
 
+            m_cStyle.End_Near();
+
             // 260918_목숨제 — 몇 마리가 겹쳐도 한 목숨이다(2-14).
             if (bHit == true)
+            {
+                m_cStyle.Clear_Near();      // 260922_맞았으면 아슬아슬이 아니다
                 m_cPlayer.Lose_Life();
+            }
         }
 
         /// <summary>
@@ -2063,7 +2092,8 @@ namespace Client
 
             // 260920_가둔 몬스터는 죽는다(2-3). 보상보다 먼저 처리해 둔다 —
             // 죽은 자리에 떨어지는 조각 · 아이템이 이번 점령의 결과로 같이 읽힌다.
-            Kill_EnemiesInOwned();
+            int iTrapped = Kill_EnemiesInOwned();
+            Notify_CaptureStyle(iCapturedCount, iTrapped);
 
             Grant_CaptureReward(iCapturedCount);
             Spawn_CaptureShard(iCapturedCount);
@@ -2072,6 +2102,22 @@ namespace Client
             CWaveInfo cWave = m_cMapInfo.Get_Wave(m_iWave);
             if (cWave != null && m_cGrid.OWNED_RATIO >= cWave.fClearRatio)
                 Next_Wave();
+        }
+
+        // 260922_점령에서 나오는 현란한 동작 — 가둬 잡기 · 대형 점령 · 연속 점령. 한 번에 여럿 뜰 수 있다(화면이 쌓아 보여 준다)
+        private void Notify_CaptureStyle(int iCapturedCount, int iTrapped)
+        {
+            int iChain = m_cStyle.On_Capture();
+
+            if (iTrapped > 0)
+                OnStylish?.Invoke(STYLE_ACTION.TRAP, iTrapped);
+
+            float fRatio = m_cGrid.PLAYABLE_COUNT > 0 ? (float)iCapturedCount / m_cGrid.PLAYABLE_COUNT : 0f;
+            if (CStyleTracker.Is_BigCapture(fRatio) == true)
+                OnStylish?.Invoke(STYLE_ACTION.BIG_CAPTURE, 1);
+
+            if (iChain >= 2)
+                OnStylish?.Invoke(STYLE_ACTION.CHAIN, iChain);
         }
 
         // 260918_점령 리스크·보상 연결 — 한 번에 닫은 도형이 맵 전체에서 차지하는 비율이 클수록

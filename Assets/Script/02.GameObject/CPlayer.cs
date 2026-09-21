@@ -203,6 +203,7 @@ namespace Client
 
             Tick_SkillSpeed(fDeltaTime);
             m_cSkillHandler.Tick(fDeltaTime);
+            Tick_SkillBuffer(fDeltaTime);
             Tick_RunSkill(fDeltaTime);
 
             // 260917_적탄 효과(기절 · 감속 · 번쩍임).
@@ -223,6 +224,10 @@ namespace Client
             }
 
             m_cInputHandler.Tick();
+
+            // 260922_에디터 · 키보드 — E 또는 J가 스킬 버튼이다
+            if (m_cInputHandler.SKILL_PRESSED == true && fDeltaTime > 0f)
+                Request_Skill();
 
             if (m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out Vector2Int vArrivedCell) == true)
             {
@@ -589,10 +594,57 @@ namespace Client
             m_fInvincibleTimer = INVINCIBLE_TIME;
         }
 
+        /// <summary>
+        /// 260922_점멸 방향 — **지금 누르고 있는 방향**이 먼저다. 누르고 있지 않으면 마지막으로 움직인 방향.
+        /// 이제 선을 긋다가도 손을 떼면 멈추므로(2-3), 가던 방향만 보면 멈춘 채로 원하는 쪽으로 튈 수 없다.
+        /// 대각선 입력은 가로 · 세로 중 가던 방향 쪽을 쓴다(한 번에 비스듬히 건너뛰면 선이 끊긴다).
+        /// 선을 긋는 중 뒤로 튀는 것은 막는다 — 자기 선을 밟아 죽는다.
+        /// </summary>
+        private MOVE_DIR Get_WarpDir()
+        {
+            MOVE_DIR eCur   = m_cMoveHandler.CUR_DIR;
+            MOVE_DIR eInput = m_cInputHandler.DESIRED_DIR;
+
+            if (CTerritoryGrid.Is_Diagonal(eInput) == true)
+            {
+                CTerritoryGrid.Dir_Split(eInput, out MOVE_DIR eHorizontal, out MOVE_DIR eVertical);
+                eInput = eCur == eVertical ? eVertical : eHorizontal;
+            }
+
+            if (eInput == MOVE_DIR.NONE)
+                return eCur;
+
+            if (m_cGrid.IS_DRAWING == true && eInput == CTerritoryGrid.Dir_Reverse(eCur))
+                return eCur;
+
+            return eInput;
+        }
+
         // 260905_액티브 스킬 — 워프
         /// <summary> 스킬 버튼이 눌렸을 때. 쿨타임이 남았거나 멈춰 있으면 아무 일도 없다. </summary>
         // 260912_무엇을 하는지는 CSkillEffect가 안다. 스킬이 늘어도 여기는 그대로다.
         // 효과가 실패하면 쿨타임을 돌리지 않는다 — 멈춘 채로 점멸을 눌러 쿨만 날리면 억울하다.
+        // 260922_스킬 입력 버퍼 — 쿨이 끝나기 직전이나 칸 사이를 지나는 순간에 누른 것도 놓치지 않는다.
+        // 모바일은 누른 느낌이 둔해서, 눌렀는데 아무 일도 없으면 버튼이 고장 난 것처럼 느껴진다
+        private const float SKILL_BUFFER_TIME = 0.25f;
+        private float m_fSkillBuffer;
+
+        public void Request_Skill()
+        {
+            if (Try_UseSkill() == false)
+                m_fSkillBuffer = SKILL_BUFFER_TIME;
+        }
+
+        private void Tick_SkillBuffer(float fDeltaTime)
+        {
+            if (m_fSkillBuffer <= 0f)
+                return;
+
+            m_fSkillBuffer -= fDeltaTime;
+            if (Try_UseSkill() == true)
+                m_fSkillBuffer = 0f;
+        }
+
         public bool Try_UseSkill()
         {
             if (m_cGrid == null || m_iLife <= 0 || m_cSkillEffect == null)
@@ -613,9 +665,9 @@ namespace Client
         // 도형이 끊겨 점령 판정이 깨진다.
         public bool Warp(int iCellCount)
         {
-            MOVE_DIR eDir = m_cMoveHandler.CUR_DIR;
+            MOVE_DIR eDir = Get_WarpDir();
             if (eDir == MOVE_DIR.NONE || iCellCount <= 0)
-                return false;   // 멈춰 있으면 어디로 갈지 알 수 없다
+                return false;   // 한 번도 움직인 적이 없으면 어디로 갈지 알 수 없다
 
             Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(eDir);
             Vector2Int vCell   = m_cMoveHandler.CUR_CELL;

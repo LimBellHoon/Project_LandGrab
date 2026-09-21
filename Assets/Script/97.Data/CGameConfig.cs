@@ -116,6 +116,17 @@ namespace Client
         [Range(0f, 1f)]
         [SerializeField] private float m_fPunchOnMassStun = 0.8f;
 
+        // 260922_현란한 동작 피드백 — "NEAR MISS!" 같은 글자 + 소리 · 진동 · 펀치. 보상은 없다
+        [Header("현란한 동작 피드백")]
+        [Tooltip("끄면 아슬아슬 · 연속 점령 · 가둬 잡기 · 대형 점령을 알려 주지 않는다.")]
+        [SerializeField] private bool  m_bStylishEnabled = true;
+        [Tooltip("현란한 동작 때 쌓는 펀치 0~1.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fPunchOnStylish = 0.25f;
+        [Tooltip("가둬 잡기 · 대형 점령 때 쌓는 트라우마 0~1. 아슬아슬 · 연속 점령은 흔들지 않는다(자주 떠서 어지럽다).")]
+        [Range(0f, 1f)]
+        [SerializeField] private float m_fTraumaOnStylish = 0.3f;
+
         [Header("화면 플래시")]
         [Tooltip("끄면 피격/회피해도 화면이 물들지 않는다.")]
         [SerializeField] private bool m_bScreenFlashEnabled = true;
@@ -211,6 +222,9 @@ namespace Client
         public float TRAUMA_ON_DEATH         => Mathf.Clamp01(m_fTraumaOnDeath);
         public float TRAUMA_ON_MASS_STUN     => Mathf.Clamp01(m_fTraumaOnMassStun);
         public float PUNCH_ON_MASS_STUN      => Mathf.Clamp01(m_fPunchOnMassStun);
+        public bool  STYLISH_ENABLED         => m_bStylishEnabled;
+        public float PUNCH_ON_STYLISH        => Mathf.Clamp01(m_fPunchOnStylish);
+        public float TRAUMA_ON_STYLISH       => Mathf.Clamp01(m_fTraumaOnStylish);
         public float FLASH_MASS_STUN_DURATION => Mathf.Max(0.01f, m_fFlashMassStunDuration);
         public float FLASH_MASS_STUN_ALPHA   => Mathf.Clamp01(m_fFlashMassStunAlpha);
         public bool  TRAIL_ZOOM_ENABLED      => m_bTrailZoomEnabled;

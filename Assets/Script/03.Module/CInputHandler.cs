@@ -24,6 +24,8 @@ namespace Client
         private MOVE_STYLE m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
 
         public MOVE_DIR         DESIRED_DIR => m_eDesiredDir;
+        // 260922_키보드 스킬 키(E · J). 모바일은 화면 버튼이 부른다
+        public bool             SKILL_PRESSED { get; private set; }
         /// <summary> UI가 그리기 위해 읽는다. </summary>
         public CVirtualJoystick JOYSTICK    => m_cJoystick;
 
@@ -35,6 +37,7 @@ namespace Client
 
         public void Tick()
         {
+            SKILL_PRESSED = Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.J);
             m_cJoystick.Tick();
 
             // 조이스틱을 잡고 있는 동안에는 키보드를 보지 않는다.

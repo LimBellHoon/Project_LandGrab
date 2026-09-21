@@ -65,6 +65,7 @@ namespace Client
             Test_Erode();
             Test_StopWhileDrawing();
             Test_PickRnD();
+            Test_StyleTracker();
             Test_TrailHitRange();
             Test_SnapToBoundary();
             Test_StartArea();
@@ -1127,6 +1128,60 @@ namespace Client
             Check("나선형 — 둥글게 돌았다(가로 · 세로로 모두 퍼졌다)", vMax.x - vMin.x >= 6 && vMax.y - vMin.y >= 6);
             Check("나선형 — 도형 하나만큼 먹었다", iCaptured >= 30);
             Check("나선형 — 점령하면 칸 이동으로 돌아간다", cMove.IS_FREE == false);
+        }
+
+        // 260922_현란한 동작 판정 — 보상 없이 알아보기만 한다
+        private static void Test_StyleTracker()
+        {
+            CStyleTracker cStyle = new CStyleTracker();
+
+            Check("연속 점령 — 첫 점령은 1", cStyle.On_Capture(), 1);
+            cStyle.Tick(1f);
+            Check("연속 점령 — 창 안에서 다시 먹으면 2", cStyle.On_Capture(), 2);
+            cStyle.Tick(CStyleTracker.CHAIN_WINDOW + 0.1f);
+            Check("연속 점령 — 창을 넘기면 다시 1", cStyle.On_Capture(), 1);
+
+            Check("대형 점령 — 기준 이상", CStyleTracker.Is_BigCapture(CStyleTracker.BIG_CAPTURE) == true
+                                         && CStyleTracker.Is_BigCapture(CStyleTracker.BIG_CAPTURE * 0.5f) == false);
+
+            // 아슬아슬 — 붙었다가 맞지 않고 떨어지는 순간
+            cStyle.Begin_Near();
+            Check("아슬아슬 — 붙는 순간에는 안 뜬다", cStyle.Report_Near(7, true) == false);
+            cStyle.End_Near();
+            cStyle.Tick(1f);
+            cStyle.Begin_Near();
+            Check("아슬아슬 — 떨어지는 순간 뜬다", cStyle.Report_Near(7, false) == true);
+            cStyle.End_Near();
+
+            // 맞으면 아슬아슬이 아니다
+            cStyle.Tick(1f);
+            cStyle.Begin_Near(); cStyle.Report_Near(8, true); cStyle.End_Near();
+            cStyle.Clear_Near();
+            cStyle.Begin_Near();
+            Check("아슬아슬 — 맞았으면 안 뜬다", cStyle.Report_Near(8, false) == false);
+            cStyle.End_Near();
+
+            // 사라진 대상은 잊는다
+            cStyle.Tick(1f);
+            cStyle.Begin_Near(); cStyle.Report_Near(9, true); cStyle.End_Near();
+            cStyle.Begin_Near(); cStyle.End_Near();       // 9가 죽어 보고되지 않았다
+            cStyle.Begin_Near();
+            Check("아슬아슬 — 사라졌다 돌아온 대상은 새로 센다", cStyle.Report_Near(9, false) == false);
+            cStyle.End_Near();
+
+            // 연달아 터지면 소음 — 짧은 간격 안에서는 한 번만
+            cStyle.Tick(1f);
+            cStyle.Begin_Near(); cStyle.Report_Near(1, true); cStyle.Report_Near(2, true); cStyle.End_Near();
+            cStyle.Begin_Near();
+            bool bFirst  = cStyle.Report_Near(1, false);
+            bool bSecond = cStyle.Report_Near(2, false);
+            cStyle.End_Near();
+            Check("아슬아슬 — 짧은 간격에는 한 번만", bFirst == true && bSecond == false);
+
+            Check("글자 — 가둬 잡기 마리 수", CUI_InGame.Get_CalloutText(STYLE_ACTION.TRAP, 1) == "TRAP!"
+                                             && CUI_InGame.Get_CalloutText(STYLE_ACTION.TRAP, 2) == "DOUBLE TRAP!"
+                                             && CUI_InGame.Get_CalloutText(STYLE_ACTION.TRAP, 5) == "MULTI TRAP ×5");
+            Check("글자 — 연속 점령", CUI_InGame.Get_CalloutText(STYLE_ACTION.CHAIN, 3) == "CHAIN ×3");
         }
 
         // 260921_선을 긋는 중에도 손을 떼면 멈춘다(칸 이동)

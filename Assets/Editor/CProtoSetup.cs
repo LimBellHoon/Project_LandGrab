@@ -2188,6 +2188,13 @@ namespace Client
             txtTapToStart.gameObject.AddComponent<Outline>().effectDistance = new Vector2(3f, -3f);
             txtTapToStart.gameObject.SetActive(false);
 
+            // 260922_현란한 동작 글자 템플릿 — 꺼 두고 복제해 쓴다. 맵 위쪽 1/3쯤, 상단 정보 바 아래
+            Text txtCallout = Make_AnchoredText(goRoot.transform, "Txt_Callout", "NEAR MISS!", 64,
+                                                new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0f, 420f), 100f);
+            txtCallout.fontStyle = FontStyle.BoldAndItalic;
+            txtCallout.gameObject.AddComponent<Outline>().effectDistance = new Vector2(3f, -3f);
+            txtCallout.gameObject.SetActive(false);
+
             // 260916_화면 플래시 — 맨 마지막 자식이라 조이스틱/버튼 위에 그려진다.
             // raycastTarget은 반드시 꺼야 한다 — 안 그러면 화면 전체를 덮은 이 이미지가
             // 그 아래 스킬/아이템/일시정지 버튼의 터치를 전부 가로챈다.
@@ -2212,6 +2219,7 @@ namespace Client
             cSerialized.FindProperty("m_txtItem").objectReferenceValue          = txtItem;
             cSerialized.FindProperty("m_imgFlash").objectReferenceValue         = imgFlash;
             cSerialized.FindProperty("m_txtTapToStart").objectReferenceValue    = txtTapToStart;
+            cSerialized.FindProperty("m_txtCallout").objectReferenceValue       = txtCallout;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);

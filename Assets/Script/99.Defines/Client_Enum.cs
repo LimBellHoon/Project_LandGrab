@@ -379,6 +379,7 @@
         ITEM_GET,       // 260920_맵 위 아이템 획득
         SLOT_TICK,      // 260921_시작 위치 슬롯이 한 칸 넘어갈 때
         SLOT_STOP,      // 260921_시작 위치가 정해졌을 때
+        STYLISH,        // 260922_현란한 동작(아슬아슬 · 연속 점령 · 가둬 잡기 · 대형 점령)
     }
 
     // 260916_햅틱 종류. CHaptic_Manager.Play(HAPTIC_ID)로 재생한다.
@@ -395,6 +396,16 @@
         STAGE_FAIL,
         MASS_STUN,      // 260918_전체 마비
         ITEM_GET,       // 260920_맵 위 아이템 획득
+        STYLISH,        // 260922_현란한 동작
+    }
+
+    // 260922_현란한 동작 — 알아보고 알려 주기만 한다(보상 없음). CStyleTracker가 가리고 CUI_InGame이 글자로 띄운다
+    public enum STYLE_ACTION
+    {
+        NEAR_MISS,      // 선을 긋는 중 몬스터가 몸 · 선을 스치고 지나갔다
+        CHAIN,          // 몇 초 안에 연달아 점령
+        TRAP,           // 점령으로 몬스터를 가둬 잡았다(마리 수)
+        BIG_CAPTURE,    // 한 번에 맵의 큰 비율을 먹었다
     }
 
     /// <summary> Addressable 라벨 (Engine.CData_Manager.LoadAssetAsync 인자) </summary>
