@@ -158,6 +158,10 @@ namespace Client
         public int              WAVE            => m_iWave;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
         public int              STAR            => m_iStar;
+        // 260921_계정 경험치를 나눌 진행도 0~1 — 달성한 웨이브 + 지금 웨이브의 점령률(2-23)
+        public float            PROGRESS        => m_eState == STAGE_STATE.CLEAR ? 1f
+                                                 : CAccount_Utility.Calc_StageProgress(m_iStar, WAVE_COUNT,
+                                                                                        OWNED_RATIO, CLEAR_RATIO);
         // 260918_이번 판에서 점령으로 번 코인 누적. 클리어/실패와 무관하게 CGameManager가 종료 시 지급한다.
         public int              STAGE_COIN      => m_iStageCoin;
 

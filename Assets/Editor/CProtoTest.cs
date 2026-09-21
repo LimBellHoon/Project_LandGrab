@@ -57,6 +57,7 @@ namespace Client
             Test_Gauge();
             Test_MoveStyle();
             Test_TrailZoom();
+            Test_Account();
             Test_MoveSkill();
             Test_SpiralMove();
             Test_TrailHitRange();
@@ -982,6 +983,70 @@ namespace Client
 
             cZoom.Set_Enabled(false);
             Check("끄면 곧바로 1배", Mathf.Approximately(cZoom.Tick(50, 1f, 0.02f), 1f));
+        }
+
+        // 260921_계정 레벨 · 하트 · 스테이지 경험치(2-23)
+        private static void Test_Account()
+        {
+            // 하트 회복 — 300초에 1개, 최대 30
+            CAccount_Utility.Regen_Stamina(10, 30, 1000, 1000 + 299, 300f, out int iStamina, out long lAnchor);
+            Check("회복 시간 전에는 그대로", iStamina, 10);
+            CAccount_Utility.Regen_Stamina(10, 30, 1000, 1000 + 300 * 3 + 50, 300f, out iStamina, out lAnchor);
+            Check("지난 시간만큼 찬다", iStamina, 13);
+            Check("남은 몫(50초)은 다음 칸으로 넘어간다", lAnchor == 1000 + 300 * 3);
+            CAccount_Utility.Regen_Stamina(25, 30, 1000, 1000 + 300 * 100, 300f, out iStamina, out lAnchor);
+            Check("최대를 넘지 않는다", iStamina, 30);
+            Check("가득 차면 기준 시각이 지금으로 온다", lAnchor == 1000 + 300 * 100);
+            Check("남은 시간 — 50초 지났으면 250초",
+                  CAccount_Utility.Get_StaminaRemainSec(10, 30, 1000, 1050, 300f), 250);
+            Check("가득 차면 남은 시간 0", CAccount_Utility.Get_StaminaRemainSec(30, 30, 1000, 1050, 300f), 0);
+            Check("시계 모양", CAccount_Utility.Format_Timer(299), "04:59");
+
+            // 스테이지 진행도 — 웨이브를 넘겨 점령률이 0으로 돌아가도 앞 웨이브 몫은 남는다
+            Check("아무것도 못 했으면 0", Mathf.Approximately(CAccount_Utility.Calc_StageProgress(0, 3, 0f, 0.6f), 0f));
+            Check("1웨이브 목표의 절반이면 1/6",
+                  Mathf.Approximately(CAccount_Utility.Calc_StageProgress(0, 3, 0.3f, 0.6f), 1f / 6f));
+            Check("2웨이브를 깨고 3웨이브를 막 시작했으면 2/3",
+                  Mathf.Approximately(CAccount_Utility.Calc_StageProgress(2, 3, 0f, 0.7f), 2f / 3f));
+            Check("다 깨면 1", Mathf.Approximately(CAccount_Utility.Calc_StageProgress(3, 3, 0f, 0.7f), 1f));
+            Check("목표를 넘겨 먹어도 한 웨이브 몫을 넘지 않는다",
+                  Mathf.Approximately(CAccount_Utility.Calc_StageProgress(0, 3, 0.9f, 0.6f), 1f / 3f));
+            Check("경험치는 총량 × 진행도", CAccount_Utility.Calc_StageExp(300, 0.5f), 150);
+
+            // 계정 레벨 — 표대로 오르고, 한 번에 여러 레벨도 오른다
+            const string TAB = "\t";
+            string strCsv =
+                  string.Join(TAB, "iLevel", "iNeedExp", "iMaxStamina", "fStaminaRegenSec", "fSpeedRate", "fEvasionBonus", "NONE") + "\n"
+                + string.Join(TAB, "1", "100", "30", "300", "1",    "0",    "") + "\n"
+                + string.Join(TAB, "2", "150", "30", "300", "1.01", "0.002", "") + "\n"
+                + string.Join(TAB, "3", "0",   "35", "300", "1.02", "0.004", "");
+
+            CCSVData_AccountLevelInfo cTable = new CCSVData_AccountLevelInfo();
+            cTable.Read_CSVData(new TextAsset(strCsv));
+
+            int iLevel = 1, iExp = 0;
+            Check("모자라면 안 오른다", cTable.Apply_Exp(ref iLevel, ref iExp, 90), 0);
+            Check("경험치는 쌓인다", iExp, 90);
+            Check("넘치면 오르고 남은 건 이어진다", cTable.Apply_Exp(ref iLevel, ref iExp, 20), 1);
+            Check("2레벨", iLevel, 2);
+            Check("남은 경험치 10", iExp, 10);
+            Check("한 번에 여러 레벨은 아니어도 만렙까지", cTable.Apply_Exp(ref iLevel, ref iExp, 9999), 1);
+            Check("만렙(3)에서 멈춘다", iLevel, 3);
+            Check("만렙이면 경험치는 쌓이지 않는다", iExp, 0);
+            Check("레벨마다 속도가 오른다", cTable.Get_Info(3).fSpeedRate > cTable.Get_Info(1).fSpeedRate);
+            Check("표보다 높은 레벨은 마지막 줄", cTable.Get_Info(99).iLevel, 3);
+
+            // 스테이지 카드 넘김 — 끝에서 반대쪽으로 돌지 않는다
+            Check("왼쪽 끝에서 멈춘다", CUI_StageSelect.Clamp_Index(-1, 5), 0);
+            Check("오른쪽 끝에서 멈춘다", CUI_StageSelect.Clamp_Index(9, 5), 4);
+            Check("스테이지가 없으면 0", CUI_StageSelect.Clamp_Index(3, 0), 0);
+
+            // 흐린 미리보기 — 작게 줄어들고 비율은 유지한다
+            Texture2D texSource = new Texture2D(96, 192, TextureFormat.RGBA32, false);
+            Texture2D texBlur   = CBlur_Utility.Make_Blurred(texSource, 48, 2);
+            Check("줄인 폭", texBlur.width, 48);
+            Check("비율 유지(세로 두 배)", texBlur.height, 96);
+            Check("양선형으로 늘려 그린다", texBlur.filterMode == FilterMode.Bilinear);
         }
 
         // 260921_이동 스킬 넷(2-11-3) — 선 긋기 · 방향 전환 · 어그로를 쓰는 스킬들

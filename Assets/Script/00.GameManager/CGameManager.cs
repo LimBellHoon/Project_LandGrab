@@ -85,6 +85,7 @@ namespace Client
         private CCSVData_CharacterInfo  m_cCharacterTable;  // 260917_캐릭터 표(스킨 + 스탯 배율)
         private CCSVData_CaptureRewardInfo m_cCaptureRewardTable;  // 260918_점령 재화 배율 표
         private CCSVData_FieldItemInfo m_cFieldItemTable;   // 260920_맵 위 상호작용 아이템 표
+        private CCSVData_AccountLevelInfo m_cAccountTable; // 260921_계정 레벨 표(2-23)
         private CUI                 m_cLobbyUI;     // 260905_로비. 전투 중에는 닫혀 탭바도 같이 사라진다
         private CUI                 m_cTabUI;       // 로비 탭 안에 열린 화면
         private CUI                 m_cCardViewerUI;    // 260918_카드 크게 보기 (Popup 캔버스)
@@ -285,6 +286,9 @@ namespace Client
 
                 m_cProgressManager.Set_UnlockAll(m_cConfig.UNLOCK_ALL_STAGE);
                 m_cProgressManager.Set_FreeSpend(m_cConfig.FREE_SPEND);
+                // 260921_계정 레벨 · 하트(2-23)
+                m_cProgressManager.Set_AccountTable(m_cAccountTable);
+                m_cProgressManager.Set_FreeStamina(m_cConfig.FREE_STAMINA);
 
                 // 260920_개발용 — 캐릭터를 전부 가진 것으로 만든다. 캐릭터마다 이동 방식이 달라(2-22)
                 // 가방 캐릭터 탭에서 갈아 끼우며 바로 비교할 수 있다.
@@ -363,6 +367,7 @@ namespace Client
             // 260918_점령 재화 배율 표가 없으면 배율 없이(1배) 지급한다.
             m_cCaptureRewardTable = m_cGameInstance.Get_CSVData(CCSVData_CaptureRewardInfo.CSV_KEY) as CCSVData_CaptureRewardInfo;
             m_cFieldItemTable     = m_cGameInstance.Get_CSVData(CCSVData_FieldItemInfo.CSV_KEY) as CCSVData_FieldItemInfo;
+            m_cAccountTable       = m_cGameInstance.Get_CSVData(CCSVData_AccountLevelInfo.CSV_KEY) as CCSVData_AccountLevelInfo;
             if (m_cProjectileTable == null)
             {
                 Debug.LogWarning("[CGameManager] ProjectileInfo.csv를 읽지 못해 탄 없이 진행합니다. "
@@ -414,6 +419,7 @@ namespace Client
             {
                 eObjectType     = OBJECT_TYPE.UI_MAIN,
                 cProgress       = m_cProgressManager,
+                cCharacterTable = m_cCharacterTable,
                 eStartTab       = LOBBY_TAB.BATTLE,
                 OnTabChanged    = On_TabChanged,
             };
@@ -700,6 +706,19 @@ namespace Client
                 return;
             }
 
+            // 260921_들어갈 때 하트를 쓴다(2-23). 모자라면 들어가지 않고 알려 준다 — 로비를 닫기 전에 본다.
+            if (m_cProgressManager.Try_UseStamina(cMapInfo.iStaminaCost) == false)
+            {
+                Open_LobbyPopup(new CUI_PopupDesc
+                {
+                    strTitle   = "하트가 부족합니다",
+                    strBody    = $"필요 {cMapInfo.iStaminaCost}  /  보유 {m_cProgressManager.STAMINA}\n"
+                               + $"다음 하트까지 {CAccount_Utility.Format_Timer(m_cProgressManager.STAMINA_REMAIN_SEC)}",
+                    strPrimary = "확인",
+                });
+                return;
+            }
+
             Close_Lobby();
 
             // 이전 스테이지가 남아 있을 수 있다 — 완전히 정리하고 새로 깐다.
@@ -712,10 +731,12 @@ namespace Client
             }
 
             // 260905_강화와 장비를 합친 최종 수치를 넣는다. 표가 없으면 전부 0이라 강화 없는 상태가 된다.
+            // 260921_계정 레벨의 속도 배율 · 회피 보너스도 같은 자리에서 곱하고 더한다(2-23).
             m_cStageManager.Set_PlayerUpgrade(
                 (1f + m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.SPEED, m_cSkillTable))
-                    * m_cConfig.PLAYER_SPEED_SCALE,
-                m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.EVASION, m_cSkillTable),
+                    * m_cConfig.PLAYER_SPEED_SCALE * m_cProgressManager.ACCOUNT_SPEED_RATE,
+                m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.EVASION, m_cSkillTable)
+                    + m_cProgressManager.ACCOUNT_EVASION,
                 Mathf.RoundToInt(m_cProgressManager.Get_TotalStat(m_cUpgradeTable, STAT_TYPE.HP, m_cSkillTable)));
 
             // 260905_장착한 스킬을 넣는다.
@@ -858,6 +879,12 @@ namespace Client
             if (m_iLastCoin > 0)
                 m_cProgressManager.Add_Coin(m_iLastCoin);
 
+            // 260921_계정 경험치 — 그 스테이지의 총 경험치 × 진행도(점령률에 비례, 2-23). 실패해도 먹은 만큼은 받는다.
+            CMapInfo cPlayedMap = m_cMapTable.Get_Info(m_cStageManager.MAP_ID);
+            m_iLastExp     = CAccount_Utility.Calc_StageExp(cPlayedMap != null ? cPlayedMap.iExpTotal : 0,
+                                                             m_cStageManager.PROGRESS);
+            m_iLastLevelUp = m_cProgressManager.Add_AccountExp(m_iLastExp);
+
             // 260917_이 맵이 캐릭터를 주는 맵(각성 스테이지)이면 처음 클리어 시 얻고,
             // 이미 가진 캐릭터면 잔향 조각으로 강화한다(노션 "캐릭터 시스템" 카드 4장).
             if (m_bLastCleared == true && m_cCharacterTable != null)
@@ -876,6 +903,10 @@ namespace Client
             // 실패는 굳이 끌 이유가 없어 빨리 띄운다.
             Invoke(nameof(Show_Result), m_bLastCleared == true ? RESULT_HOLD_CLEAR : RESULT_HOLD_FAIL);
         }
+
+        // 260921_결과 화면에 띄울 계정 경험치 · 오른 레벨
+        private int m_iLastExp;
+        private int m_iLastLevelUp;
 
         private const float RESULT_HOLD_CLEAR = 1.4f;
         private const float RESULT_HOLD_FAIL  = 0.8f;
@@ -901,6 +932,14 @@ namespace Client
             {
                 string strPrefix = m_bLastNewRecord == true ? "신기록!  " : string.Empty;
                 strBody += $"\n{strPrefix}+{m_iLastCoin} 코인   (보유 {m_cProgressManager.COIN})";
+            }
+
+            // 260921_계정 경험치(2-23)
+            if (m_iLastExp > 0)
+            {
+                strBody += $"\n+{m_iLastExp} 경험치   Lv.{m_cProgressManager.ACCOUNT_LEVEL}";
+                if (m_iLastLevelUp > 0)
+                    strBody += "   레벨 업!  하트 가득";
             }
 
             Open_Popup(new CUI_PopupDesc

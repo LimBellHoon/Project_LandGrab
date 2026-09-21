@@ -132,6 +132,118 @@ namespace Client
         }
 
         // 260905_재화
+        #region 계정 레벨 · 하트 · 다이아 (260921, 2-23)
+        private CCSVData_AccountLevelInfo m_cAccountTable;
+        private bool                      m_bFreeStamina;     // 개발용 — 하트를 쓰지 않고 들어간다(1-6)
+
+        /// <summary> 테스트가 시각을 밀어 넣을 수 있게 한다. null이면 실제 시계를 쓴다. </summary>
+        public System.Func<long> fnNow;
+
+        private long NOW => fnNow != null ? fnNow() : System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        public void Set_AccountTable(CCSVData_AccountLevelInfo cTable) => m_cAccountTable = cTable;
+        public void Set_FreeStamina(bool bFree) => m_bFreeStamina = bFree;
+
+        public int ACCOUNT_LEVEL => Mathf.Max(1, m_cProgress.iAccountLevel);
+        public int ACCOUNT_EXP   => Mathf.Max(0, m_cProgress.iAccountExp);
+        public int DIAMOND       => Mathf.Max(0, m_cProgress.iDiamond);
+
+        public CAccountLevelInfo ACCOUNT_INFO => m_cAccountTable?.Get_Info(ACCOUNT_LEVEL);
+
+        /// <summary> 다음 레벨까지 필요한 경험치. 만렙이거나 표가 없으면 0. </summary>
+        public int ACCOUNT_NEED_EXP => ACCOUNT_INFO != null ? Mathf.Max(0, ACCOUNT_INFO.iNeedExp) : 0;
+
+        public int MAX_STAMINA => ACCOUNT_INFO != null ? Mathf.Max(1, ACCOUNT_INFO.iMaxStamina) : 30;
+        private float STAMINA_REGEN_SEC => ACCOUNT_INFO != null ? ACCOUNT_INFO.fStaminaRegenSec : 300f;
+
+        /// <summary> 지금 하트. 읽을 때마다 지난 시간만큼 채운다(저장은 쓸 때 한다 — 읽기만으로 디스크를 쓰지 않게). </summary>
+        public int STAMINA
+        {
+            get
+            {
+                Refresh_Stamina(out int iStamina, out long _);
+                return iStamina;
+            }
+        }
+
+        /// <summary> 다음 한 칸까지 남은 초. 가득 찼으면 0. </summary>
+        public int STAMINA_REMAIN_SEC
+        {
+            get
+            {
+                Refresh_Stamina(out int iStamina, out long lAnchor);
+                return CAccount_Utility.Get_StaminaRemainSec(iStamina, MAX_STAMINA, lAnchor, NOW, STAMINA_REGEN_SEC);
+            }
+        }
+
+        public bool Can_UseStamina(int iCost) => m_bFreeStamina == true || iCost <= 0 || STAMINA >= iCost;
+
+        /// <summary> 스테이지에 들어갈 때 하트를 쓴다. 모자라면 쓰지 않고 false. </summary>
+        public bool Try_UseStamina(int iCost)
+        {
+            if (m_bFreeStamina == true || iCost <= 0)
+                return true;
+
+            Refresh_Stamina(out int iStamina, out long lAnchor);
+            if (iStamina < iCost)
+                return false;
+
+            // 가득 찬 상태에서 쓰면 그 순간부터 회복을 센다(Regen_Stamina가 기준을 지금으로 끌고 왔다)
+            m_cProgress.iStamina       = iStamina - iCost;
+            m_cProgress.lStaminaAnchor = lAnchor;
+            m_cRepository.Save(m_cProgress);
+            return true;
+        }
+
+        private void Refresh_Stamina(out int iStamina, out long lAnchor)
+        {
+            // 한 번도 안 쓴 저장본(-1)은 가득 찬 것으로 본다
+            int iCur = m_cProgress.iStamina < 0 ? MAX_STAMINA : m_cProgress.iStamina;
+            long lStart = m_cProgress.lStaminaAnchor > 0 ? m_cProgress.lStaminaAnchor : NOW;
+
+            CAccount_Utility.Regen_Stamina(iCur, MAX_STAMINA, lStart, NOW, STAMINA_REGEN_SEC,
+                                           out iStamina, out lAnchor);
+        }
+
+        /// <summary> 계정 경험치를 더한다. 레벨이 오르면 하트를 가득 채워 준다(오른 만큼 한 판 더 하라는 보상). </summary>
+        /// <returns> 오른 레벨 수 </returns>
+        public int Add_AccountExp(int iGain)
+        {
+            if (iGain <= 0 || m_cAccountTable == null)
+                return 0;
+
+            int iLevel = ACCOUNT_LEVEL;
+            int iExp   = ACCOUNT_EXP;
+            int iUp    = m_cAccountTable.Apply_Exp(ref iLevel, ref iExp, iGain);
+
+            m_cProgress.iAccountLevel = iLevel;
+            m_cProgress.iAccountExp   = iExp;
+
+            if (iUp > 0)
+            {
+                m_cProgress.iStamina       = Mathf.Max(STAMINA, MAX_STAMINA);
+                m_cProgress.lStaminaAnchor = NOW;
+            }
+
+            m_cRepository.Save(m_cProgress);
+            return iUp;
+        }
+
+        public void Add_Diamond(int iAmount)
+        {
+            if (iAmount <= 0)
+                return;
+
+            m_cProgress.iDiamond = DIAMOND + iAmount;
+            m_cRepository.Save(m_cProgress);
+        }
+
+        /// <summary> 계정 레벨이 주는 속도 배율(곱한다). 표가 없으면 1. </summary>
+        public float ACCOUNT_SPEED_RATE   => ACCOUNT_INFO != null ? Mathf.Max(0.1f, ACCOUNT_INFO.fSpeedRate) : 1f;
+        /// <summary> 계정 레벨이 주는 회피 보너스(더한다). 표가 없으면 0. </summary>
+        public float ACCOUNT_EVASION      => ACCOUNT_INFO != null ? Mathf.Max(0f, ACCOUNT_INFO.fEvasionBonus) : 0f;
+        #endregion 계정 레벨 · 하트 · 다이아 (260921, 2-23)
+
         public int COIN => m_cProgress.iCoin;
 
         public void Add_Coin(int iAmount)

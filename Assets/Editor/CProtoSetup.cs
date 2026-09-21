@@ -39,7 +39,7 @@ namespace Client
         private const int TEX_PIXEL_PER_CELL = 9;
 
         // 260904_CSV 테이블. 파일명이 곧 Client.CCSVData_<파일명> 클래스 이름이다.
-        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo", "CaptureRewardInfo", "FieldItemInfo" };
+        private static readonly string[] ARR_CSV = { "EnemyInfo", "MapInfo", "UpgradeInfo", "SkillInfo", "EquipInfo", "CardInfo", "RunSkillInfo", "ProjectileInfo", "ImpactInfo", "AwakenInfo", "CharacterInfo", "GachaInfo", "CaptureRewardInfo", "FieldItemInfo", "AccountLevelInfo" };
         // Type.GetType은 부르는 어셈블리(에디터)만 뒤지므로 런타임 클래스를 못 찾는다.
         // 컴파일 시점에 확정되는 typeof로 들고 있어야 이름 규칙을 제대로 검증할 수 있다.
         private static readonly System.Type[] ARR_CSV_TYPE =
@@ -48,7 +48,7 @@ namespace Client
             typeof(CCSVData_SkillInfo), typeof(CCSVData_EquipInfo), typeof(CCSVData_CardInfo),
             typeof(CCSVData_RunSkillInfo), typeof(CCSVData_ProjectileInfo), typeof(CCSVData_ImpactInfo),
             typeof(CCSVData_AwakenInfo), typeof(CCSVData_CharacterInfo), typeof(CCSVData_GachaInfo),
-            typeof(CCSVData_CaptureRewardInfo), typeof(CCSVData_FieldItemInfo),
+            typeof(CCSVData_CaptureRewardInfo), typeof(CCSVData_FieldItemInfo), typeof(CCSVData_AccountLevelInfo),
         };
 
         private const int DEFAULT_MAP_ID = 1;       // 씬/프리뷰가 기준으로 삼는 맵
@@ -202,7 +202,7 @@ namespace Client
                         new[] { "m_trJoystickBase", "m_trJoystickHandle", "m_txtStatus",
                                 "m_imgProgress", "m_txtTime", "m_btnPause", "m_imgFlash" });
             iFail += Validate_UIPrefab<CUI_Lobby>(PATH_PREFAB_UI_LOBBY, UI_LOBBY,
-                                                 new[] { "m_trContent", "m_txtCoin", "m_txtStar", "m_arrTabButton" });
+                                                 new[] { "m_trContent", "m_txtCoin", "m_txtDiamond", "m_txtStamina", "m_imgProfile", "m_imgExpFill", "m_arrTabButton" });
             iFail += Validate_UIPrefab<CUI_Upgrade>(PATH_PREFAB_UI_UPGRADE, UI_UPGRADE,
                                                  new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
             iFail += Validate_UIPrefab<CUI_Shop>(PATH_PREFAB_UI_SHOP, UI_SHOP,
@@ -241,7 +241,7 @@ namespace Client
         private static int Validate_StageSelectUI()
         {
             return Validate_UIPrefab<CUI_StageSelect>(PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT,
-                        new[] { "m_trContent", "m_btnTemplate", "m_txtTitle" });
+                        new[] { "m_txtTitle", "m_txtStageName", "m_imgStage", "m_btnPrev", "m_btnNext", "m_btnEnter", "m_txtEnter" });
         }
 
         /// <summary> UI 프리팹의 컴포넌트 · [SerializeField] 연결 · Addressable을 한꺼번에 본다. </summary>
@@ -1290,6 +1290,8 @@ namespace Client
         // 목록은 런타임에 채워지므로 여기서는 '틀'만 만든다 —
         // 배경 패널 / 제목 / 버튼이 쌓일 Content / 복제될 버튼 템플릿(비활성).
         // 겉모습을 다듬는 것은 Unity에서 이 프리팹을 직접 여는 편이 빠르다.
+        // 260921_스테이지 선택 — 한 장씩 넘기는 카드(2-23)
+        //   가운데 흐린 보상 그림(A) · 좌우 화살표(B) · 아래 큰 진입 버튼(C)
         private static void Create_StageSelectUI()
         {
             GameObject goRoot = Create_UIObject(UI_STAGE_SELECT, null);
@@ -1299,53 +1301,182 @@ namespace Client
             Stretch_Full(goPanel.GetComponent<RectTransform>());
             goPanel.AddComponent<Image>().color = new Color(0.05f, 0.06f, 0.10f, 0.92f);
 
-            GameObject goTitle = Create_UIObject("Title", goRoot.transform);
-            RectTransform trTitle = goTitle.GetComponent<RectTransform>();
-            trTitle.anchorMin = new Vector2(0f, 1f);
-            trTitle.anchorMax = new Vector2(1f, 1f);
-            trTitle.pivot     = new Vector2(0.5f, 1f);
-            trTitle.offsetMin = new Vector2(40f, -140f);
-            trTitle.offsetMax = new Vector2(-40f, -40f);
-            Text txtTitle = Make_Text(goTitle, "스테이지 선택", 44, TextAnchor.MiddleCenter);
+            Text txtTitle = Make_AnchoredText(goRoot.transform, "Txt_Title", "스테이지", 34,
+                                              new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -30f), 60f);
 
-            GameObject goContent = Create_UIObject("Content", goRoot.transform);
-            RectTransform trContent = goContent.GetComponent<RectTransform>();
-            trContent.anchorMin = new Vector2(0f, 0f);
-            trContent.anchorMax = new Vector2(1f, 1f);
-            trContent.offsetMin = new Vector2(80f, 80f);
-            trContent.offsetMax = new Vector2(-80f, -160f);
+            // 카드 판 — 이름 · 그림 · 정보
+            GameObject goCard = Create_UIObject("Card", goRoot.transform);
+            RectTransform trCard = goCard.GetComponent<RectTransform>();
+            trCard.anchorMin = new Vector2(0.5f, 0.5f);
+            trCard.anchorMax = new Vector2(0.5f, 0.5f);
+            trCard.pivot     = new Vector2(0.5f, 0.5f);
+            trCard.anchoredPosition = new Vector2(0f, 110f);
+            trCard.sizeDelta = new Vector2(800f, 900f);
+            goCard.AddComponent<Image>().color = new Color(0.86f, 0.78f, 0.62f, 1f);     // 낡은 종이 느낌
 
-            VerticalLayoutGroup cLayout = goContent.AddComponent<VerticalLayoutGroup>();
-            cLayout.spacing              = 16f;
-            cLayout.childAlignment       = TextAnchor.UpperCenter;
-            cLayout.childForceExpandWidth  = true;
-            cLayout.childForceExpandHeight = false;
-            cLayout.childControlWidth      = true;
-            cLayout.childControlHeight     = false;
+            Text txtName = Make_AnchoredText(goCard.transform, "Txt_StageName", "스테이지 이름", 46,
+                                             new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, -24f), 80f);
+            txtName.color = new Color(0.20f, 0.13f, 0.08f);
 
-            GameObject goButton = Create_UIObject("Btn_Template", goContent.transform);
-            RectTransform trButton = goButton.GetComponent<RectTransform>();
-            trButton.sizeDelta = new Vector2(0f, 110f);
-            goButton.AddComponent<LayoutElement>().minHeight = 110f;
-            goButton.AddComponent<Image>().color = new Color(0.16f, 0.20f, 0.34f, 1f);
-            Button cButton = goButton.AddComponent<Button>();
+            GameObject goImage = Create_UIObject("Img_Stage", goCard.transform);
+            RectTransform trImage = goImage.GetComponent<RectTransform>();
+            trImage.anchorMin = new Vector2(0f, 0f);
+            trImage.anchorMax = new Vector2(1f, 1f);
+            trImage.offsetMin = new Vector2(30f, 110f);
+            trImage.offsetMax = new Vector2(-30f, -120f);
+            RawImage imgStage = goImage.AddComponent<RawImage>();
+            imgStage.raycastTarget = false;
 
-            GameObject goLabel = Create_UIObject("Label", goButton.transform);
-            Stretch_Full(goLabel.GetComponent<RectTransform>());
-            Make_Text(goLabel, "MAP", 32, TextAnchor.MiddleCenter);
+            Text txtInfo = Make_AnchoredText(goCard.transform, "Txt_StageInfo", "☆☆☆", 32,
+                                             new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 24f), 70f, true);
+            txtInfo.color = new Color(0.30f, 0.20f, 0.10f);
 
-            goButton.SetActive(false);       // 템플릿은 항상 꺼 둔다
+            // 좌우 화살표 — 카드 양옆
+            Button btnPrev = Make_ArrowButton(goRoot.transform, "Btn_Prev", "◀", -470f);
+            Button btnNext = Make_ArrowButton(goRoot.transform, "Btn_Next", "▶",  470f);
+
+            // 진입 버튼 — 카드 아래 한가운데, 가장 크게
+            GameObject goEnter = Create_UIObject("Btn_Enter", goRoot.transform);
+            RectTransform trEnter = goEnter.GetComponent<RectTransform>();
+            trEnter.anchorMin = new Vector2(0.5f, 0f);
+            trEnter.anchorMax = new Vector2(0.5f, 0f);
+            trEnter.pivot     = new Vector2(0.5f, 0f);
+            trEnter.anchoredPosition = new Vector2(0f, 60f);
+            trEnter.sizeDelta = new Vector2(520f, 180f);
+            goEnter.AddComponent<Image>().color = new Color(1f, 0.80f, 0.20f);
+            Button btnEnter = goEnter.AddComponent<Button>();
+
+            GameObject goEnterLabel = Create_UIObject("Label", goEnter.transform);
+            Stretch_Full(goEnterLabel.GetComponent<RectTransform>());
+            Text txtEnter = Make_Text(goEnterLabel, "진입", 48, TextAnchor.MiddleCenter);
+            txtEnter.color = new Color(0.30f, 0.16f, 0.04f);
+            txtEnter.raycastTarget = false;
 
             CUI_StageSelect cUI = goRoot.AddComponent<CUI_StageSelect>();
             SerializedObject cSerialized = new SerializedObject(cUI);
-            cSerialized.FindProperty("m_trContent").objectReferenceValue   = goContent.transform;
-            cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cButton;
-            cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
+            cSerialized.FindProperty("m_txtTitle").objectReferenceValue     = txtTitle;
+            cSerialized.FindProperty("m_txtStageName").objectReferenceValue = txtName;
+            cSerialized.FindProperty("m_txtStageInfo").objectReferenceValue = txtInfo;
+            cSerialized.FindProperty("m_imgStage").objectReferenceValue     = imgStage;
+            cSerialized.FindProperty("m_btnPrev").objectReferenceValue      = btnPrev;
+            cSerialized.FindProperty("m_btnNext").objectReferenceValue      = btnNext;
+            cSerialized.FindProperty("m_btnEnter").objectReferenceValue     = btnEnter;
+            cSerialized.FindProperty("m_txtEnter").objectReferenceValue     = txtEnter;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_SELECT);
             Object.DestroyImmediate(goRoot);
         }
+
+        /// <summary> 260921_가로로 늘어나는 한 줄 글자. 위(또는 아래) 가장자리에 붙인다. </summary>
+        private static Text Make_AnchoredText(Transform trParent, string strName, string strText, int iSize,
+                                              Vector2 vAnchorMin, Vector2 vAnchorMax, Vector2 vPos, float fHeight,
+                                              bool bBottom = false)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform tr = go.GetComponent<RectTransform>();
+            tr.anchorMin = vAnchorMin;
+            tr.anchorMax = vAnchorMax;
+            tr.pivot     = new Vector2(0.5f, bBottom == true ? 0f : 1f);
+            tr.anchoredPosition = vPos;
+            tr.sizeDelta = new Vector2(-40f, fHeight);
+
+            Text txt = Make_Text(go, strText, iSize, TextAnchor.MiddleCenter);
+            txt.raycastTarget = false;
+            return txt;
+        }
+
+        /// <summary> 260921_카드 양옆의 넘김 버튼. </summary>
+        private static Button Make_ArrowButton(Transform trParent, string strName, string strLabel, float fOffsetX)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform tr = go.GetComponent<RectTransform>();
+            tr.anchorMin = new Vector2(0.5f, 0.5f);
+            tr.anchorMax = new Vector2(0.5f, 0.5f);
+            tr.pivot     = new Vector2(0.5f, 0.5f);
+            tr.anchoredPosition = new Vector2(fOffsetX, 110f);
+            tr.sizeDelta = new Vector2(110f, 180f);
+            go.AddComponent<Image>().color = new Color(1f, 0.80f, 0.20f);
+
+            GameObject goLabel = Create_UIObject("Label", go.transform);
+            Stretch_Full(goLabel.GetComponent<RectTransform>());
+            Text txt = Make_Text(goLabel, strLabel, 56, TextAnchor.MiddleCenter);
+            txt.color = new Color(0.30f, 0.16f, 0.04f);
+            txt.raycastTarget = false;
+
+            return go.AddComponent<Button>();
+        }
+        // 260921_로비 상단 바 높이 — 탭 화면 자리(Content)도 이만큼 비켜 앉는다
+        private const float TOP_BAR_HEIGHT = 200f;
+
+        /// <summary> 260921_프로필 판 안의 한 줄 글자. 세로 위치를 비율로 받는다(그림 오른쪽 칸). </summary>
+        private static Text Make_ProfileText(Transform trParent, string strName, string strText, int iSize,
+                                             float fMinY, float fMaxY, TextAnchor eAnchor)
+        {
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform tr = go.GetComponent<RectTransform>();
+            tr.anchorMin = new Vector2(0f, fMinY);
+            tr.anchorMax = new Vector2(1f, fMaxY);
+            tr.offsetMin = new Vector2(170f, 0f);
+            tr.offsetMax = new Vector2(-14f, 0f);
+
+            Text txt = Make_Text(go, strText, iSize, eAnchor);
+            txt.raycastTarget = false;
+            return txt;
+        }
+
+        /// <summary>
+        /// 260921_재화 칸 하나 — 아이콘 글자 + 수량. 오른쪽에서부터 iSlot번째 자리에 놓는다.
+        /// 하트 칸만 아래에 회복 시계를 단다(나머지는 out으로 받은 걸 버린다).
+        /// </summary>
+        private static Text Make_CurrencyBox(Transform trParent, string strName, string strIcon, Color cIcon,
+                                             int iSlot, out Text txtSub)
+        {
+            const float BOX_WIDTH = 190f;
+            const float GAP       = 12f;
+
+            GameObject go = Create_UIObject(strName, trParent);
+            RectTransform tr = go.GetComponent<RectTransform>();
+            tr.anchorMin = new Vector2(1f, 0.5f);
+            tr.anchorMax = new Vector2(1f, 0.5f);
+            tr.pivot     = new Vector2(1f, 0.5f);
+            tr.anchoredPosition = new Vector2(-16f - (2 - iSlot) * (BOX_WIDTH + GAP), 20f);
+            tr.sizeDelta = new Vector2(BOX_WIDTH, 70f);
+            go.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.45f);
+
+            GameObject goIcon = Create_UIObject("Txt_Icon", go.transform);
+            RectTransform trIcon = goIcon.GetComponent<RectTransform>();
+            trIcon.anchorMin = new Vector2(0f, 0f);
+            trIcon.anchorMax = new Vector2(0f, 1f);
+            trIcon.pivot     = new Vector2(0f, 0.5f);
+            trIcon.offsetMin = new Vector2(8f, 0f);
+            trIcon.offsetMax = new Vector2(8f + 50f, 0f);
+            Text txtIcon = Make_Text(goIcon, strIcon, 36, TextAnchor.MiddleCenter);
+            txtIcon.color = cIcon;
+            txtIcon.raycastTarget = false;
+
+            GameObject goValue = Create_UIObject("Txt_Value", go.transform);
+            RectTransform trValue = goValue.GetComponent<RectTransform>();
+            trValue.anchorMin = new Vector2(0f, 0f);
+            trValue.anchorMax = new Vector2(1f, 1f);
+            trValue.offsetMin = new Vector2(60f, 0f);
+            trValue.offsetMax = new Vector2(-10f, 0f);
+            Text txtValue = Make_Text(goValue, "0", 30, TextAnchor.MiddleRight);
+            txtValue.raycastTarget = false;
+
+            GameObject goSub = Create_UIObject("Txt_Sub", go.transform);
+            RectTransform trSub = goSub.GetComponent<RectTransform>();
+            trSub.anchorMin = new Vector2(0f, 0f);
+            trSub.anchorMax = new Vector2(1f, 0f);
+            trSub.pivot     = new Vector2(0.5f, 1f);
+            trSub.anchoredPosition = new Vector2(0f, -4f);
+            trSub.sizeDelta = new Vector2(0f, 40f);
+            txtSub = Make_Text(goSub, string.Empty, 22, TextAnchor.MiddleCenter);
+            txtSub.raycastTarget = false;
+
+            return txtValue;
+        }
+
 
         // 260904_인게임 HUD 프리팹.
         // 조이스틱은 위치를 코드로 직접 잡으므로 레이아웃 그룹에 넣지 않는다.
@@ -1367,33 +1498,71 @@ namespace Client
             Stretch_Full(goSafe.GetComponent<RectTransform>());
             goSafe.AddComponent<CSafeArea>();
 
-            // 상단 재화 바
+            // 260921_상단 바 — 레퍼런스 로비처럼 D(프로필) · E(재화)로 나눴다(2-23)
             GameObject goTop = Create_UIObject("TopBar", goSafe.transform);
             RectTransform trTop = goTop.GetComponent<RectTransform>();
             trTop.anchorMin = new Vector2(0f, 1f);
             trTop.anchorMax = new Vector2(1f, 1f);
             trTop.pivot     = new Vector2(0.5f, 1f);
-            trTop.offsetMin = new Vector2(0f, -130f);
+            trTop.offsetMin = new Vector2(0f, -TOP_BAR_HEIGHT);
             trTop.offsetMax = new Vector2(0f, 0f);
             goTop.AddComponent<Image>().color = new Color(0.10f, 0.13f, 0.22f, 1f);
 
-            GameObject goStar = Create_UIObject("Txt_Star", goTop.transform);
-            RectTransform trStar = goStar.GetComponent<RectTransform>();
-            trStar.anchorMin = new Vector2(0f, 0f);
-            trStar.anchorMax = new Vector2(0.5f, 1f);
-            trStar.offsetMin = new Vector2(32f, 0f);
-            trStar.offsetMax = Vector2.zero;
-            Text txtStar = Make_Text(goStar, "\u2605 0", 34, TextAnchor.MiddleLeft);
-            txtStar.raycastTarget = false;
+            // D — 왼쪽 프로필 판: 그림 · 이름 · Lv · 경험치 막대
+            GameObject goProfile = Create_UIObject("Profile", goTop.transform);
+            RectTransform trProfile = goProfile.GetComponent<RectTransform>();
+            trProfile.anchorMin = new Vector2(0f, 0f);
+            trProfile.anchorMax = new Vector2(0f, 1f);
+            trProfile.pivot     = new Vector2(0f, 0.5f);
+            trProfile.offsetMin = new Vector2(16f, 16f);
+            trProfile.offsetMax = new Vector2(16f + 420f, -16f);
+            goProfile.AddComponent<Image>().color = new Color(0.30f, 0.20f, 0.12f, 1f);
 
-            GameObject goCoin = Create_UIObject("Txt_Coin", goTop.transform);
-            RectTransform trCoin = goCoin.GetComponent<RectTransform>();
-            trCoin.anchorMin = new Vector2(0.5f, 0f);
-            trCoin.anchorMax = new Vector2(1f, 1f);
-            trCoin.offsetMin = Vector2.zero;
-            trCoin.offsetMax = new Vector2(-32f, 0f);
-            Text txtCoin = Make_Text(goCoin, "\ucf54\uc778 0", 34, TextAnchor.MiddleRight);
-            txtCoin.raycastTarget = false;
+            GameObject goPortrait = Create_UIObject("Img_Profile", goProfile.transform);
+            RectTransform trPortrait = goPortrait.GetComponent<RectTransform>();
+            trPortrait.anchorMin = new Vector2(0f, 0f);
+            trPortrait.anchorMax = new Vector2(0f, 1f);
+            trPortrait.pivot     = new Vector2(0f, 0.5f);
+            trPortrait.offsetMin = new Vector2(10f, 10f);
+            trPortrait.offsetMax = new Vector2(10f + 150f, -10f);
+            RawImage imgProfile = goPortrait.AddComponent<RawImage>();
+            imgProfile.raycastTarget = false;
+
+            Text txtName  = Make_ProfileText(goProfile.transform, "Txt_Name",  "캐릭터", 30, 0.62f, 0.95f, TextAnchor.MiddleRight);
+            Text txtLevel = Make_ProfileText(goProfile.transform, "Txt_Level", "Lv.1",  34, 0.30f, 0.60f, TextAnchor.MiddleLeft);
+
+            GameObject goExpBg = Create_UIObject("Img_ExpBg", goProfile.transform);
+            RectTransform trExpBg = goExpBg.GetComponent<RectTransform>();
+            trExpBg.anchorMin = new Vector2(0f, 0.08f);
+            trExpBg.anchorMax = new Vector2(1f, 0.28f);
+            trExpBg.offsetMin = new Vector2(170f, 0f);
+            trExpBg.offsetMax = new Vector2(-12f, 0f);
+            Image imgExpBg = goExpBg.AddComponent<Image>();
+            imgExpBg.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_WHITE);
+            imgExpBg.color  = new Color(0f, 0f, 0f, 0.55f);
+            imgExpBg.raycastTarget = false;
+
+            GameObject goExpFill = Create_UIObject("Img_ExpFill", goExpBg.transform);
+            Stretch_Full(goExpFill.GetComponent<RectTransform>());
+            Image imgExpFill = goExpFill.AddComponent<Image>();
+            // 스프라이트가 없으면 Filled가 먹지 않는다(점령률 게이지와 같은 사고, 260920)
+            imgExpFill.sprite     = AssetDatabase.LoadAssetAtPath<Sprite>(PATH_TEX_WHITE);
+            imgExpFill.color      = new Color(1f, 0.78f, 0.25f);
+            imgExpFill.type       = Image.Type.Filled;
+            imgExpFill.fillMethod = Image.FillMethod.Horizontal;
+            imgExpFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            imgExpFill.fillAmount = 0f;
+            imgExpFill.raycastTarget = false;
+
+            GameObject goExpText = Create_UIObject("Txt_Exp", goExpBg.transform);
+            Stretch_Full(goExpText.GetComponent<RectTransform>());
+            Text txtExp = Make_Text(goExpText, "0/0", 22, TextAnchor.MiddleCenter);
+            txtExp.raycastTarget = false;
+
+            // E — 오른쪽 재화 셋: 하트(+회복 시계) · 코인 · 다이아
+            Text txtStamina = Make_CurrencyBox(goTop.transform, "Box_Stamina", "♥", new Color(1f, 0.40f, 0.50f), 0, out Text txtTimer);
+            Text txtCoin    = Make_CurrencyBox(goTop.transform, "Box_Coin",    "●", new Color(1f, 0.80f, 0.25f), 1, out Text _);
+            Text txtDiamond = Make_CurrencyBox(goTop.transform, "Box_Diamond", "◆", new Color(0.45f, 0.80f, 1f), 2, out Text _);
 
             // 가운데 — 탭 화면이 열릴 자리. 위아래로 바를 피해 둔다.
             GameObject goContent = Create_UIObject("Content", goSafe.transform);
@@ -1401,7 +1570,7 @@ namespace Client
             trContent.anchorMin = new Vector2(0f, 0f);
             trContent.anchorMax = new Vector2(1f, 1f);
             trContent.offsetMin = new Vector2(0f, 200f);
-            trContent.offsetMax = new Vector2(0f, -130f);
+            trContent.offsetMax = new Vector2(0f, -TOP_BAR_HEIGHT);
 
             // 하단 탭바 — 4칸 균등
             GameObject goTabBar = Create_UIObject("TabBar", goSafe.transform);
@@ -1439,8 +1608,15 @@ namespace Client
             CUI_Lobby cUI = goRoot.AddComponent<CUI_Lobby>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_trContent").objectReferenceValue = trContent;
-            cSerialized.FindProperty("m_txtCoin").objectReferenceValue   = txtCoin;
-            cSerialized.FindProperty("m_txtStar").objectReferenceValue   = txtStar;
+            cSerialized.FindProperty("m_txtCoin").objectReferenceValue         = txtCoin;
+            cSerialized.FindProperty("m_txtDiamond").objectReferenceValue      = txtDiamond;
+            cSerialized.FindProperty("m_txtStamina").objectReferenceValue      = txtStamina;
+            cSerialized.FindProperty("m_txtStaminaTimer").objectReferenceValue = txtTimer;
+            cSerialized.FindProperty("m_imgProfile").objectReferenceValue      = imgProfile;
+            cSerialized.FindProperty("m_txtProfileName").objectReferenceValue  = txtName;
+            cSerialized.FindProperty("m_txtLevel").objectReferenceValue        = txtLevel;
+            cSerialized.FindProperty("m_imgExpFill").objectReferenceValue      = imgExpFill;
+            cSerialized.FindProperty("m_txtExp").objectReferenceValue          = txtExp;
 
             SerializedProperty cArray = cSerialized.FindProperty("m_arrTabButton");
             cArray.arraySize = arrTabButton.Length;

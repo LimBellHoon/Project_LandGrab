@@ -50,6 +50,9 @@ namespace Client
         public int      iBorderThick;
         // 260920_맵 한가운데 시작 섬의 반경(셀). 여기서 시작하고, 외벽은 점령지가 아니다(2-3)
         public int      iStartRadius;
+        // 260921_이 스테이지를 끝냈을 때 얻는 계정 경험치의 최대치 · 들어갈 때 쓰는 하트(2-23)
+        public int      iExpTotal;
+        public int      iStaminaCost;
         // 260918_시작 목숨 수 (다시 목숨제, 2-14)
         public int      iLife;
         public float    fPlayerSpeed;               // 초당 셀
@@ -153,6 +156,9 @@ namespace Client
                 iGaugeAdd          = CCSV_Utility.To_Int(arrField, 23, 3),
                 // 260920_시작 섬(2-3)
                 iStartRadius       = CCSV_Utility.To_Int(arrField, 24, 5),
+                // 260921_계정 경험치 · 입장 하트(2-23)
+                iExpTotal          = CCSV_Utility.To_Int(arrField, 25, 300),
+                iStaminaCost       = CCSV_Utility.To_Int(arrField, 26, 5),
             };
 
             if (cInfo.iMapID <= 0)

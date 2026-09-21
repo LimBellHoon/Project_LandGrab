@@ -76,6 +76,14 @@ namespace Client
         public List<CCharacterRecord> lstCharacter = new List<CCharacterRecord>();
         public int                    iEquippedCharacterID;
 
+        // 260921_계정 성장 · 입장 재화 · 유료 재화 (2-23). 옛 저장본에는 없는 필드라 아래 초기값 그대로 남는다 —
+        // 그래서 '0이면 처음'으로 해석하는 규칙을 CProgress_Manager가 한곳에서 정한다(레벨 0 → 1, 하트 -1 → 가득).
+        public int  iAccountLevel;
+        public int  iAccountExp;
+        public int  iStamina = -1;          // -1 = 한 번도 안 씀 → 최대치로 채워 시작한다
+        public long lStaminaAnchor;         // 하트 회복을 세기 시작한 시각(유닉스 초)
+        public int  iDiamond;
+
         /// <summary> 별 하나라도 얻었으면 그 맵은 클리어한 것이다(웨이브 하나만 달성해도 클리어). </summary>
         public bool Is_Cleared(int iMapID) => Get_Star(iMapID) >= 1;
 

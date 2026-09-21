@@ -129,14 +129,17 @@ namespace Client
     public class CUI_LobbyDesc : CUIDesc
     {
         public CProgress_Manager    cProgress       { get; set; }
+        // 260921_상단 바의 캐릭터 그림 · 이름(2-23)
+        public CCSVData_CharacterInfo cCharacterTable { get; set; }
         public LOBBY_TAB            eStartTab       { get; set; }
         public Action<LOBBY_TAB>    OnTabChanged    { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
-            cProgress    = null;
-            OnTabChanged = null;
+            cProgress       = null;
+            cCharacterTable = null;
+            OnTabChanged    = null;
         }
     }
 

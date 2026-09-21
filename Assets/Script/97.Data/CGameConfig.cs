@@ -167,6 +167,10 @@ namespace Client
         [Tooltip("켜면 시작할 때부터 좌상단 디버그 정보가 보인다. 플레이 중에는 F1로 켜고 끈다.")]
         [SerializeField] private bool m_bDebugHudVisible;
 
+        // 260921_하트를 쓰지 않고 스테이지에 들어간다(2-23). 테스트 중 하트가 바닥나 막히지 않게.
+        [Tooltip("켜면 하트가 모자라도 들어가고, 들어가도 줄지 않는다.")]
+        [SerializeField] private bool m_bFreeStamina;
+
         // 260920_캐릭터를 바꾸지 않고 이동 방식만 바꿔 본다(2-22). NONE이면 캐릭터 표를 따른다.
         [Tooltip("FOUR_WAY / EIGHT_WAY를 고르면 장착한 캐릭터와 상관없이 그 방식으로 움직인다.")]
         [SerializeField] private DEV_MOVE_STYLE m_eDevMoveStyle = DEV_MOVE_STYLE.NONE;
@@ -229,6 +233,7 @@ namespace Client
         public bool  UNLOCK_ALL_STAGE   => m_bUnlockAllStage;
         public bool  UNLOCK_ALL_CHARACTER => m_bUnlockAllCharacter;
         public bool  DEBUG_HUD_VISIBLE    => m_bDebugHudVisible;
+        public bool  FREE_STAMINA         => m_bFreeStamina;
         /// <summary> 260920_개발용 이동 방식 덮어쓰기. null이면 캐릭터를 따른다(2-22). </summary>
         public MOVE_STYLE? DEV_MOVE_STYLE_OVERRIDE
             => m_eDevMoveStyle == DEV_MOVE_STYLE.NONE ? (MOVE_STYLE?)null
