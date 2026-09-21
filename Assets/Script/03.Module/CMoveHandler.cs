@@ -24,6 +24,13 @@ namespace Client
         private MOVE_DIR        m_ePendingDir = MOVE_DIR.NONE;
         // 260921_나선형(2-22) — 입력이 없으면 몇 칸마다 스스로 꺾는다. 그 칸 수를 센다.
         private int             m_iSpiralStep;
+        // 260921_나선형이 선을 긋는 동안 몇 번 꺾었는지. 두 번 꺾을 때마다 다음 변이 길어져 소용돌이가 커진다
+        private int             m_iSpiralTurn;
+        // 260921_나선형 입력은 '새로 누른 순간'만 본다. 누르고 있는 동안 계속 이기면 자동 회전이 매번 되돌려져 소용돌이가 안 생긴다
+        private MOVE_DIR        m_eSpiralInput = MOVE_DIR.NONE;
+        // 260921_대각선 두 칸을 몸은 비스듬히 한 번에 가는 것처럼 그린다. 0 = 대각선 아님, 1 = 첫 칸, 2 = 둘째 칸
+        private int             m_iDiagPhase;
+        private Vector2Int      m_vDiagFrom;
 
         // 260916_런 스킬(뱀서라이크) — '월보'/'어디로든 신발'이 걸어 두는 플래그.
         // CPlayer가 CRunSkillEffect를 통해 켜고 끈다. 그리드 규칙 자체(Step_To)는 그대로 두고
@@ -43,6 +50,19 @@ namespace Client
         {
             get
             {
+                // 260921_대각선은 가로 · 세로 두 칸을 밟지만(규칙) 몸은 비스듬히 곧게 미끄러진다(보이는 것).
+                // 칸을 그대로 따라 그리면 계단이 좌우로 꺾이는 지그재그로 보여 대각선으로 읽히지 않았다.
+                if (m_iDiagPhase != 0 && Is_DiagonalSpan() == true)
+                {
+                    Vector3 vDiagFrom = m_cGrid.Cell_ToWorld(m_vDiagFrom);
+                    Vector3 vDiagTo   = m_cGrid.Cell_ToWorld(Get_DiagTarget());
+                    float   fHalf     = m_iDiagPhase == 1 ? 0f : 0.5f;
+                    float   fStep     = m_bMoving == true ? m_fProgress * 0.5f
+                                      : (m_iDiagPhase == 1 && m_ePendingDir != MOVE_DIR.NONE ? 0.5f : -1f);
+                    if (fStep >= 0f)
+                        return Vector3.Lerp(vDiagFrom, vDiagTo, fHalf + fStep);
+                }
+
                 Vector3 vFrom = m_cGrid.Cell_ToWorld(m_vCurCell);
                 if (m_bMoving == false)
                     return vFrom;
@@ -80,6 +100,9 @@ namespace Client
             m_bMoving    = false;
             m_bFollowing = false;
             m_ePendingDir = MOVE_DIR.NONE;
+            m_iDiagPhase  = 0;
+            m_iSpiralTurn = 0;
+            m_eSpiralInput = MOVE_DIR.NONE;
         }
 
         /// <summary>
@@ -113,11 +136,20 @@ namespace Client
             m_eMoveStyle  = eStyle;
             m_ePendingDir = MOVE_DIR.NONE;
             m_iSpiralStep = 0;
+            m_iSpiralTurn = 0;
+            m_iDiagPhase  = 0;
+            m_eSpiralInput = MOVE_DIR.NONE;
         }
 
         // 260921_나선형 — 몇 칸을 가면 스스로 한 번 꺾는가. 소용돌이가 너무 촘촘하면 제자리를 맴돌고,
         // 너무 성기면 그냥 네모를 그린다. 4칸이 화면에서 '나선'으로 읽히는 최소치였다.
         private const int SPIRAL_TURN_STEP = 4;
+        // 260921_두 번 꺾을 때마다 변이 이만큼 길어진다. 길이가 늘지 않으면 소용돌이가 아니라 같은 네모를 돌아
+        // 제자리로 돌아와 작은 네모만 점령했다. 2칸씩 늘면 고리 사이에 한 칸이 비어 자기 선을 밟지 않는다.
+        private const int SPIRAL_GROW_STEP = 2;
+
+        /// <summary> 지금 변의 길이 — 4, 4, 6, 6, 8, 8 … 선을 긋지 않을 때는 늘지 않는다. </summary>
+        public static int Get_SpiralLeg(int iTurn) => SPIRAL_TURN_STEP + SPIRAL_GROW_STEP * Mathf.Max(0, iTurn / 2);
 
         /// <summary> 시계 방향으로 90도. 나선은 한쪽으로만 꺾어야 소용돌이가 된다. </summary>
         public static MOVE_DIR Turn_Clockwise(MOVE_DIR eDir)
@@ -134,25 +166,45 @@ namespace Client
 
         /// <summary>
         /// 260921_나선형 캐릭터의 방향 결정(2-22). **멈추지 못한다** — 입력이 없으면 가던 대로 가되,
-        /// SPIRAL_TURN_STEP칸마다 시계 방향으로 한 번 꺾어 소용돌이를 그린다.
-        /// 입력이 들어오면 그 방향이 우선이고 칸 수는 다시 센다 — 입력은 '어디로'가 아니라 '언제 꺾을지'다.
+        /// 변 길이(Get_SpiralLeg — 4, 4, 6, 6 …)만큼 가면 시계 방향으로 한 번 꺾어 소용돌이를 그린다.
+        /// 새로 누른 방향으로는 곧바로 꺾고 소용돌이를 처음부터 다시 그린다 — 입력은 '어디로'가 아니라 '언제 꺾을지'다.
         /// </summary>
         private MOVE_DIR Resolve_Spiral(MOVE_DIR eDesiredDir)
         {
-            if (eDesiredDir != MOVE_DIR.NONE && eDesiredDir != m_eCurDir && Can_Move(eDesiredDir) == true)
+            if (eDesiredDir == MOVE_DIR.NONE)
             {
-                m_iSpiralStep = 0;
-                return eDesiredDir;
+                m_eSpiralInput = MOVE_DIR.NONE;
             }
+            else if (eDesiredDir != m_eSpiralInput)
+            {
+                // 가던 방향을 누른 것은 꺾을 것이 없다 — 받은 것으로만 친다.
+                // 못 가는 방향이면 받지 않고 남겨 둔다 — 갈 수 있게 되는 칸에서 꺾는다.
+                if (eDesiredDir == m_eCurDir)
+                {
+                    m_eSpiralInput = eDesiredDir;
+                }
+                else if (Can_Move(eDesiredDir) == true)
+                {
+                    m_eSpiralInput = eDesiredDir;
+                    m_iSpiralStep  = 0;
+                    m_iSpiralTurn  = 0;
+                    return eDesiredDir;
+                }
+            }
+
+            // 안전 지대(경계선) 위에서는 소용돌이를 키우지 않는다 — 나갈 때마다 작은 변부터 다시 그린다
+            if (m_cGrid.IS_DRAWING == false)
+                m_iSpiralTurn = 0;
 
             // 첫 걸음 — 갈 수 있는 쪽 아무 데나. 시작 섬 안쪽처럼 막힌 쪽을 고르면 그대로 멈춰 버린다.
             if (m_eCurDir == MOVE_DIR.NONE)
                 return Find_SpiralDir(MOVE_DIR.UP);
 
-            if (m_iSpiralStep < SPIRAL_TURN_STEP && Can_Move(m_eCurDir) == true)
+            if (m_iSpiralStep < Get_SpiralLeg(m_iSpiralTurn) && Can_Move(m_eCurDir) == true)
                 return m_eCurDir;
 
             m_iSpiralStep = 0;
+            ++m_iSpiralTurn;
             return Find_SpiralDir(Turn_Clockwise(m_eCurDir));
         }
 
@@ -190,6 +242,7 @@ namespace Client
             m_bFollowing  = false;
             m_fProgress   = 0f;
             m_ePendingDir = MOVE_DIR.NONE;
+            m_iDiagPhase  = 0;
         }
 
         /// <summary>
@@ -215,8 +268,21 @@ namespace Client
             }
 
             m_ePendingDir = eSecond;
+            m_vDiagFrom   = m_vCurCell;     // 260921_몸이 비스듬히 미끄러질 출발점
+            m_iDiagPhase  = 1;
             return eFirst;
         }
+
+        // 좌우 랩어라운드(어디로든 신발)로 반대편에 넘어간 경우는 비스듬히 그리지 않는다 — 화면을 가로질러 날아간다
+        private bool Is_DiagonalSpan()
+        {
+            Vector2Int vDelta = Get_DiagTarget() - m_vDiagFrom;
+            return Mathf.Abs(vDelta.x) == 1 && Mathf.Abs(vDelta.y) == 1;
+        }
+
+        // 두 칸을 다 밟았을 때 설 자리 = 출발점 + 첫 칸 + 둘째 칸
+        private Vector2Int Get_DiagTarget()
+            => m_vNextCell + (m_iDiagPhase == 1 ? CTerritoryGrid.Dir_ToOffset(m_ePendingDir) : Vector2Int.zero);
 
         private bool Try_StartMove(MOVE_DIR eDesiredDir)
         {
@@ -227,7 +293,16 @@ namespace Client
                 m_ePendingDir = MOVE_DIR.NONE;
 
                 if (Can_Move(ePending) == true)
-                    eDesiredDir = ePending;
+                {
+                    eDesiredDir  = ePending;
+                    m_iDiagPhase = 2;
+                }
+                else
+                {
+                    // 둘째 칸이 막혔다 — 대각선을 접고 이번 입력을 새로 해석한다(그대로 두면 날것의 대각선이 들어가 멈춘다)
+                    m_iDiagPhase = 0;
+                    eDesiredDir  = Resolve_Diagonal(eDesiredDir);
+                }
             }
             else if (m_eMoveStyle == MOVE_STYLE.SPIRAL)
             {
@@ -235,6 +310,7 @@ namespace Client
             }
             else
             {
+                m_iDiagPhase = 0;
                 eDesiredDir = Resolve_Diagonal(eDesiredDir);
             }
 
@@ -258,7 +334,9 @@ namespace Client
 
                 if (Can_Move(eDir) == false)
                 {
-                    m_fProgress = 0f;
+                    m_fProgress   = 0f;
+                    m_iDiagPhase  = 0;
+                    m_ePendingDir = MOVE_DIR.NONE;
                     return false;
                 }
             }
