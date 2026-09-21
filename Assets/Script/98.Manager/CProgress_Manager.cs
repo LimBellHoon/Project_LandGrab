@@ -195,6 +195,21 @@ namespace Client
             return true;
         }
 
+        /// <summary>
+        /// 260921_하트를 더한다 — 개발용 F2(CGameManager.Tick_DebugKey). **최대치를 넘겨도 된다** —
+        /// 넘친 동안은 회복이 멈추고(Regen_Stamina), 쓰는 만큼만 줄어든다. 음수를 넣어도 0 밑으로 내려가지 않는다.
+        /// </summary>
+        public void Add_Stamina(int iAmount)
+        {
+            if (iAmount == 0)
+                return;
+
+            Refresh_Stamina(out int iStamina, out long lAnchor);
+            m_cProgress.iStamina       = Mathf.Max(0, iStamina + iAmount);
+            m_cProgress.lStaminaAnchor = lAnchor;
+            m_cRepository.Save(m_cProgress);
+        }
+
         private void Refresh_Stamina(out int iStamina, out long lAnchor)
         {
             // 한 번도 안 쓴 저장본(-1)은 가득 찬 것으로 본다

@@ -146,6 +146,22 @@ namespace Client
             m_cStageManager.Tick(Get_LayerDeltaTime(OBJECT_TYPE.DEFAULT));
             Tick_Camera();
             m_cHapticManager.Tick(Time.deltaTime);
+            Tick_DebugKey();
+        }
+
+        // 260921_개발용 단축키. F1(디버그 글자 켜고 끄기)은 CDebugHUD가 직접 본다.
+        private const KeyCode DEBUG_KEY_ADD_STAMINA = KeyCode.F2;
+        private const int     DEBUG_STAMINA_AMOUNT  = 10;
+
+        private void Tick_DebugKey()
+        {
+            if (Input.GetKeyDown(DEBUG_KEY_ADD_STAMINA) == false)
+                return;
+
+            // 하트 10개 — 로비에 떠 있으면 상단 바도 바로 다시 칠한다
+            m_cProgressManager.Add_Stamina(DEBUG_STAMINA_AMOUNT);
+            (m_cLobbyUI as CUI_Lobby)?.Refresh_Currency();
+            Debug.Log($"[CGameManager] F2 — 하트 +{DEBUG_STAMINA_AMOUNT} (지금 {m_cProgressManager.STAMINA}/{m_cProgressManager.MAX_STAMINA})");
         }
 
         // 260912_카메라는 플레이어를 따라간다. 액터가 움직인 뒤에 따라붙어야 한 프레임 밀리지 않는다.

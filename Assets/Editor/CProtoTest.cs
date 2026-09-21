@@ -996,6 +996,9 @@ namespace Client
             CAccount_Utility.Regen_Stamina(10, 30, 1000, 1000 + 300 * 3 + 50, 300f, out iStamina, out lAnchor);
             Check("지난 시간만큼 찬다", iStamina, 13);
             Check("남은 몫(50초)은 다음 칸으로 넘어간다", lAnchor == 1000 + 300 * 3);
+            // 260921_F2로 최대치를 넘겨 받은 하트는 시간이 흘러도 깎이거나 더 차지 않는다
+            CAccount_Utility.Regen_Stamina(40, 30, 1000, 1000 + 300 * 5, 300f, out int iOver, out long _);
+            Check("하트 — 최대치를 넘긴 만큼은 그대로 둔다", iOver, 40);
             CAccount_Utility.Regen_Stamina(25, 30, 1000, 1000 + 300 * 100, 300f, out iStamina, out lAnchor);
             Check("최대를 넘지 않는다", iStamina, 30);
             Check("가득 차면 기준 시각이 지금으로 온다", lAnchor == 1000 + 300 * 100);

@@ -47,7 +47,7 @@ namespace Client
             GUILayout.Label($"점령률   {cStage.OWNED_RATIO:P1}  /  목표 {cStage.CLEAR_RATIO:P0}", m_cStyle);
             GUILayout.Label($"남은 시간 {cStage.REMAIN_TIME:F1}s     목숨 {cStage.LIFE}/{cStage.MAX_LIFE}     몬스터 {cStage.ENEMY_COUNT}", m_cStyle);
             GUILayout.Label($"상태     {cStage.STATE}", m_cStyle);
-            GUILayout.Label("WASD / 방향키로 이동     F1 디버그 끄기", m_cStyle);
+            GUILayout.Label("WASD / 방향키로 이동     F1 디버그 끄기     F2 하트 +10", m_cStyle);
             GUILayout.EndArea();
         }
     }

@@ -432,6 +432,7 @@ Engine 레이어가 UI까지 Tick하는지 확실하지 않아 이 클래스만 
 | `m_bUnlockAllCharacter` | 260920_캐릭터를 전부 가진 것으로 친다 (이동 방식 비교용, 2-22) |
 | `m_eDevMoveStyle` | 260920_장착 캐릭터와 무관하게 이동 방식을 덮어쓴다 (2-22) |
 | `m_bDebugHudVisible` | 260921_좌상단 디버그 글자(`CDebugHUD`)를 처음부터 띄울지. 플레이 중에는 **F1**로 켜고 끈다 |
+| (단축키) **F2** | 260921_하트 +10(`CGameManager.Tick_DebugKey` → `CProgress_Manager.Add_Stamina`). 최대치를 넘겨도 된다 — 넘친 동안은 회복이 멈추고 쓰는 만큼만 준다 |
 | `m_bFreeStamina` | 260921_하트가 모자라도 들어가고 줄지 않는다 (2-23) |
 
 **규칙 숫자는 여전히 CSV가 원본이다.** 여기 두는 것은 '그 값을 얼마나 비틀지'와
