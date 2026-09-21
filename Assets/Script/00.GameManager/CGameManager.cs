@@ -503,7 +503,10 @@ namespace Client
                 m_cAwakenTable,
                 eType => cRunSkill != null && cRunSkill.Is_Awakened(eType));
             if (lstOption.Count == 0)
+            {
+                m_cStageManager.Close_Pick();   // 260921_열지 못했어도 닫은 것으로 알려야 대기열이 막히지 않는다
                 return;
+            }
 
             m_cStageManager.Set_Pause(true);
             (m_cInGameUI as CUI_InGame)?.Set_Interactable(false);
@@ -533,6 +536,9 @@ namespace Client
 
             (m_cInGameUI as CUI_InGame)?.Set_Interactable(true);
             m_cStageManager.Set_Pause(false);
+
+            // 260921_기다리는 3지선다가 있으면 여기서 다음 창이 열린다(다시 판을 세운다)
+            m_cStageManager.Close_Pick();
         }
 
         private CSkillInfo Get_EquippedSkill()

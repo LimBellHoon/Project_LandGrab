@@ -576,7 +576,7 @@ namespace Client
             cPlayer.Add_Life(10);
             Check("최대 목숨을 넘게 되찾지 못한다", cPlayer.LIFE, 3);
 
-            Check("목숨 표시", CUI_InGame.Get_LifeText(2, 3), "♥♥♡");
+            Check("목숨 표시", CUI_InGame.Get_LifeText(2, 3), "●●○");
 
             Object.DestroyImmediate(goPlayer);
 
@@ -1334,6 +1334,19 @@ namespace Client
                 int iNeed = cInfo.iGaugeBase + cInfo.iGaugeAdd * iGiven;
                 Check($"{iGiven + 1}번째 고르기에 조각 {iNeed}개", iNeed, 6 + 3 * iGiven);
             }
+
+            // 260921_자석으로 한꺼번에 넘쳐도 3지선다는 한 장씩 열린다
+            CPickQueue cQueue = new CPickQueue();
+            cQueue.Add(3);
+            Check("대기열 — 첫 장이 열린다", cQueue.Try_Open() == true);
+            Check("대기열 — 열려 있는 동안 다음 장은 안 열린다", cQueue.Try_Open() == false);
+            Check("대기열 — 남은 수", cQueue.PENDING, 2);
+            cQueue.Close();
+            Check("대기열 — 닫으면 다음 장", cQueue.Try_Open() == true);
+            cQueue.Close();
+            Check("대기열 — 마지막 장", cQueue.Try_Open() == true);
+            cQueue.Close();
+            Check("대기열 — 다 쓰면 더 안 열린다", cQueue.Try_Open() == false && cQueue.IS_OPEN == false);
         }
 
         // 260920_맵 위 상호작용 아이템(2-20) — 표 파싱과 가중치

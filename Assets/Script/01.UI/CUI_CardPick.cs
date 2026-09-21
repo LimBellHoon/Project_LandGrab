@@ -142,7 +142,7 @@ namespace Client
             Paint_Part(goCard, "Img_Header", null, cTheme);
             Paint_Part(goCard, "Img_Body",   null, bAwaken ? BODY_AWAKEN : BODY_NORMAL);
             Paint_Part(goCard, "Img_Glow",   null, cTheme);
-            Paint_Part(goCard, "Img_Icon",   Get_Icon(cOption), bAwaken ? THEME_AWAKEN : cTheme);
+            Paint_Part(goCard, "Img_Body/Img_Icon", Get_Icon(cOption), bAwaken ? THEME_AWAKEN : cTheme);
 
             Set_Text(goCard, "Img_Header/Txt_Name", Get_Title(cOption), Color.white);
             Set_Text(goCard, "Img_Body/Txt_Desc",   cOption.DESC,       cText);

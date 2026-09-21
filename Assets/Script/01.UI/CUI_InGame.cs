@@ -188,12 +188,13 @@ namespace Client
             m_cFlash.Add_Flash(cColor, m_cConfig.FLASH_MASS_STUN_DURATION);
         }
 
-        // 260918_목숨을 하트로 — 찬 하트 ♥ 남은 목숨, 빈 하트 ♡ 잃은 목숨
+        // 260918_목숨 표시 — 찬 칸이 남은 목숨, 빈 칸이 잃은 목숨
+        // 260921_하트(♥)는 로비의 입장 재화가 됐다(2-23). 둘이 같은 모양이면 목숨이 하트를 깎는 것처럼 읽혀 ●/○로 바꿨다
         public static string Get_LifeText(int iLife, int iMaxLife)
         {
             int iMax = Mathf.Max(0, iMaxLife);
             int iCur = Mathf.Clamp(iLife, 0, iMax);
-            return new string('♥', iCur) + new string('♡', iMax - iCur);
+            return new string('●', iCur) + new string('○', iMax - iCur);
         }
 
         private void Refresh_Flash()

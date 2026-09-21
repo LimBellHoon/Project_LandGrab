@@ -23,7 +23,8 @@ namespace Client
         private const string PREFAB_WEB         = "Prefab_Web";
         private const string PREFAB_SOUL        = "Prefab_Soul";
         private const string PREFAB_FIELD_ITEM  = "Prefab_FieldItem";
-        private const string PREFAB_SHARD       = "Prefab_Shard";
+        private const string PREFAB_SHARD       = "Prefab_Shard";
+
         private const string PREFAB_DECOY       = "Prefab_Decoy";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
 
@@ -64,6 +65,7 @@ namespace Client
         // 260920_3지선다 게이지(2-21). m_iGauge는 지금까지 모은 조각, m_iPickGiven은 지금까지 고른 횟수다.
         private int                         m_iGauge;
         private int                         m_iPickGiven;
+        private readonly CPickQueue         m_cPickQueue = new CPickQueue();   // 260921_한 번에 한 장만
 
         // 260918_점령 재화 — 안전하게 조금씩과 위험을 감수하고 크게 한 방 사이에 실제 이득 차이를 만든다.
         // 이번 판 누적만 여기서 들고, 실제 보유 코인 반영(디스크 저장)은 스테이지가 끝날 때 CGameManager가 한 번만 한다.
@@ -285,6 +287,7 @@ namespace Client
             m_fEnemyCardSlow  = 1f;
             m_iGauge          = 0;
             m_iPickGiven      = 0;
+            m_cPickQueue.Clear();
             OnCardReady       = null;
             OnMassStun        = null;
             m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
@@ -541,14 +544,35 @@ namespace Client
 
             m_iGauge += iAmount;
 
+            // 260921_넘친 만큼 쌓아 두고 한 장씩 연다 — 자석으로 한꺼번에 주우면 창이 겹쳐 떠 입력이 막혔다
+            int iReady = 0;
             while (m_iGauge >= GAUGE_NEED)
             {
                 m_iGauge -= GAUGE_NEED;
                 ++m_iPickGiven;
-                OnCardReady?.Invoke();
+                ++iReady;
             }
 
             OnGaugeChanged?.Invoke(m_iGauge, GAUGE_NEED);
+
+            m_cPickQueue.Add(iReady);
+            Try_OpenPick();
+        }
+
+        private void Try_OpenPick()
+        {
+            if (m_cPickQueue.Try_Open() == true)
+                OnCardReady?.Invoke();
+        }
+
+        /// <summary>
+        /// 3지선다 창이 닫혔을 때(골랐거나, 낼 선택지가 없어 열지 못했을 때) 부른다.
+        /// 기다리는 것이 있으면 곧바로 다음 창을 연다.
+        /// </summary>
+        public void Close_Pick()
+        {
+            m_cPickQueue.Close();
+            Try_OpenPick();
         }
 
         // 260912_카드 효과. 고른 판이 끝날 때까지 유지된다.
