@@ -147,6 +147,21 @@ namespace Client
             Tick_Camera();
             m_cHapticManager.Tick(Time.deltaTime);
             Tick_DebugKey();
+            Tick_StartTap();
+        }
+
+        // 260921_시작 위치 슬롯(2-3) — 화면 어디든 누르면(키보드는 스페이스 · 엔터) 멈춘다
+        private void Tick_StartTap()
+        {
+            if (m_cStageManager.IS_START_WAITING == false)
+                return;
+
+            bool bTap = Input.GetMouseButtonDown(0)
+                     || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
+                     || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return);
+
+            if (bTap == true)
+                m_cStageManager.Confirm_StartSelect();
         }
 
         // 260921_개발용 단축키. F1(디버그 글자 켜고 끄기)은 CDebugHUD가 직접 본다.
@@ -171,6 +186,8 @@ namespace Client
             if (cPlayer == null)
                 return;
 
+            // 260921_시작 위치 슬롯이 도는 동안은 맵 전체를 본다 — 후보가 맵 여기저기라 따라가면 어지럽다
+            m_cCameraFitter.Set_Overview(m_cStageManager.IS_START_SELECT);
             m_cCameraFitter.Tick(cPlayer.transform.position, Time.deltaTime);
 
             if (m_cCamera == null)
@@ -499,25 +516,22 @@ namespace Client
         // 카드를 보는 사이에 몬스터에게 맞으면 고르는 재미가 아니라 벌이 된다.
         private void On_CardReady()
         {
+            // 260921_열지 못하는 길에서도 전부 Close_Pick을 부른다 — 안 부르면 대기열이 막혀 다음 선택지가 영영 안 뜬다
             if (m_cCardTable == null && m_cRunSkillTable == null)
+            {
+                m_cStageManager.Close_Pick();
                 return;
+            }
 
             if (m_cGameInstance.Has_Prefab(PREFAB_UI_CARDPICK) == false)
             {
                 Debug.LogError($"[CGameManager] '{PREFAB_UI_CARDPICK}' 프리팹이 없습니다. "
                              + "Tools/LandGrab/Setup Assets 를 실행하세요.");
+                m_cStageManager.Close_Pick();
                 return;
             }
 
-            // 260917_카드와 런 스킬을 한 풀에 넣어 뽑는다. 레벨은 이번 판 플레이어가, 해금은 계정 진행도가 안다.
-            CRunSkillHandler cRunSkill = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.RUN_SKILL : null;
-            List<CPickOption> lstOption = CPickOption_Utility.Pick(
-                m_cCardTable, m_cRunSkillTable,
-                eType => cRunSkill != null ? cRunSkill.Get_Level(eType) : 0,
-                m_cProgressManager.Is_Cleared,
-                CARD_PICK_COUNT,
-                m_cAwakenTable,
-                eType => cRunSkill != null && cRunSkill.Is_Awakened(eType));
+            List<CPickOption> lstOption = Build_PickOptions(CARD_PICK_COUNT, null);
             if (lstOption.Count == 0)
             {
                 m_cStageManager.Close_Pick();   // 260921_열지 못했어도 닫은 것으로 알려야 대기열이 막히지 않는다
@@ -535,9 +549,59 @@ namespace Client
                 strTitle    = "하나를 고르세요",
                 lstOption   = lstOption,
                 OnPick      = On_CardPicked,
+                OnReroll    = On_CardReroll,
+                OnBanish    = On_CardBanish,
+                fnRerollLeft = () => m_cStageManager.REROLL_LEFT,
+                fnBanishLeft = () => m_cStageManager.BANISH_LEFT,
             };
 
             m_cCardUI = m_cGameInstance.Open_UI<CUI_CardPick>(cDesc, m_trUIPopup);
+        }
+
+        // 260917_카드와 런 스킬을 한 풀에 넣어 뽑는다. 레벨은 이번 판 플레이어가, 해금은 계정 진행도가 안다.
+        // 260921_버린 것은 판이 끝날 때까지 빼고, fnExclude로 지금 화면에 떠 있는 것도 뺄 수 있다(다시 뽑기 · 버리기)
+        private List<CPickOption> Build_PickOptions(int iCount, Func<CPickOption, bool> fnExclude)
+        {
+            CRunSkillHandler cRunSkill = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.RUN_SKILL : null;
+            return CPickOption_Utility.Pick(
+                m_cCardTable, m_cRunSkillTable,
+                eType => cRunSkill != null ? cRunSkill.Get_Level(eType) : 0,
+                m_cProgressManager.Is_Cleared,
+                iCount,
+                m_cAwakenTable,
+                eType => cRunSkill != null && cRunSkill.Is_Awakened(eType),
+                cOption => m_cStageManager.Is_Banished(cOption) == true || (fnExclude != null && fnExclude(cOption) == true));
+        }
+
+        // 260921_다시 뽑기 — 세 장을 새로 뽑는다. 횟수가 없으면 null
+        private IReadOnlyList<CPickOption> On_CardReroll()
+        {
+            if (m_cStageManager.Try_UseReroll() == false)
+                return null;
+
+            return Build_PickOptions(CARD_PICK_COUNT, null);
+        }
+
+        // 260921_버리기 — 판이 끝날 때까지 안 나오게 하고, 그 자리를 화면에 없는 새 선택지로 채운다.
+        // 채울 것이 없으면 버린 것 자체를 돌려준다(화면이 그 칸을 뺀다)
+        private CPickOption On_CardBanish(CPickOption cOption, IReadOnlyList<CPickOption> lstShown)
+        {
+            if (m_cStageManager.Try_Banish(cOption) == false)
+                return null;
+
+            List<CPickOption> lstNew = Build_PickOptions(1, cCandidate => Contains_Key(lstShown, cCandidate.KEY));
+            return lstNew.Count > 0 ? lstNew[0] : cOption;
+        }
+
+        private static bool Contains_Key(IReadOnlyList<CPickOption> lstOption, string strKey)
+        {
+            for (int i = 0; lstOption != null && i < lstOption.Count; ++i)
+            {
+                if (lstOption[i] != null && lstOption[i].KEY == strKey)
+                    return true;
+            }
+
+            return false;
         }
 
         private void On_CardPicked(CPickOption cOption)
@@ -818,6 +882,13 @@ namespace Client
             m_cStageManager.OnCardReady    += On_CardReady;
             m_cStageManager.OnMassStun     += On_MassStun;     // 260918_전체 마비 연출
             m_cStageManager.OnFieldItemUsed += On_FieldItemUsed;  // 260920_맵 위 아이템
+            // 260921_시작 위치 슬롯 — 넘어갈 때 딸깍, 멈추면 한 음 + 펀치줌
+            m_cStageManager.OnStartSlotHop  += () => m_cAudioManager.Play(SOUND_ID.SLOT_TICK);
+            m_cStageManager.OnStartSelected += () =>
+            {
+                m_cAudioManager.Play(SOUND_ID.SLOT_STOP);
+                m_cCameraPunch.Add_Punch(m_cConfig.PUNCH_ON_CAPTURE);
+            };
             m_cStageManager.OnCoinGained   += On_CoinGained;   // 260918_점령 재화
 
             // 260916_피격/사망/회피/점령 손맛(흔들림·펀치·효과음). CPlayer.Hide()가 풀에 반납할 때

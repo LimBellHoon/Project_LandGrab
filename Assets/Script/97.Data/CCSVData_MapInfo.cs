@@ -53,6 +53,10 @@ namespace Client
         // 260921_이 스테이지를 끝냈을 때 얻는 계정 경험치의 최대치 · 들어갈 때 쓰는 하트(2-23)
         public int      iExpTotal;
         public int      iStaminaCost;
+        // 260921_3지선다 R&D — 가둬 죽인 몬스터 한 마리당 바로 주는 조각 / 판 전체의 다시 뽑기 · 버리기 횟수(2-21)
+        public int      iShardPerTrapKill;
+        public int      iPickReroll;
+        public int      iPickBanish;
         // 260918_시작 목숨 수 (다시 목숨제, 2-14)
         public int      iLife;
         public float    fPlayerSpeed;               // 초당 셀
@@ -159,6 +163,10 @@ namespace Client
                 // 260921_계정 경험치 · 입장 하트(2-23)
                 iExpTotal          = CCSV_Utility.To_Int(arrField, 25, 300),
                 iStaminaCost       = CCSV_Utility.To_Int(arrField, 26, 5),
+                // 260921_가둔 적 조각 · 다시 뽑기 · 버리기(2-21)
+                iShardPerTrapKill  = CCSV_Utility.To_Int(arrField, 27, 3),
+                iPickReroll        = CCSV_Utility.To_Int(arrField, 28, 2),
+                iPickBanish        = CCSV_Utility.To_Int(arrField, 29, 2),
             };
 
             if (cInfo.iMapID <= 0)

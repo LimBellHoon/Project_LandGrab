@@ -38,6 +38,15 @@ namespace Client
         private Vector2     m_vVelocity;        // SmoothDamp용
         private float       m_fSize;
 
+        // 260921_전체 보기 — 시작 위치 슬롯(2-3)이 도는 동안 맵 전체를 보여 준다. 크기는 부드럽게 오간다
+        private const float OVERVIEW_ZOOM_RATE = 6f;
+        private bool        m_bOverview;
+        private float       m_fFitSize;         // 맵 전체가 들어가는 크기
+        private float       m_fBaseSize;        // 평소 크기(추적 모드면 시야 높이, 아니면 전체)
+
+        /// <summary> 260921_켜면 맵 전체를 보고, 끄면 다시 따라간다. 크기 · 위치 모두 부드럽게 옮겨 간다. </summary>
+        public void Set_Overview(bool bOverview) => m_bOverview = bOverview;
+
         // 해상도가 바뀌었는지 보려고 들고 있는다 (회전 · 에디터 Game 뷰 크기 변경)
         private int         m_iLastWidth;
         private int         m_iLastHeight;
@@ -98,13 +107,19 @@ namespace Client
             if (Screen.width != m_iLastWidth || Screen.height != m_iLastHeight)
                 Refresh_Size();
 
-            if (m_bFollow == false)
+            // 260921_전체 보기와 평소 크기 사이를 부드럽게 오간다
+            float fWantSize = m_bOverview == true ? m_fFitSize : m_fBaseSize;
+            m_fSize = Mathf.Lerp(m_fSize, fWantSize, 1f - Mathf.Exp(-OVERVIEW_ZOOM_RATE * fDeltaTime));
+
+            if (m_bFollow == false && m_bOverview == false && Mathf.Approximately(m_fSize, m_fBaseSize) == true)
             {
                 Apply();
                 return;
             }
 
-            Vector2 vWant = Clamp_Center(vTarget, m_vWorldSize, m_vWorldCenter, HALF_VIEW_W, HALF_VIEW_H);
+            Vector2 vWant = m_bOverview == true || m_bFollow == false
+                          ? m_vWorldCenter
+                          : Clamp_Center(vTarget, m_vWorldSize, m_vWorldCenter, HALF_VIEW_W, HALF_VIEW_H);
 
             m_vBandCenter = m_fFollowTime <= 0f
                           ? vWant
@@ -129,15 +144,18 @@ namespace Client
 
             if (m_fViewHeight <= 0f)
             {
-                m_bFollow = false;
-                m_fSize   = fFitSize;
+                m_bFollow   = false;
+                m_fBaseSize = fFitSize;
             }
             else
             {
                 float fFollowSize = Calc_Size(new Vector2(0f, m_fViewHeight), fAspect, USABLE_RATIO, 0f);
-                m_bFollow = fFollowSize < fFitSize;
-                m_fSize   = m_bFollow == true ? fFollowSize : fFitSize;
+                m_bFollow   = fFollowSize < fFitSize;
+                m_fBaseSize = m_bFollow == true ? fFollowSize : fFitSize;
             }
+
+            m_fFitSize = fFitSize;
+            m_fSize    = m_bOverview == true ? m_fFitSize : m_fBaseSize;
 
             if (m_bFollow == false)
                 m_vBandCenter = m_vWorldCenter;

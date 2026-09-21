@@ -26,6 +26,7 @@ namespace Client
         private const int   SPIRAL_HOME_SEARCH  = 40;               // 돌아갈 내 땅을 찾는 반경(칸)
 
         private bool            m_bFree;
+        private bool            m_bFreeMoving;      // 260921_이번 프레임에 움직였나 — 입력이 없으면 선을 긋는 중에도 멈춘다
         private Vector2         m_vFreePos;         // 칸 공간 좌표
         private Vector2         m_vHeading = Vector2.up;
         private Vector2Int      m_vLogicCell;       // 지나간 칸 중 마지막(아직 판정 전일 수 있다)
@@ -89,6 +90,7 @@ namespace Client
             m_vSpiralHome    = m_vPrevLogicCell;
             m_fSpiralAngle   = 0f;
             m_bSpiralClosing = false;
+            m_eSpiralInput   = m_eCurDir;     // 나올 때 누른 방향 — 그대로 누르고 있어도 나선이 다시 시작되지 않는다
             m_ePendingDir    = MOVE_DIR.NONE;
             m_iDiagPhase     = 0;
         }
@@ -96,6 +98,11 @@ namespace Client
         private bool Tick_Free(float fDeltaTime, MOVE_DIR eDesiredDir, out Vector2Int vArrivedCell)
         {
             vArrivedCell = m_vCurCell;
+
+            // 260921_손을 떼면 멈춘다(칸 이동과 같은 규칙). 나선도 그 자리에서 멈췄다가 다시 누르면 이어서 돈다
+            m_bFreeMoving = eDesiredDir != MOVE_DIR.NONE;
+            if (m_bFreeMoving == false)
+                return Try_PopArrived(out vArrivedCell);
 
             float fDistance = m_fSpeed * fDeltaTime;
             if (m_eMoveStyle == MOVE_STYLE.SPIRAL)
@@ -126,12 +133,9 @@ namespace Client
         /// </summary>
         private void Steer_Spiral(float fDistance, MOVE_DIR eDesiredDir)
         {
-            // 새로 누른 방향으로 곧게 틀고 나선을 처음부터 다시 그린다 — 입력은 '언제 꺾을지'다
-            if (eDesiredDir == MOVE_DIR.NONE)
-            {
-                m_eSpiralInput = MOVE_DIR.NONE;
-            }
-            else if (eDesiredDir != m_eSpiralInput)
+            // 다른 방향을 누르면 그쪽으로 곧게 틀고 나선을 처음부터 다시 그린다 — 입력은 방향만 바꾼다.
+            // 같은 방향을 다시 누르는 것(손을 뗐다 다시 누름)은 방향을 바꾸지 않는다 — 멈췄던 자리에서 이어서 돈다
+            if (eDesiredDir != m_eSpiralInput)
             {
                 m_eSpiralInput = eDesiredDir;
                 Vector2 vWant = ((Vector2)CTerritoryGrid.Dir_ToOffset(eDesiredDir)).normalized;

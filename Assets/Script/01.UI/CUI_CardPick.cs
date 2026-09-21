@@ -28,9 +28,23 @@ namespace Client
         // 260917_RUN_SKILL_TYPE 순서대로. 흰색으로 구워 두고 분류(액티브/패시브) 색을 칠한다
         [SerializeField] private Sprite[]       m_arrRunSkillIcon;
 
-        private readonly List<GameObject> m_lstSpawned = new List<GameObject>();
+        // 260921_다시 뽑기 · 버리기(2-10-1). 버리기는 누르면 '버릴 카드 고르기' 상태가 되고, 카드를 누르면 버린다
+        [SerializeField] private Button         m_btnReroll;
+        [SerializeField] private Button         m_btnBanish;
+
+        private readonly List<GameObject>  m_lstSpawned = new List<GameObject>();
+        private readonly List<CPickOption> m_lstOption  = new List<CPickOption>();
 
         private Action<CPickOption> m_OnPick;
+        private Func<IReadOnlyList<CPickOption>>                          m_OnReroll;
+        private Func<CPickOption, IReadOnlyList<CPickOption>, CPickOption> m_OnBanish;
+        private Func<int>   m_fnRerollLeft;
+        private Func<int>   m_fnBanishLeft;
+        private bool        m_bBanishMode;
+        private string      m_strTitle;
+
+        private static readonly Color COLOR_BANISH_ON  = new Color(0.85f, 0.25f, 0.25f, 1f);
+        private static readonly Color COLOR_BUTTON_OFF = new Color(0.20f, 0.26f, 0.44f, 0.9f);
 
         #region Engine.CUI
         public override bool Initialize(IGameObjectDesc iBaseDesc)
@@ -43,19 +57,37 @@ namespace Client
                 return false;
             }
 
-            m_OnPick = cDesc.OnPick;
+            m_OnPick       = cDesc.OnPick;
+            m_OnReroll     = cDesc.OnReroll;
+            m_OnBanish     = cDesc.OnBanish;
+            m_fnRerollLeft = cDesc.fnRerollLeft;
+            m_fnBanishLeft = cDesc.fnBanishLeft;
+            m_strTitle     = cDesc.strTitle;
+            m_bBanishMode  = false;
 
-            if (m_txtTitle != null)
-                m_txtTitle.text = cDesc.strTitle;
+            m_lstOption.Clear();
+            if (cDesc.lstOption != null)
+                m_lstOption.AddRange(cDesc.lstOption);
 
-            Build_Cards(cDesc.lstOption);
+            Bind(m_btnReroll, On_ClickReroll);
+            Bind(m_btnBanish, On_ClickBanish);
+
+            Build_Cards(m_lstOption);
+            Refresh_Tools();
             return true;
         }
 
         public override void Hide()
         {
             Clear_Cards();
-            m_OnPick = null;
+            m_OnPick   = null;
+            m_OnReroll = null;
+            m_OnBanish = null;
+            m_fnRerollLeft = null;
+            m_fnBanishLeft = null;
+            m_lstOption.Clear();
+            Unbind(m_btnReroll);
+            Unbind(m_btnBanish);
             base.Hide();
         }
         #endregion Engine.CUI
@@ -191,8 +223,111 @@ namespace Client
             cImage.color = cTint;
         }
 
+        #region 260921_다시 뽑기 · 버리기
+        private void On_ClickReroll()
+        {
+            IReadOnlyList<CPickOption> lstNew = m_OnReroll?.Invoke();
+            if (lstNew == null || lstNew.Count == 0)
+                return;
+
+            m_bBanishMode = false;
+            m_lstOption.Clear();
+            m_lstOption.AddRange(lstNew);
+            Build_Cards(m_lstOption);
+            Refresh_Tools();
+        }
+
+        // 한 번 누르면 '버릴 카드를 고르세요', 다시 누르면 취소
+        private void On_ClickBanish()
+        {
+            if (m_bBanishMode == false && Get_Left(m_fnBanishLeft) <= 0)
+                return;
+
+            m_bBanishMode = !m_bBanishMode;
+            Refresh_Tools();
+        }
+
+        private void Banish(CPickOption cOption)
+        {
+            m_bBanishMode = false;
+
+            CPickOption cReplace = m_OnBanish?.Invoke(cOption, m_lstOption);
+            int iIndex = m_lstOption.IndexOf(cOption);
+            if (cReplace == null || iIndex < 0)
+            {
+                Refresh_Tools();
+                return;
+            }
+
+            // 채울 것이 없으면 그 칸은 빠진다 — 마지막 한 장은 남겨 둔다(고를 것이 없으면 창이 안 닫힌다)
+            if (cReplace == cOption)
+            {
+                if (m_lstOption.Count > 1)
+                    m_lstOption.RemoveAt(iIndex);
+            }
+            else
+            {
+                m_lstOption[iIndex] = cReplace;
+            }
+
+            Build_Cards(m_lstOption);
+            Refresh_Tools();
+        }
+
+        private void Refresh_Tools()
+        {
+            int iReroll = Get_Left(m_fnRerollLeft);
+            int iBanish = Get_Left(m_fnBanishLeft);
+
+            Set_Button(m_btnReroll, $"다시 뽑기  {iReroll}", iReroll > 0, COLOR_BUTTON_OFF);
+            Set_Button(m_btnBanish, m_bBanishMode == true ? "취소" : $"버리기  {iBanish}",
+                       m_bBanishMode == true || iBanish > 0, m_bBanishMode == true ? COLOR_BANISH_ON : COLOR_BUTTON_OFF);
+
+            if (m_txtTitle != null)
+                m_txtTitle.text = m_bBanishMode == true ? "버릴 카드를 고르세요 — 이번 판에 다시 안 나온다" : m_strTitle;
+        }
+
+        private static int Get_Left(Func<int> fnLeft) => fnLeft != null ? fnLeft() : 0;
+
+        private static void Set_Button(Button cButton, string strLabel, bool bInteractable, Color cColor)
+        {
+            if (cButton == null)
+                return;
+
+            cButton.interactable = bInteractable;
+            Image cImage = cButton.GetComponent<Image>();
+            if (cImage != null)
+                cImage.color = cColor;
+
+            Text cText = cButton.GetComponentInChildren<Text>();
+            if (cText != null)
+                cText.text = strLabel;
+        }
+
+        private static void Bind(Button cButton, UnityEngine.Events.UnityAction fnClick)
+        {
+            if (cButton == null)
+                return;
+
+            cButton.onClick.RemoveAllListeners();
+            cButton.onClick.AddListener(fnClick);
+        }
+
+        private static void Unbind(Button cButton)
+        {
+            if (cButton != null)
+                cButton.onClick.RemoveAllListeners();
+        }
+        #endregion 다시 뽑기 · 버리기
+
         private void On_Click(CPickOption cInfo)
         {
+            if (m_bBanishMode == true)
+            {
+                Banish(cInfo);
+                return;
+            }
+
             // 두 번 눌러 두 장을 먹는 일을 막는다 — 누른 순간 더는 못 누르게 한다.
             for (int i = 0; i < m_lstSpawned.Count; ++i)
             {

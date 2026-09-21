@@ -44,6 +44,9 @@ namespace Client
         [SerializeField] private Text           m_txtItem;
         // 260916_화면 전체를 덮는 플래시. 맨 위에 그려져야 하므로 계층상 맨 마지막 자식이다.
         [SerializeField] private Image          m_imgFlash;
+        // 260921_시작 위치 슬롯이 도는 동안 깜빡이는 안내(2-3)
+        [SerializeField] private Text           m_txtTapToStart;
+        private const float TAP_BLINK_SPEED = 5f;
 
         private CPlayer         m_cPlayer;
         private CStage_Manager  m_cStage;
@@ -154,6 +157,25 @@ namespace Client
             Refresh_Skill();
             Refresh_Item();
             Refresh_Flash();
+            Refresh_TapToStart();
+        }
+
+        // 260921_누르기를 기다리는 동안만 깜빡인다. 누른 뒤 멈추는 동안에는 지운다 — 이미 눌렀는데 또 누르라고 하면 헷갈린다
+        private void Refresh_TapToStart()
+        {
+            if (m_txtTapToStart == null)
+                return;
+
+            bool bShow = m_cStage != null && m_cStage.IS_START_WAITING == true;
+            if (m_txtTapToStart.gameObject.activeSelf != bShow)
+                m_txtTapToStart.gameObject.SetActive(bShow);
+
+            if (bShow == false)
+                return;
+
+            Color cColor = m_txtTapToStart.color;
+            cColor.a = 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * TAP_BLINK_SPEED));
+            m_txtTapToStart.color = cColor;
         }
 
         // 260916_피격/회피 화면 플래시

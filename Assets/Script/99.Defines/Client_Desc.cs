@@ -261,11 +261,22 @@ namespace Client
         // 260917_카드와 런 스킬이 섞여 들어온다
         public IReadOnlyList<CPickOption> lstOption { get; set; }
         public Action<CPickOption>        OnPick    { get; set; }
+        // 260921_다시 뽑기 · 버리기(2-10-1). 남은 횟수는 스테이지가 들고 있어 매번 물어본다
+        /// <summary> 새 목록을 돌려준다. 횟수가 없으면 null </summary>
+        public Func<IReadOnlyList<CPickOption>>                         OnReroll    { get; set; }
+        /// <summary> (버릴 것, 지금 떠 있는 것) → 그 자리를 채울 새 선택지. 버리지 못했으면 null, 채울 것이 없으면 버린 것 자체 </summary>
+        public Func<CPickOption, IReadOnlyList<CPickOption>, CPickOption> OnBanish  { get; set; }
+        public Func<int>                                                  fnRerollLeft { get; set; }
+        public Func<int>                                                  fnBanishLeft { get; set; }
 
         public override void OnReturn()
         {
             base.OnReturn();
             lstOption = null;
+            OnReroll  = null;
+            OnBanish  = null;
+            fnRerollLeft = null;
+            fnBanishLeft = null;
             OnPick    = null;
         }
     }

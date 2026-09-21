@@ -24,6 +24,12 @@ namespace Client
                                  : eKind == PICK_KIND.AWAKEN ? cAwaken.iWeight : cRunSkill.iWeight;
         public bool     IS_NEW  => eKind == PICK_KIND.RUN_SKILL && iNextLevel <= 1;
 
+        /// <summary>
+        /// 260921_같은 선택지인지 가리는 이름. 레벨은 넣지 않는다 — 버린 스킬은 몇 레벨이 되든 다시 안 나와야 한다.
+        /// </summary>
+        public string   KEY     => eKind == PICK_KIND.CARD ? $"C{cCard.iCardID}"
+                                 : eKind == PICK_KIND.AWAKEN ? $"A{cAwaken.iAwakenID}" : $"R{(int)cRunSkill.eType}";
+
         // 260920_카드 색 테마(2-10-1). 각성은 카드 전체가 보라색이라 테마를 보지 않는다 —
         // 화면이 eKind를 먼저 보고, 각성이 아닐 때만 이 값을 쓴다.
         public PICK_THEME THEME => eKind == PICK_KIND.CARD ? cCard.eTheme
@@ -55,7 +61,8 @@ namespace Client
         public static List<CPickOption> Pick(CCSVData_CardInfo cCardTable, CCSVData_RunSkillInfo cRunSkillTable,
                                              Func<RUN_SKILL_TYPE, int> fnGetLevel, Func<int, bool> fnIsMapCleared,
                                              int iCount, CCSVData_AwakenInfo cAwakenTable = null,
-                                             Func<RUN_SKILL_TYPE, bool> fnIsAwakened = null)
+                                             Func<RUN_SKILL_TYPE, bool> fnIsAwakened = null,
+                                             Func<CPickOption, bool> fnExclude = null)
         {
             List<CPickOption> lstCandidate = new List<CPickOption>();
 
@@ -82,6 +89,10 @@ namespace Client
                 for (int i = 0; i < lstAwaken.Count; ++i)
                     lstCandidate.Add(CPickOption.From_Awaken(lstAwaken[i], cRunSkillTable.Find_ByType(lstAwaken[i].eActiveType)));
             }
+
+            // 260921_버린 것 · 이미 화면에 떠 있는 것은 뺀다(다시 뽑기 · 버리기, 2-10-1)
+            if (fnExclude != null)
+                lstCandidate.RemoveAll(cOption => fnExclude(cOption));
 
             return CWeightedPick_Utility.Pick(lstCandidate, cOption => cOption.WEIGHT, iCount);
         }

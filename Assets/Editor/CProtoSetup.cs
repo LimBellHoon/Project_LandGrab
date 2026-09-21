@@ -118,8 +118,8 @@ namespace Client
             "Tex_RunSkill_MOONWALK", "Tex_RunSkill_EDGE_WRAP", "Tex_RunSkill_SOUL_COLLECTOR", "Tex_RunSkill_RAGE",
             "Tex_RunSkill_MAGNET", "Tex_RunSkill_EVASION", "Tex_RunSkill_ORBIT", "Tex_RunSkill_CLUB",
             "Tex_RunSkill_MAGIC_BOLT", "Tex_RunSkill_LASER_BEAM", "Tex_RunSkill_BOOMERANG", "Tex_RunSkill_BOUNCE_SHOT",
-            "Tex_RunSkill_STUN_SHOT",
-            // 260921_이동 스킬 넷(2-11-3)
+            "Tex_RunSkill_STUN_SHOT",
+            // 260921_이동 스킬 넷(2-11-3)
             "Tex_RunSkill_SPIRAL_RUSH", "Tex_RunSkill_GHOST_STEP", "Tex_RunSkill_AFTERIMAGE", "Tex_RunSkill_DECOY",
         };
         private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
@@ -195,7 +195,7 @@ namespace Client
             iFail += Validate_ActorPrefab(PATH_PREFAB_WEB, "Prefab_Web", typeof(CWeb));
             iFail += Validate_ActorPrefab(PATH_PREFAB_SOUL, "Prefab_Soul", typeof(CSoul));
             iFail += Validate_ActorPrefab(PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", typeof(CFieldItem));
-            iFail += Validate_ActorPrefab(PATH_PREFAB_SHARD, "Prefab_Shard", typeof(CShard));
+            iFail += Validate_ActorPrefab(PATH_PREFAB_SHARD, "Prefab_Shard", typeof(CShard));
             iFail += Validate_ActorPrefab(PATH_PREFAB_DECOY, "Prefab_Decoy", typeof(CDecoy));
             iFail += Validate_StageSelectUI();
             iFail += Validate_UIPrefab<CUI_InGame>(PATH_PREFAB_UI_INGAME, UI_INGAME,
@@ -1177,7 +1177,7 @@ namespace Client
             Create_ActorPrefab<CWeb>("Prefab_Web", PATH_TEX_WEB, PATH_PREFAB_WEB, 12);
             Create_ActorPrefab<CSoul>("Prefab_Soul", PATH_TEX_SOUL, PATH_PREFAB_SOUL, 14);
             Create_ActorPrefab<CFieldItem>("Prefab_FieldItem", PATH_TEX_FIELD_ITEM, PATH_PREFAB_FIELD_ITEM, 15);
-            Create_ActorPrefab<CShard>("Prefab_Shard", PATH_TEX_SHARD, PATH_PREFAB_SHARD, 14);
+            Create_ActorPrefab<CShard>("Prefab_Shard", PATH_TEX_SHARD, PATH_PREFAB_SHARD, 14);
             Create_ActorPrefab<CDecoy>("Prefab_Decoy", PATH_TEX_DECOY, PATH_PREFAB_DECOY, 16);
             Create_StageSelectUI();
             Create_InGameUI();
@@ -1231,7 +1231,7 @@ namespace Client
             Regist_Addressable(cSettings, PATH_PREFAB_WEB, "Prefab_Web", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_SOUL, "Prefab_Soul", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_FIELD_ITEM, "Prefab_FieldItem", CAddressableLabel.PREFAB);
-            Regist_Addressable(cSettings, PATH_PREFAB_SHARD, "Prefab_Shard", CAddressableLabel.PREFAB);
+            Regist_Addressable(cSettings, PATH_PREFAB_SHARD, "Prefab_Shard", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_DECOY, "Prefab_Decoy", CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_SELECT, UI_STAGE_SELECT, CAddressableLabel.PREFAB);
             Regist_Addressable(cSettings, PATH_PREFAB_UI_INGAME, UI_INGAME, CAddressableLabel.PREFAB);
@@ -2181,6 +2181,13 @@ namespace Client
             Text txtItem = Make_Text(goItemLabel, "아이템", 26, TextAnchor.MiddleCenter);
             txtItem.raycastTarget = false;
 
+            // 260921_시작 위치 슬롯 안내(2-3). 맵 가운데보다 조금 아래 — 한가운데는 후보 섬을 가린다
+            Text txtTapToStart = Make_AnchoredText(goRoot.transform, "Txt_TapToStart", "TAP TO START", 84,
+                                                   new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), new Vector2(0f, -260f), 140f);
+            txtTapToStart.fontStyle = FontStyle.Bold;
+            txtTapToStart.gameObject.AddComponent<Outline>().effectDistance = new Vector2(3f, -3f);
+            txtTapToStart.gameObject.SetActive(false);
+
             // 260916_화면 플래시 — 맨 마지막 자식이라 조이스틱/버튼 위에 그려진다.
             // raycastTarget은 반드시 꺼야 한다 — 안 그러면 화면 전체를 덮은 이 이미지가
             // 그 아래 스킬/아이템/일시정지 버튼의 터치를 전부 가로챈다.
@@ -2204,6 +2211,7 @@ namespace Client
             cSerialized.FindProperty("m_btnItem").objectReferenceValue          = cItem;
             cSerialized.FindProperty("m_txtItem").objectReferenceValue          = txtItem;
             cSerialized.FindProperty("m_imgFlash").objectReferenceValue         = imgFlash;
+            cSerialized.FindProperty("m_txtTapToStart").objectReferenceValue    = txtTapToStart;
             cSerialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(goRoot, PATH_PREFAB_UI_INGAME);
@@ -2325,11 +2333,19 @@ namespace Client
 
             goCard.SetActive(false);
 
+            // 260921_다시 뽑기 · 버리기 — 카드 아래 한 줄(2-10-1). 글자는 CUI_CardPick이 남은 횟수로 다시 쓴다
+            Button cReroll = Make_ViewerButton("Btn_Reroll", goRoot.transform, new Vector2(0.5f, 0.5f),
+                                               new Vector2(-190f, -370f), new Vector2(340f, 100f), "다시 뽑기");
+            Button cBanish = Make_ViewerButton("Btn_Banish", goRoot.transform, new Vector2(0.5f, 0.5f),
+                                               new Vector2(190f, -370f), new Vector2(340f, 100f), "버리기");
+
             CUI_CardPick cUI = goRoot.AddComponent<CUI_CardPick>();
             SerializedObject cSerialized = new SerializedObject(cUI);
             cSerialized.FindProperty("m_txtTitle").objectReferenceValue    = txtTitle;
             cSerialized.FindProperty("m_btnTemplate").objectReferenceValue = cCard;
             cSerialized.FindProperty("m_trContent").objectReferenceValue   = trContent;
+            cSerialized.FindProperty("m_btnReroll").objectReferenceValue   = cReroll;
+            cSerialized.FindProperty("m_btnBanish").objectReferenceValue   = cBanish;
             cSerialized.FindProperty("m_arrIcon").arraySize                 = ARR_CARD_ICON.Length;
             cSerialized.FindProperty("m_arrRunSkillIcon").arraySize         = ARR_RUN_SKILL_ICON.Length;
 

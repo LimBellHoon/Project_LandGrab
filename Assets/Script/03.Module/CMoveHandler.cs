@@ -37,7 +37,7 @@ namespace Client
 
         public Vector2Int   CUR_CELL    => m_vCurCell;
         public MOVE_DIR     CUR_DIR     => m_eCurDir;
-        public bool         IS_MOVING   => m_bMoving || m_bFree;
+        public bool         IS_MOVING   => m_bMoving || (m_bFree == true && m_bFreeMoving == true);
         public float        SPEED       { get { return m_fSpeed; } set { m_fSpeed = Mathf.Max(0f, value); } }
 
         public void Set_AllowOwnedInterior(bool bAllow) => m_bAllowOwnedInterior = bAllow;
@@ -234,13 +234,10 @@ namespace Client
 
             if (Can_Move(eDir) == false)
             {
-                // 미점령 지대에서는 멈출 수 없다 — 입력이 없거나 막혔으면 진행 방향을 유지한다.
-                // 반대로 선 위에서는 가려던 방향이 막혀도 선이 꺾여 이어지면 그쪽으로 따라간다.
-                if (m_cGrid.IS_DRAWING == true)
-                {
-                    eDir = m_eCurDir;
-                }
-                else
+                // 260921_선을 긋는 중에도 **입력이 없거나 막히면 멈춘다.** 예전에는 미점령 지대에서 멈출 수 없어
+                // 손을 떼도 가던 방향으로 저절로 나아갔다 — 조작하지 않은 움직임으로 죽는 일이 잦았다.
+                // 선 위(안전 지대)에서는 가려던 방향이 막혀도 선이 꺾여 이어지면 그쪽으로 따라간다.
+                if (m_cGrid.IS_DRAWING == false)
                 {
                     eDir = Find_FollowDir(eDesiredDir);
                     bFollowing = eDir != MOVE_DIR.NONE;

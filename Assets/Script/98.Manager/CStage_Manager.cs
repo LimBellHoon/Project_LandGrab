@@ -47,7 +47,23 @@ namespace Client
         private const float  COVER_TIME  = 0.5f;     // 다음 가림막이 덮이는 시간
 
         /// <summary> 웨이브를 넘길 때의 연출 단계. NONE이면 평소대로 게임이 돌아간다. </summary>
-        private enum WAVE_PHASE { NONE, REVEAL, HOLD, COVER }
+        // 260921_START_SELECT — 웨이브를 시작하기 전에 시작 섬 자리를 슬롯처럼 돌려 고른다(2-3)
+        private enum WAVE_PHASE { NONE, REVEAL, HOLD, COVER, START_SELECT }
+
+        // 260921_시작 위치 슬롯. 연출 타이밍이라 코드에 둔다(REVEAL_TIME과 같은 자리)
+        private const int    SLOT_CANDIDATE     = 10;       // 돌려 볼 후보 수
+        private const float  SLOT_INTERVAL      = 0.08f;    // 도는 동안 한 칸 넘기는 간격
+        private const int    SLOT_STOP_HOPS     = 5;        // 누른 뒤 몇 칸 더 넘기며 멈추는가
+        private const float  SLOT_SLOWDOWN      = 1.55f;    // 멈추는 동안 간격이 이만큼씩 늘어난다
+        private const float  SLOT_SETTLE_TIME   = 0.45f;    // 멈춘 자리를 보여 주고 시작하기까지
+        private const int    SLOT_ENEMY_GAP     = 4;        // 섬 가장자리에서 몬스터까지 최소 칸
+
+        private readonly List<Vector2Int>   m_lstStartCandidate = new List<Vector2Int>();
+        private int                         m_iSlotIndex;
+        private float                       m_fSlotTimer;
+        private float                       m_fSlotInterval;
+        private int                         m_iSlotHopsLeft;    // -1이면 누르기를 기다리며 돈다
+        private bool                        m_bSlotSettling;
 
         private readonly CTerritoryGrid m_cGrid         = new CTerritoryGrid();
         private readonly CGridRenderer  m_cGridRenderer = new CGridRenderer();
@@ -66,6 +82,11 @@ namespace Client
         private int                         m_iGauge;
         private int                         m_iPickGiven;
         private readonly CPickQueue         m_cPickQueue = new CPickQueue();   // 260921_한 번에 한 장만
+        // 260921_다시 뽑기 · 버리기(2-10-1). 판 전체에서 쓰는 횟수이고, 버린 것은 판이 끝날 때까지 안 나온다
+        private int                         m_iRerollLeft;
+        private int                         m_iBanishLeft;
+        private readonly HashSet<string>    m_hsBanished = new HashSet<string>();
+        private readonly List<Vector2Int>   m_lstShardSpot = new List<Vector2Int>();
 
         // 260918_점령 재화 — 안전하게 조금씩과 위험을 감수하고 크게 한 방 사이에 실제 이득 차이를 만든다.
         // 이번 판 누적만 여기서 들고, 실제 보유 코인 반영(디스크 저장)은 스테이지가 끝날 때 CGameManager가 한 번만 한다.
@@ -290,6 +311,8 @@ namespace Client
             m_cPickQueue.Clear();
             OnCardReady       = null;
             OnMassStun        = null;
+            OnStartSlotHop    = null;     // 260921_시작 위치 슬롯
+            OnStartSelected   = null;
             m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
             OnCoinGained      = null;
             OnFieldItemUsed   = null;
@@ -382,8 +405,14 @@ namespace Client
             m_eWavePhase = WAVE_PHASE.NONE;
             m_cGridRenderer.Set_CoverAlpha(1f);
 
+            // 260921_다시 뽑기 · 버리기는 판 전체에서 센다
+            m_iRerollLeft = Mathf.Max(0, m_cMapInfo.iPickReroll);
+            m_iBanishLeft = Mathf.Max(0, m_cMapInfo.iPickBanish);
+            m_hsBanished.Clear();
+
             m_eState = STAGE_STATE.PLAYING;
             Enter_Wave(1);
+            Begin_StartSelect();
             return true;
         }
 
@@ -452,8 +481,8 @@ namespace Client
 
             Collect_All(m_lstFieldItem);       // 260920_지난 웨이브에 못 주운 것은 판과 함께 사라진다
             Collect_All(m_lstShard);           // 조각도 마찬가지 — 그 웨이브 안에 주우라는 압박이 된다
-            Spawn_WaveFieldItems();
             m_fFieldItemTimer = 0f;
+            // 260921_웨이브 시작 아이템은 시작 섬 자리를 고른 뒤에 깐다(Finish_StartSelect) — 먼저 깔면 섬 밑에 깔려 공짜로 먹힌다
 
             Spawn_Enemies(cWave);
 
@@ -517,11 +546,164 @@ namespace Client
                         break;
 
                     m_cGridRenderer.Set_CoverAlpha(1f);
-                    m_eWavePhase = WAVE_PHASE.NONE;
-                    Set_ActorTimeScale(1f);
+                    Begin_StartSelect();
+                    break;
+
+                case WAVE_PHASE.START_SELECT:
+                    Tick_StartSelect(fDeltaTime);
                     break;
             }
         }
+
+        #region 260921_시작 위치 슬롯 (2-3)
+        /// <summary> 슬롯이 도는 중인가 — 화면이 'TAP TO START'를 띄우고 카메라가 맵 전체를 본다. </summary>
+        public bool IS_START_SELECT => m_eWavePhase == WAVE_PHASE.START_SELECT;
+        /// <summary> 아직 누르기를 기다리는가(누른 뒤 멈추는 중에는 false). </summary>
+        public bool IS_START_WAITING => IS_START_SELECT == true && m_iSlotHopsLeft < 0;
+
+        public event Action OnStartSlotHop;     // 한 칸 넘길 때마다 — 딸깍 소리
+        public event Action OnStartSelected;    // 멈춰서 시작할 때
+
+        /// <summary>
+        /// 웨이브를 시작하기 전에 시작 섬을 깔 후보 자리를 여럿 뽑아 슬롯처럼 돌린다. 누르면 몇 칸 더 넘기며
+        /// 느려지다 멈추고, 그 자리에 시작 섬을 깔아 거기서 시작한다. 매번 가운데에서 시작하면 판이 늘 같아진다.
+        /// 도는 동안 액터와 제한 시간은 멈춰 있다(연출과 같다).
+        /// </summary>
+        private void Begin_StartSelect()
+        {
+            Collect_StartCandidates();
+
+            m_eWavePhase    = WAVE_PHASE.START_SELECT;
+            m_iSlotIndex    = 0;
+            m_fSlotTimer    = 0f;
+            m_fSlotInterval = SLOT_INTERVAL;
+            m_iSlotHopsLeft = -1;
+            m_bSlotSettling = false;
+
+            Set_ActorTimeScale(0f);
+            Show_StartCandidate(m_iSlotIndex);
+        }
+
+        /// <summary> 화면을 누르면 부른다. 도는 중이 아니면 아무 일도 없다. </summary>
+        public void Confirm_StartSelect()
+        {
+            if (IS_START_WAITING == true)
+                m_iSlotHopsLeft = SLOT_STOP_HOPS;
+        }
+
+        private void Tick_StartSelect(float fDeltaTime)
+        {
+            m_fSlotTimer += fDeltaTime;
+
+            if (m_bSlotSettling == true)
+            {
+                if (m_fSlotTimer >= SLOT_SETTLE_TIME)
+                    Finish_StartSelect();
+                return;
+            }
+
+            if (m_fSlotTimer < m_fSlotInterval)
+                return;
+
+            m_fSlotTimer = 0f;
+
+            // 누른 뒤에는 한 칸씩 느려지다 멈춘다
+            if (m_iSlotHopsLeft == 0)
+            {
+                m_bSlotSettling = true;
+                return;
+            }
+
+            if (m_iSlotHopsLeft > 0)
+            {
+                --m_iSlotHopsLeft;
+                m_fSlotInterval *= SLOT_SLOWDOWN;
+            }
+
+            m_iSlotIndex = Next_SlotIndex(m_iSlotIndex, m_lstStartCandidate.Count);
+            Show_StartCandidate(m_iSlotIndex);
+            OnStartSlotHop?.Invoke();
+        }
+
+        /// <summary> 다음에 보여 줄 후보. 같은 자리가 연달아 나오면 멈춘 것처럼 보여 한 칸은 반드시 옮긴다. </summary>
+        public static int Next_SlotIndex(int iCurrent, int iCount)
+        {
+            if (iCount <= 1)
+                return 0;
+
+            int iNext = UnityEngine.Random.Range(0, iCount - 1);
+            return iNext >= iCurrent ? iNext + 1 : iNext;
+        }
+
+        // 후보 자리에 실제로 섬을 깔아 보여 준다 — 가림막에 섬 모양 구멍이 뚫려 그 자리가 한눈에 읽힌다
+        private void Show_StartCandidate(int iIndex)
+        {
+            Vector2Int vCenter = m_lstStartCandidate.Count > 0 ? m_lstStartCandidate[iIndex] : m_cGrid.START_CENTER;
+            m_cGrid.Reset(m_cMapInfo.iBorderThick, m_cMapInfo.iStartRadius, vCenter);
+            Respawn_Player();
+        }
+
+        private void Finish_StartSelect()
+        {
+            m_eWavePhase = WAVE_PHASE.NONE;
+            Spawn_WaveFieldItems();
+            m_fFieldItemTimer = 0f;
+            Set_ActorTimeScale(1f);
+            OnStartSelected?.Invoke();
+        }
+
+        /// <summary>
+        /// 섬이 맵 안에 들어가고, 몬스터와 SLOT_ENEMY_GAP칸 이상 떨어진 자리만 후보로 삼는다 —
+        /// 몬스터 위에 섬을 깔면 시작하자마자 부딪힌다. 하나도 없으면 맵 한가운데 하나로 돌린다.
+        /// </summary>
+        private void Collect_StartCandidates()
+        {
+            m_lstStartCandidate.Clear();
+
+            int iRadius = Mathf.Max(0, m_cMapInfo.iStartRadius);
+            int iWidth  = m_cMapInfo.iGridWidth;
+            int iHeight = m_cMapInfo.iGridHeight;
+
+            for (int iTry = 0; iTry < 400 && m_lstStartCandidate.Count < SLOT_CANDIDATE; ++iTry)
+            {
+                Vector2Int vCenter = new Vector2Int(UnityEngine.Random.Range(iRadius + 1, iWidth - iRadius - 1),
+                                                    UnityEngine.Random.Range(iRadius + 1, iHeight - iRadius - 1));
+
+                if (m_cGrid.Can_PlaceStartArea(vCenter, iRadius) == false || Is_NearEnemy(vCenter, iRadius + SLOT_ENEMY_GAP) == true)
+                    continue;
+
+                // 후보끼리 섬 하나 넓이만큼은 떨어뜨린다 — 옆 칸으로만 옮겨 다니면 도는 느낌이 안 난다
+                bool bTooClose = false;
+                for (int i = 0; i < m_lstStartCandidate.Count && bTooClose == false; ++i)
+                {
+                    Vector2Int vGap = m_lstStartCandidate[i] - vCenter;
+                    bTooClose = Mathf.Abs(vGap.x) <= iRadius * 2 && Mathf.Abs(vGap.y) <= iRadius * 2;
+                }
+
+                if (bTooClose == false)
+                    m_lstStartCandidate.Add(vCenter);
+            }
+
+            if (m_lstStartCandidate.Count == 0)
+                m_lstStartCandidate.Add(new Vector2Int(iWidth / 2, iHeight / 2));
+        }
+
+        private bool Is_NearEnemy(Vector2Int vCell, int iRange)
+        {
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                Vector2Int vGap = cEnemy.CUR_CELL - vCell;
+                if (Mathf.Abs(vGap.x) <= iRange && Mathf.Abs(vGap.y) <= iRange)
+                    return true;
+            }
+
+            return false;
+        }
+        #endregion 시작 위치 슬롯
 
         private void Go_Phase(WAVE_PHASE ePhase)
         {
@@ -1054,6 +1236,11 @@ namespace Client
             for (int i = 0; i < iKilled; ++i)
                 m_cPlayer?.On_MonsterHit();
 
+            // 260921_가둬 죽이면 조각을 곧바로 준다(2-21). 몬스터를 도형 안에 넣고 닫는 위험을 감수한 판단에 대한 보상이다.
+            // 쓰러진 자리에 떨어지는 보통 조각(iShardPerKill)은 그대로 떨어진다
+            if (iKilled > 0 && m_cMapInfo != null)
+                Add_Gauge(iKilled * m_cMapInfo.iShardPerTrapKill);
+
             return iKilled;
         }
         #endregion 몬스터
@@ -1443,6 +1630,31 @@ namespace Client
                                : Mathf.Max(1, m_cMapInfo.iGaugeBase + m_cMapInfo.iGaugeAdd * m_iPickGiven);
         public int GAUGE => m_iGauge;
 
+        // 260921_다시 뽑기 · 버리기(2-10-1). 판 전체에서 센다
+        public int REROLL_LEFT => m_iRerollLeft;
+        public int BANISH_LEFT => m_iBanishLeft;
+
+        public bool Try_UseReroll()
+        {
+            if (m_iRerollLeft <= 0)
+                return false;
+
+            --m_iRerollLeft;
+            return true;
+        }
+
+        /// <summary> 그 선택지를 판이 끝날 때까지 다시 안 나오게 한다. 횟수가 없으면 false. </summary>
+        public bool Try_Banish(CPickOption cOption)
+        {
+            if (cOption == null || m_iBanishLeft <= 0 || m_hsBanished.Add(cOption.KEY) == false)
+                return false;
+
+            --m_iBanishLeft;
+            return true;
+        }
+
+        public bool Is_Banished(CPickOption cOption) => cOption != null && m_hsBanished.Contains(cOption.KEY);
+
         /// <summary>
         /// 점령한 만큼 조각을 **미점령 지역에** 뿌린다 — 방금 먹은 땅값을 위험한 바깥에 두고 오는 셈이다.
         /// 크게 먹을수록 조각이 많지만 그만큼 넓게 흩어져 회수가 위험해진다(2-18의 재화 배율과 같은 결).
@@ -1453,8 +1665,46 @@ namespace Client
                 return;
 
             int iCount = iCapturedCount / m_cMapInfo.iCellPerShard;
+            if (iCount <= 0)
+                return;
+
+            // 260921_방금 닫은 도형 **바로 바깥**에 모아 떨어뜨린다. 맵 아무 데나 뿌리면 줍기가 '먼 곳까지 걸어가는 일'이 됐다 —
+            // 먹은 자리 옆에 두면 점령과 줍기가 한 흐름으로 이어지고, 줍는 것은 짧고 위험한 한 번의 돌진이 된다.
+            // 가장자리에 딱 붙이지 않고 두 칸 바깥에 둔다 — 붙어 있으면 경계를 따라 걷기만 해도 주워 위험이 없다.
+            m_cGrid.Collect_CaptureFrontier(2, m_lstShardSpot);
+            if (m_lstShardSpot.Count == 0)
+                m_cGrid.Collect_CaptureFrontier(1, m_lstShardSpot);
+
+            Pick_ShardCluster(m_lstShardSpot, iCount);
+
             for (int i = 0; i < iCount; ++i)
-                Spawn_Shard(null, 1);
+                Spawn_Shard(i < m_lstShardSpot.Count ? m_lstShardSpot[i] : (Vector2Int?)null, 1);
+        }
+
+        /// <summary>
+        /// 후보 중 한 곳을 골라 그 둘레로 iCount개를 한 칸씩 띄워 앞에 모은다 — 한 무더기로 보여야
+        /// '저기 떨어졌다'가 읽힌다. 한 칸씩 띄우는 것은 조각끼리 겹쳐 하나로 보이지 않게다.
+        /// </summary>
+        public static void Pick_ShardCluster(List<Vector2Int> lstSpot, int iCount)
+        {
+            if (lstSpot.Count == 0)
+                return;
+
+            Vector2Int vAnchor = lstSpot[UnityEngine.Random.Range(0, lstSpot.Count)];
+            lstSpot.Sort((a, b) => (a - vAnchor).sqrMagnitude.CompareTo((b - vAnchor).sqrMagnitude));
+
+            int iWrite = 0;
+            for (int i = 0; i < lstSpot.Count && iWrite < iCount; ++i)
+            {
+                bool bNear = false;
+                for (int j = 0; j < iWrite && bNear == false; ++j)
+                    bNear = Mathf.Abs(lstSpot[j].x - lstSpot[i].x) <= 1 && Mathf.Abs(lstSpot[j].y - lstSpot[i].y) <= 1;
+
+                if (bNear == false)
+                    lstSpot[iWrite++] = lstSpot[i];
+            }
+
+            lstSpot.RemoveRange(iWrite, lstSpot.Count - iWrite);
         }
 
         /// <summary> 몬스터를 잡은 자리에 떨어뜨린다 — 런 스킬 무기를 고를 이유가 된다. </summary>

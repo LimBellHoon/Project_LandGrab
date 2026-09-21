@@ -377,6 +377,8 @@
         STAGE_FAIL,     // 스테이지 실패
         MASS_STUN,      // 260918_전체 마비
         ITEM_GET,       // 260920_맵 위 아이템 획득
+        SLOT_TICK,      // 260921_시작 위치 슬롯이 한 칸 넘어갈 때
+        SLOT_STOP,      // 260921_시작 위치가 정해졌을 때
     }
 
     // 260916_햅틱 종류. CHaptic_Manager.Play(HAPTIC_ID)로 재생한다.

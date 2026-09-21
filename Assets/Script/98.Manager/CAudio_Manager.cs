@@ -49,6 +49,9 @@ namespace Client
             { SOUND_ID.STAGE_FAIL,  new CSoundDef(WAVE_SHAPE.SAWTOOTH, 260f,  100f, 0.50f, 0.85f) },
             // 260918_전체 마비 — 높은 데서 뚝 떨어지는 사각파. 세상이 멈추는 느낌
             { SOUND_ID.MASS_STUN,   new CSoundDef(WAVE_SHAPE.SQUARE,  1400f,  180f, 0.35f, 0.75f) },
+            // 260921_시작 위치 슬롯 — 짧은 딸깍, 멈추면 올라가는 한 음
+            { SOUND_ID.SLOT_TICK,   new CSoundDef(WAVE_SHAPE.SQUARE,   900f,  900f, 0.03f, 0.35f) },
+            { SOUND_ID.SLOT_STOP,   new CSoundDef(WAVE_SHAPE.TRIANGLE, 500f, 1100f, 0.25f, 0.70f) },
         };
 
         private readonly Dictionary<SOUND_ID, AudioClip> m_dicClip = new Dictionary<SOUND_ID, AudioClip>();
