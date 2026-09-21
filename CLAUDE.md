@@ -151,7 +151,7 @@ CELL_STATE : byte   EMPTY=0(미점령/위험), OWNED=1(점령/안전), TRAIL=2(�
 MOVE_DIR            NONE=-1, UP=0, DOWN, LEFT, RIGHT
 STEP_RESULT         SAFE, DRAW, CAPTURE, DEAD
 STAGE_STATE         READY, PLAYING, CLEAR, FAIL
-ENEMY_GIMMICK       NONE, WEB(거미줄), PROJECTILE(투사체), SPAWN(부하 소환)
+ENEMY_GIMMICK       NONE, WEB(거미줄), PROJECTILE(투사체), SPAWN(부하 소환), GNAW(땅 갉기)
 CAddressableLabel   PREFAB="Prefabs", TEXTURE="Images", CSV="CSV"
 ```
 
@@ -308,6 +308,17 @@ CEnemy ── CEnemyMoveHandler   (배회 / 추적 / 벽 튕김)
 | `WEB` | 설치주기 | 플레이어 속도배율 | — | 거미줄 지속 | — |
 | `PROJECTILE` | 발사주기 | — | 쏘기 시작하는 거리(셀) | — | `ProjectileInfo.csv` 탄 ID |
 | `SPAWN` | 소환주기 | 소환 마리수 | — | — | 소환할 몬스터 ID |
+| `GNAW` | 갉는 주기 | 한 번에 갉는 칸 수 | 닿는 거리(셀) | — | — |
+
+#### 땅 갉는 자 `GNAW` (260921)
+**먹은 땅도 영원하지 않다.** 내 땅 가장자리를 도로 빈 땅으로 되돌려 점령률을 깎는다(웨이브 목표가 멀어진다).
+- 플레이어를 쫓지 않고 **가장 가까운 내 땅으로 간다**(`CEnemyGimmick.Try_Get_MoveTarget` — 기믹이 이동 목표를 대신 낸다).
+  몸에 닿으면 죽는 것은 다른 몬스터와 같다. 대처법은 **가둬서 죽이기** — 내 땅에 붙어 있으니 가두기 쉽다
+- 규칙은 그리드에 있다(`CTerritoryGrid.Erode` · `Erode_Near`). **빈 땅과 맞닿은 가장자리 칸만** 가까운 순으로 갉는다 —
+  안쪽부터 구멍이 나면 어디가 안전한지 읽을 수 없다. 맵 끝 쪽 가장자리는 안 갉힌다
+- **플레이어 둘레 2칸은 지킨다**(`CStage_Manager.GNAW_PROTECT_RADIUS`) — 발밑이 사라지면 선을 긋지도 않았는데 빈 땅에 서 버린다.
+  나가 있는 사이 돌아갈 자리(`m_vLastSafeCell`)가 갉혔으면 죽었을 때 가장 가까운 경계에서 다시 시작한다
+- 거미줄처럼 플레이어가 안전 지대에 있어도 갉는다 — 쉬는 동안 땅이 줄어야 압박이 된다
 
 - 투사체·거미줄은 `OBJECT_TYPE.ENEMY_EFFECT` 레이어에 올라간다.
   스테이지가 끝날 때 이 레이어도 함께 세워야 탄이 계속 날아가지 않는다(2-7).

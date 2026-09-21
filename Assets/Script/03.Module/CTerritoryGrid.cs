@@ -481,6 +481,89 @@ namespace Client
         }
         #endregion 트레일
 
+        #region 260921_잠식 — 땅 갉는 자
+        /// <summary>
+        /// 점령한 칸을 도로 빈 땅으로 되돌린다. **빈 땅과 맞닿은 가장자리 칸만** 갉힌다 —
+        /// 안쪽부터 구멍이 뚫리면 점령지가 스펀지처럼 되어 어디가 안전한지 읽을 수 없다.
+        /// 점령 규칙이 칸을 바꾸는 곳은 여기와 Step_To뿐이다(2-3).
+        /// </summary>
+        public bool Erode(Vector2Int vCell)
+        {
+            if (Can_Erode(vCell.x, vCell.y) == false)
+                return false;
+
+            int iIndex = To_Index(vCell.x, vCell.y);
+            m_arrCell[iIndex] = CELL_STATE.EMPTY;
+            --m_iOwnedCount;
+            Set_CellDirty(iIndex);
+            return true;
+        }
+
+        /// <summary>
+        /// vCenter에서 반경 fRange(칸) 안의 가장자리 칸을 가까운 순으로 iCount개까지 갉는다.
+        /// vProtect 둘레 iProtectRadius칸은 건드리지 않는다 — 플레이어가 서 있거나 막 밟으려는 칸이
+        /// 발밑에서 사라지면 선을 긋지도 않았는데 빈 땅 위에 서 버린다.
+        /// </summary>
+        /// <returns> 실제로 갉은 칸 수 </returns>
+        public int Erode_Near(Vector2Int vCenter, float fRange, int iCount, Vector2Int vProtect, int iProtectRadius)
+        {
+            if (iCount <= 0 || fRange <= 0f)
+                return 0;
+
+            s_lstErode.Clear();
+            int   iReach   = Mathf.CeilToInt(fRange);
+            float fRangeSq = fRange * fRange;
+
+            for (int dy = -iReach; dy <= iReach; ++dy)
+            {
+                for (int dx = -iReach; dx <= iReach; ++dx)
+                {
+                    int x = vCenter.x + dx;
+                    int y = vCenter.y + dy;
+                    int iDistSq = dx * dx + dy * dy;
+
+                    if (iDistSq > fRangeSq || Can_Erode(x, y) == false)
+                        continue;
+
+                    if (Mathf.Abs(x - vProtect.x) <= iProtectRadius && Mathf.Abs(y - vProtect.y) <= iProtectRadius)
+                        continue;
+
+                    s_lstErode.Add(new Vector3Int(x, y, iDistSq));
+                }
+            }
+
+            s_lstErode.Sort((a, b) => a.z.CompareTo(b.z));
+
+            int iEroded = 0;
+            for (int i = 0; i < s_lstErode.Count && iEroded < iCount; ++i)
+            {
+                if (Erode(new Vector2Int(s_lstErode[i].x, s_lstErode[i].y)) == true)
+                    ++iEroded;
+            }
+
+            return iEroded;
+        }
+
+        private static readonly List<Vector3Int> s_lstErode = new List<Vector3Int>();
+
+        // 점령한 칸이고, 상하좌우 중 하나가 빈 땅이다(맵 끝은 빈 땅이 아니다 — 벽 쪽 가장자리는 안 갉힌다)
+        private bool Can_Erode(int x, int y)
+        {
+            if (Is_InBounds(x, y) == false || m_arrCell[To_Index(x, y)] != CELL_STATE.OWNED)
+                return false;
+
+            for (int d = 0; d < 4; ++d)
+            {
+                int nx = x + ARR_DIR_X[d];
+                int ny = y + ARR_DIR_Y[d];
+                if (Is_InBounds(nx, ny) == true && m_arrCell[To_Index(nx, ny)] == CELL_STATE.EMPTY)
+                    return true;
+            }
+
+            return false;
+        }
+        #endregion 잠식
+
         #region 상태 전이
         /// <summary>
         /// 플레이어가 한 셀에 '도착'했을 때의 상태 전이를 처리한다.

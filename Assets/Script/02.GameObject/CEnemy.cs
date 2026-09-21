@@ -18,6 +18,7 @@ namespace Client
         private static readonly Color COLOR_WEB        = new Color(0.65f, 0.95f, 0.35f);
         private static readonly Color COLOR_PROJECTILE = new Color(1f, 0.55f, 0.2f);
         private static readonly Color COLOR_SPAWN      = new Color(0.75f, 0.5f, 1f);
+        private static readonly Color COLOR_GNAW       = new Color(0.55f, 0.35f, 0.2f);    // 260921_흙빛 — 땅을 파먹는다
 
         [SerializeField] private SpriteRenderer m_srBody;
 
@@ -260,6 +261,13 @@ namespace Client
             if (m_cBehaviorTree != null && m_cBehaviorTree.HAS_TREE == true)
                 return;
 
+            // 260921_땅 갉는 자는 플레이어가 아니라 내 땅 가장자리를 향해 간다 — 늘 그쪽으로 '추적'이다
+            if (m_cGimmick != null && m_cGimmick.Try_Get_MoveTarget(out Vector2 vGimmickTarget) == true)
+            {
+                Set_MoveState(true, vGimmickTarget);
+                return;
+            }
+
             Set_MoveState(bExposed, vTargetPos);
         }
 
@@ -291,6 +299,7 @@ namespace Client
                 case ENEMY_GIMMICK.WEB:        cBase = COLOR_WEB;        break;
                 case ENEMY_GIMMICK.PROJECTILE: cBase = COLOR_PROJECTILE; break;
                 case ENEMY_GIMMICK.SPAWN:      cBase = COLOR_SPAWN;      break;
+                case ENEMY_GIMMICK.GNAW:       cBase = COLOR_GNAW;       break;
                 default:                       cBase = COLOR_NONE;       break;
             }
 

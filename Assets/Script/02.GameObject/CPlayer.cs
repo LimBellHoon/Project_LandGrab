@@ -579,6 +579,11 @@ namespace Client
                 return;
             }
 
+            // 260921_나가 있는 사이 땅 갉는 자가 돌아갈 자리를 갉았으면 가장 가까운 경계에서 다시 시작한다
+            if (m_cGrid.Get_Cell(m_vLastSafeCell) != CELL_STATE.OWNED
+             && m_cGrid.Try_Find_NearestBoundary(m_vLastSafeCell, BOUNDARY_SEARCH_RADIUS, out Vector2Int vBoundary) == true)
+                m_vLastSafeCell = vBoundary;
+
             m_cMoveHandler.Teleport(m_vLastSafeCell);
             m_cInputHandler.Clear();
             m_fInvincibleTimer = INVINCIBLE_TIME;

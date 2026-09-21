@@ -1063,6 +1063,18 @@ namespace Client
         // 기믹 모듈이 직접 풀을 만지면 웨이브가 넘어갈 때 회수할 방법이 없어진다.
         public bool IS_PLAYER_EXPOSED => m_bPlayerExposed;
 
+        // 260921_땅 갉는 자. 플레이어 둘레 GNAW_PROTECT_RADIUS칸은 지킨다 — 서 있거나 막 밟으려는 칸이
+        // 발밑에서 사라지면 선을 긋지도 않았는데 빈 땅 위에 서 버린다.
+        private const int GNAW_PROTECT_RADIUS = 2;
+
+        public int Gnaw_Territory(Vector2Int vCell, float fRange, int iCount)
+        {
+            if (m_cGrid == null || m_cPlayer == null)
+                return 0;
+
+            return m_cGrid.Erode_Near(vCell, fRange, iCount, m_cPlayer.CUR_CELL, GNAW_PROTECT_RADIUS);
+        }
+
         // 260917_포수가 쏜다. 탄의 수치는 전부 ProjectileInfo.csv에 있다.
         public void Spawn_EnemyShot(int iProjectileID, Vector2 vPos, Vector2 vDir, IImpactTarget cOwner)
         {

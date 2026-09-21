@@ -10,6 +10,7 @@
 ;  WEB         Cool=설치주기(초)  Value=플레이어 속도배율  Range=미사용  Duration=거미줄 지속(초)
 ;  PROJECTILE  Cool=발사주기(초)  Range=사거리(셀)  RefID=ProjectileInfo ID  (탄속·수명은 탄 표에 있다)
 ;  SPAWN       Cool=소환주기(초)  Value=소환 마리수        Range=미사용  Duration=미사용  RefID=소환할 몬스터 ID
+;  GNAW        Cool=갉는 주기(초)  Value=한 번에 갉는 칸 수  Range=닿는 거리(셀)  — 플레이어 대신 가장 가까운 내 땅 가장자리로 간다 (260921)
 ;eFirePattern  SINGLE 한 발 / SPREAD 부채꼴(fFireAngle 전체 각도) / RING 360도 / BURST 연발(fFireInterval 간격) / SPIN 링을 쏠 때마다 fFireAngle만큼 돌린다
 ;iHp : 이 몬스터의 최대 체력. 런 스킬(회전탄/몽둥이) 등 전투로만 깎인다 — 웨이브가 넘어갈 때 회수되는 것과는 별개
 ;---	이름	프리팹	기믹	배회속도	추적속도	선회(rad/s)	충돌반경	기믹쿨	기믹수치	기믹사거리	기믹지속	참조ID	발사패턴	발수	각도	연발간격	체력	메모
@@ -17,3 +18,4 @@
 102	거미	Prefab_Enemy	WEB	4.5	6	4	1.2	3.5	0.5	0	4	0	SINGLE	1	0	0	3	지나간 자리에 거미줄. 밟으면 속도 절반
 103	포수	Prefab_Enemy	PROJECTILE	4	4	3	1.2	2.5	0	12	0	1	SINGLE	1	0	0	4	사거리 안의 플레이어에게 일반탄(1) 발사
 104	분열체	Prefab_Enemy	SPAWN	4	5.5	4	1.2	8	2	0	0	101	SINGLE	1	0	0	5	8초마다 배회자 2마리 소환
+105	갉는 자	Prefab_Enemy	GNAW	3	3.5	3	1.2	1.5	2	1.8	0	0	SINGLE	1	0	0	4	내 땅 가장자리를 1.5초마다 2칸씩 도로 빈 땅으로. 가둬서 죽일 것

@@ -22,6 +22,10 @@ namespace Client
         /// <param name="iEnemyID"> EnemyInfo.csv의 ID </param>
         void Spawn_Minion(int iEnemyID, int iCount, Vector2 vPos);
 
+        /// <summary> 260921_땅 갉는 자 — vCell 둘레의 내 땅 가장자리를 갉는다. 플레이어 발밑은 스테이지가 지켜 준다. </summary>
+        /// <returns> 실제로 갉은 칸 수 </returns>
+        int Gnaw_Territory(Vector2Int vCell, float fRange, int iCount);
+
         /// <summary> 기믹이 발동 조건을 판단할 때 쓴다 (플레이어가 안전 지대 밖인가). </summary>
         bool IS_PLAYER_EXPOSED { get; }
     }

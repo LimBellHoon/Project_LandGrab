@@ -38,6 +38,7 @@ namespace Client
                 case ENEMY_GIMMICK.WEB:         return new CEnemyGimmick_Web();
                 case ENEMY_GIMMICK.PROJECTILE:  return new CEnemyGimmick_Projectile();
                 case ENEMY_GIMMICK.SPAWN:       return new CEnemyGimmick_Spawn();
+                case ENEMY_GIMMICK.GNAW:        return new CEnemyGimmick_Gnaw();
                 default:                        return null;
             }
         }
@@ -96,6 +97,16 @@ namespace Client
         protected virtual bool Can_Fire(Vector2 vPlayerPos) => m_cHost.IS_PLAYER_EXPOSED;
 
         protected abstract void Fire(Vector2 vPlayerPos);
+
+        /// <summary>
+        /// 260921_플레이어 대신 쫓아갈 곳이 있는 기믹(땅 갉는 자 → 내 땅 가장자리). 없으면 false —
+        /// 평소처럼 플레이어가 나오면 쫓는다. CEnemy.Set_ChaseState가 본다.
+        /// </summary>
+        public virtual bool Try_Get_MoveTarget(out Vector2 vTarget)
+        {
+            vTarget = Vector2.zero;
+            return false;
+        }
 
         /// <summary> 쿨타임과 따로 도는 일(연발의 남은 발)이 있을 때. </summary>
         protected virtual void Tick_Pending(float fDeltaTime, Vector2 vPlayerPos) { }

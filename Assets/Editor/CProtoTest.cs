@@ -62,6 +62,7 @@ namespace Client
             Test_SpiralMove();
             Test_DiagonalGlide();
             Test_FreeEightWay();
+            Test_Erode();
             Test_TrailHitRange();
             Test_SnapToBoundary();
             Test_StartArea();
@@ -1118,6 +1119,31 @@ namespace Client
             Check("나선형 — 둥글게 돌았다(가로 · 세로로 모두 퍼졌다)", vMax.x - vMin.x >= 6 && vMax.y - vMin.y >= 6);
             Check("나선형 — 도형 하나만큼 먹었다", iCaptured >= 30);
             Check("나선형 — 점령하면 칸 이동으로 돌아간다", cMove.IS_FREE == false);
+        }
+
+        // 260921_땅 갉는 자 — 내 땅 가장자리만 가까운 순으로 갉고, 플레이어 발밑은 지킨다
+        private static void Test_Erode()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(21, 21, 1f, Vector2.zero, 0, null, 3);   // 가운데 (10,10), 7x7 섬 → 아래 가장자리 y=7
+            float fBefore = cGrid.OWNED_RATIO;
+
+            Check("잠식 — 섬 한가운데(안쪽)는 갉히지 않는다", cGrid.Erode(new Vector2Int(10, 10)) == false);
+            Check("잠식 — 빈 땅은 갉을 것이 없다", cGrid.Erode(new Vector2Int(10, 2)) == false);
+
+            cGrid.Clear_Dirty();    // 처음 깔 때의 전체 갱신을 지운다
+            int iEroded = cGrid.Erode_Near(new Vector2Int(10, 5), 3f, 2, new Vector2Int(0, 0), 0);
+            Check("잠식 — 닿는 거리 안의 가장자리를 개수만큼 갉는다", iEroded, 2);
+            Check("잠식 — 가장 가까운 칸부터", cGrid.Get_Cell(new Vector2Int(10, 7)) == CELL_STATE.EMPTY);
+            Check("잠식 — 점령률이 도로 떨어진다", cGrid.OWNED_RATIO < fBefore);
+            Check("잠식 — 칸 하나만 다시 그린다", cGrid.IS_DIRTY == true && cGrid.IS_FULL_DIRTY == false);
+
+            // 플레이어 발밑 둘레는 지킨다
+            int iProtected = cGrid.Erode_Near(new Vector2Int(5, 10), 2f, 5, new Vector2Int(7, 10), 2);
+            Check("잠식 — 플레이어 둘레 칸은 건드리지 않는다", iProtected == 0 && cGrid.Get_Cell(new Vector2Int(7, 10)) == CELL_STATE.OWNED);
+
+            Check("잠식 — 지키는 사람이 없으면 같은 자리를 갉는다", cGrid.Erode_Near(new Vector2Int(5, 10), 2f, 5, new Vector2Int(20, 20), 0), 1);
+            Check("잠식 — 닿는 거리 밖이면 아무 일도 없다", cGrid.Erode_Near(new Vector2Int(10, 0), 2f, 3, new Vector2Int(0, 20), 0), 0);
         }
 
         // 260921_8방향은 선을 긋는 동안 곧게 비스듬히 간다 — 계단이 아니라 대각선 모양으로 점령한다
