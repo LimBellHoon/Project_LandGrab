@@ -63,6 +63,7 @@ namespace Client
             Test_DiagonalGlide();
             Test_FreeEightWay();
             Test_Erode();
+            Test_Fuse();
             Test_StopWhileDrawing();
             Test_PickRnD();
             Test_StyleTracker();
@@ -1311,6 +1312,41 @@ namespace Client
             Check("잠식 — 닿는 거리 밖이면 아무 일도 없다", cGrid.Erode_Near(new Vector2Int(10, 0), 2f, 3, new Vector2Int(0, 20), 0), 0);
         }
 
+        // 260924_도화선(2-3) — 그리드가 아는 것은 "몇 번째 칸인지" · "그 칸을 지운다" · "타는 동안은 점령이 안 된다"뿐이다.
+        // 발화·소화 타이밍(CStage_Manager.Tick_Fuse)은 그리드가 몰라도 되므로 여기서는 원시 동작만 본다.
+        private static void Test_Fuse()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            CMoveHandler cMove = Make_Move(cGrid);
+
+            Walk(cGrid, cMove, MOVE_DIR.UP, 3);   // (10,1)~(10,3), 인덱스 0~2
+
+            Check("도화선 — 트레일 칸의 순번을 찾는다", cGrid.Get_TrailIndex(new Vector2Int(10, 2)), 1);
+            Check("도화선 — 트레일이 아니면 -1", cGrid.Get_TrailIndex(new Vector2Int(5, 5)), -1);
+
+            cGrid.Burn_TrailCell(1);
+            Check("도화선 — 태운 칸만 빈 땅으로 돌아간다", cGrid.Get_Cell(new Vector2Int(10, 2)) == CELL_STATE.EMPTY);
+            Check("도화선 — 태워도 트레일 목록 길이는 그대로다(다음 칸을 계속 찾아야 해서)", cGrid.TRAIL_COUNT, 3);
+            Check("도화선 — 앞뒤 칸은 안 탄다", cGrid.Get_Cell(new Vector2Int(10, 1)) == CELL_STATE.TRAIL
+                                          && cGrid.Get_Cell(new Vector2Int(10, 3)) == CELL_STATE.TRAIL);
+
+            // 범위 밖 인덱스는 조용히 무시한다(예외를 던지지 않는다)
+            cGrid.Burn_TrailCell(-1);
+            cGrid.Burn_TrailCell(99);
+            Check("도화선 — 범위 밖 인덱스는 아무 일도 안 한다", cGrid.TRAIL_COUNT, 3);
+
+            // 불보다 먼저 안전 지대로 돌아오면 — 선만 잃는다. 점령은 안 된다.
+            int iOwnedBefore = Count_Owned(cGrid);
+            cGrid.IS_TRAIL_BURNING = true;
+            STEP_RESULT eResult = cGrid.Step_To(new Vector2Int(0, 0), out int iCaptured);
+
+            Check("도화선 — 타는 동안 안전 지대로 돌아오면 SAFE(점령 아님)", eResult == STEP_RESULT.SAFE);
+            Check("도화선 — 새로 점령한 칸은 없다", iCaptured, 0);
+            Check("도화선 — 점령 칸 수도 그대로다", Count_Owned(cGrid), iOwnedBefore);
+            Check("도화선 — 선은 사라진다", cGrid.IS_DRAWING == false);
+            Check("도화선 — 도망쳤으니 스스로 꺼진다", cGrid.IS_TRAIL_BURNING == false);
+        }
+
         // 260921_8방향은 선을 긋는 동안 곧게 비스듬히 간다 — 계단이 아니라 대각선 모양으로 점령한다
         private static void Test_FreeEightWay()
         {
@@ -1607,11 +1643,15 @@ namespace Client
             Check("필드 아이템 열이 밀리지 않았다",
                   cInfo != null && cInfo.iFieldItemOnWave == 2 && Mathf.Approximately(cInfo.fFieldItemDropRate, 0.5f));
 
-            // 260923_점유율 문턱 산수 — CStage_Manager.CARD_RATIO_STEP(5%)과 같은 식이어야 한다
-            const float CARD_RATIO_STEP = 0.05f;
-            Check("문턱 계산 — 12%면 두 번째 문턱", Mathf.FloorToInt(0.12f / CARD_RATIO_STEP), 2);
-            Check("문턱 계산 — 정확히 10%도 두 번째 문턱", Mathf.FloorToInt(0.10f / CARD_RATIO_STEP), 2);
-            Check("문턱 계산 — 4%는 아직 못 넘는다", Mathf.FloorToInt(0.04f / CARD_RATIO_STEP), 0);
+            // 260924_점유율 문턱 산수 — CStage_Manager.s_arrCardThreshold(사설 배열)와 같은 값이어야 한다.
+            // 값이 바뀌면 여기도 같이 고칠 것 — 웨이브 목표 70%를 일곱 번으로 나눈 지점들이다(2-21).
+            float[] arrThreshold = { 0.05f, 0.12f, 0.20f, 0.30f, 0.42f, 0.56f, 0.65f };
+            Check("문턱 계산 — 시작은 아직 0개", Count_CardThreshold(arrThreshold, 0f), 0);
+            Check("문턱 계산 — 5% 미만은 아직 0개", Count_CardThreshold(arrThreshold, 0.04f), 0);
+            Check("문턱 계산 — 정확히 5%면 첫 문턱", Count_CardThreshold(arrThreshold, 0.05f), 1);
+            Check("문턱 계산 — 12%면 두 번째 문턱까지", Count_CardThreshold(arrThreshold, 0.12f), 2);
+            Check("문턱 계산 — 20%와 30% 사이는 세 번째까지만", Count_CardThreshold(arrThreshold, 0.25f), 3);
+            Check("문턱 계산 — 65% 이상이면 일곱 개 전부", Count_CardThreshold(arrThreshold, 0.99f), 7);
 
             // 260921_자석으로 한꺼번에 넘쳐도 3지선다는 한 장씩 열린다
             CPickQueue cQueue = new CPickQueue();
@@ -1625,6 +1665,16 @@ namespace Client
             Check("대기열 — 마지막 장", cQueue.Try_Open() == true);
             cQueue.Close();
             Check("대기열 — 다 쓰면 더 안 열린다", cQueue.Try_Open() == false && cQueue.IS_OPEN == false);
+        }
+
+        // 260924_CStage_Manager.Check_CardReady의 문턱 세기 로직을 그대로 흉내 낸다(사설 배열이라 직접 부를 수 없다).
+        private static int Count_CardThreshold(float[] arrThreshold, float fRatio)
+        {
+            int iThreshold = 0;
+            while (iThreshold < arrThreshold.Length && fRatio >= arrThreshold[iThreshold])
+                ++iThreshold;
+
+            return iThreshold;
         }
 
         // 260920_맵 위 상호작용 아이템(2-20) — 표 파싱과 가중치

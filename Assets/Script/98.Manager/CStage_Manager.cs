@@ -44,9 +44,26 @@ namespace Client
         private const float  PLAYER_HIT_KNOCKBACK_CELL     = 1.5f;
         private const float  PLAYER_HIT_KNOCKBACK_DURATION = 0.2f;
 
-        // 260923_3지선다 트리거 — 점유율이 이 폭마다 열린다(2-21의 조각 게이지를 되돌림). 규칙 값이지만
-        // 맵마다 다르게 줄 이유가 아직 없어 CSV로 빼지 않았다 — 필요해지면 MapInfo.csv 열로 옮길 것.
-        private const float  CARD_RATIO_STEP = 0.05f;
+        // 260924_도화선(2-3) — 몬스터가 몸으로 부딪히면 위처럼 즉시 맞지만, "선"에 닿으면 그 자리에서
+        // 불이 붙어 트레일 끝(플레이어)을 향해 타들어온다. 불보다 먼저 안전 지대로 돌아오면 선만 잃고
+        // 끝나지만(점령은 안 된다, CTerritoryGrid.Step_To 참고), 따라잡히면 몸에 닿은 것과 같은 값이 깎인다.
+        // "선을 긋는 동안은 약하다"는 그대로 두되, 즉사 대신 반응할 시간을 준다.
+        private const float  FUSE_SPEED_CELL_PER_SEC = 3f;   // 초당 몇 칸을 태우는가 — 연출 값이라 CSV로 빼지 않는다
+
+        private bool          m_bFuseArmed;       // 지금 도화선이 타고 있는가
+        private int           m_iFuseStartIndex;  // 불이 붙은 트레일 인덱스(발화 지점, 고정)
+        private int           m_iFuseFrontIndex;  // 지금까지 실제로 지운(Burn_TrailCell) 마지막 인덱스 — 중복 소각 방지
+        private float         m_fFuseBurned;      // 발화 지점에서부터 태운 칸 수(누적, 소수)
+        private int           m_iFuseDamage;      // 발화시킨 몬스터의 공격력 — 따라잡히는 순간 그대로 쓴다
+        // 260924_불이 붙은 자리 — 스파크 연출을 붙일 자리가 필요해지면 CGameManager가 듣는다(UI는 로컬에서, 3-1).
+        public event Action<Vector2Int> OnFuseIgnited;
+
+        // 260924_3지선다 트리거 — 점유율이 이 지점을 하나 넘을 때마다 연다(2-21). 웨이브 목표 70%를
+        // 일곱 번으로 고르게 나눴다(균등 5% 간격이던 260923 값을 대신한다) — 뒤로 갈수록 다음 카드까지
+        // 더 많이 먹어야 하지만, 처음 몇 장은 빨리 나와 손맛을 준다. 규칙 값이지만 맵마다 다르게 줄
+        // 이유가 아직 없어 CSV로 빼지 않았다 — 필요해지면 MapInfo.csv 열로 옮길 것.
+        private static readonly float[] s_arrCardThreshold =
+            { 0.05f, 0.12f, 0.20f, 0.30f, 0.42f, 0.56f, 0.65f };
 
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
@@ -85,7 +102,7 @@ namespace Client
         private float                       m_fEnemyCardSlow = 1f;
 
         // 260923_3지선다 트리거 — 다시 점유율 기준이다(2-21 조각 게이지를 되돌림). 점유율이
-        // CARD_RATIO_STEP(5%)을 하나 더 넘을 때마다 하나씩 연다. 웨이브가 넘어가 점유율이
+        // s_arrCardThreshold의 지점을 하나 더 넘을 때마다 하나씩 연다. 웨이브가 넘어가 점유율이
         // 0으로 돌아가면 이 값도 같이 리셋된다.
         private int                         m_iRatioStep;
         private readonly CPickQueue         m_cPickQueue = new CPickQueue();   // 260921_한 번에 한 장만
@@ -322,6 +339,8 @@ namespace Client
             OnCoinGained      = null;
             OnFieldItemUsed   = null;
             m_fFieldItemTimer = 0f;
+            m_bFuseArmed      = false;  // 260924_도화선
+            OnFuseIgnited     = null;
 
             Collect_Player();
             Collect_Enemies();
@@ -437,7 +456,7 @@ namespace Client
 
             Tick_EnemySlow(fDeltaTime);
             m_cStyle.Tick(fDeltaTime);
-            Tick_Enemy();
+            Tick_Enemy(fDeltaTime);
             Tick_DevAutoFire(fDeltaTime);
             Tick_Projectile(fDeltaTime);
             Tick_Web();
@@ -477,6 +496,7 @@ namespace Client
             // 웨이브마다 다시 준다 — 안 그러면 2·3웨이브에서는 카드가 아예 안 나온다(2-10-1).
             m_cGrid.Reset(m_cMapInfo.iBorderThick, m_cMapInfo.iStartRadius);
             m_iRatioStep = 0;
+            m_bFuseArmed = false;   // 260924_그리드가 트레일을 비웠으니 타던 도화선도 같이 끈다
             Respawn_Player();
 
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
@@ -718,12 +738,15 @@ namespace Client
         // 실제 효과만 여기서 플레이어에게 건다.
         /// <returns> 효과를 걸었으면 true </returns>
         /// <summary> 점령으로 점유율이 바뀔 때마다 부른다. 한 번에 많이 먹으면 연달아 여러 번 열릴 수도 있다. </summary>
-        // 260923_점유율이 CARD_RATIO_STEP을 하나 더 넘을 때마다 3지선다를 하나씩 연다(2-21의 조각 게이지를 되돌림).
+        // 260924_점유율이 s_arrCardThreshold의 지점을 하나 더 넘을 때마다 3지선다를 하나씩 연다(2-21).
         // 큰 도형을 한 번에 닫으면 문턱을 여럿 건너뛸 수 있어, 넘긴 개수만큼 큐에 쌓아 한 장씩 연다
         // (여러 창이 겹쳐 뜨면 입력이 막히는 문제는 260921에 이미 CPickQueue로 해결해 뒀다 — 그대로 재사용한다).
         public void Check_CardReady()
         {
-            int iThreshold = Mathf.FloorToInt(m_cGrid.OWNED_RATIO / CARD_RATIO_STEP);
+            int iThreshold = 0;
+            while (iThreshold < s_arrCardThreshold.Length && m_cGrid.OWNED_RATIO >= s_arrCardThreshold[iThreshold])
+                ++iThreshold;
+
             if (iThreshold <= m_iRatioStep)
                 return;
 
@@ -1142,7 +1165,7 @@ namespace Client
             return new Vector2(fX, fY).normalized;
         }
 
-        private void Tick_Enemy()
+        private void Tick_Enemy(float fDeltaTime)
         {
             if (m_cPlayer == null)
                 return;
@@ -1150,8 +1173,7 @@ namespace Client
             // 플레이어가 안전 지대(선) 위에 있으면 몬스터는 쫓지 않고 배회한다.
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
-            bool bHit = false;
-            bool bLineCut = false;      // 260922_선에 닿았다 — 회피로 흘리지 못한다(CPlayer.Damage)
+            bool bHit = false;          // 260924_이제 '몸'에 부딪혔을 때만 선다 — '선'은 도화선(아래)을 탄다
             CEnemy cHitEnemy = null;    // 260923_HP 풀 — 어느 몬스터가 닿았는지 알아야 공격력 · 넉백을 낼 수 있다
 
             m_bPlayerExposed = bExposed;
@@ -1185,18 +1207,18 @@ namespace Client
                 if (bHit == true)
                     continue;
 
-                // 그리는 중인 선분에 몬스터가 닿아도 사망한다.
-                // 260920_중심이 그 칸에 들어갈 때까지 기다리지 않는다 — 몸(HIT_RANGE)이 선에 닿으면 바로다.
-                // 예전에는 화면에서 몬스터가 선을 덮고 있는데도 한참 안 죽어 '왜 안 죽지'가 됐다.
-                if (m_cGrid.Is_StateWithin(cEnemy.POS, cEnemy.HIT_RANGE, CELL_STATE.TRAIL) == true)
+                // 260924_그리는 중인 선분에 몬스터가 닿으면 그 자리에서 도화선에 불이 붙는다 — 더 이상 즉사가
+                // 아니다(2-3). 이미 타고 있으면 새로 붙이지 않는다 — 발화 지점을 뒤로 미루면 오히려 유리해진다.
+                // 무적 중(유령 걸음 등, 2-11-3)에는 몸처럼 선도 그냥 통과한다 — 안 그러면 무적이 끝난 뒤에도
+                // 그때 붙은 불이 계속 쫓아오는, "통과했는데 나중에 맞는" 모순이 생긴다.
+                if (m_bFuseArmed == false && m_cPlayer.IS_INVINCIBLE == false
+                 && m_cGrid.Try_Find_StateWithin(cEnemy.POS, cEnemy.HIT_RANGE, CELL_STATE.TRAIL, out Vector2Int vTouch) == true)
                 {
-                    bHit = true;
-                    bLineCut = true;
-                    cHitEnemy = cEnemy;
+                    Ignite_Fuse(vTouch, cEnemy);
                     continue;
                 }
 
-                // 플레이어와의 직접 충돌은 땅을 먹으러 나와 있을 때만 판정한다.
+                // 플레이어와의 직접 충돌은 땅을 먹으러 나와 있을 때만 판정한다. 이건 그대로 즉시 피해다.
                 if (bExposed == true
                     && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
                 {
@@ -1219,13 +1241,14 @@ namespace Client
 
             m_cStyle.End_Near();
 
-            // 260923_HP 풀 — 몇 마리가 겹쳐도 그 프레임엔 처음 닿은 한 마리의 공격력만 들어간다(2-14).
+            // 260924_몸통 박치기만 여기서 바로 처리한다 — 선(도화선)은 Tick_Fuse가 따로 잰다.
             if (bHit == true)
             {
                 m_cStyle.Clear_Near();      // 260922_맞았으면 아슬아슬이 아니다
-                m_cPlayer.Damage(cHitEnemy != null ? cHitEnemy.ATTACK : 1, bLineCut);
+                // 260924_몸에 부딪힌 것은 선이 끊긴 것이 아니므로 회피가 그대로 듣는다(bLineCut=false).
+                m_cPlayer.Damage(cHitEnemy != null ? cHitEnemy.ATTACK : 1, false);
 
-                // 260923_선이나 몸에 부딪힌 몬스터는 튕겨난다 — 피해가 보호막 · 회피로 막혀도 충돌 자체는 일어난 것이라 넉백은 그대로 건다.
+                // 260923_몸에 부딪힌 몬스터는 튕겨난다 — 피해가 보호막 · 회피로 막혀도 충돌 자체는 일어난 것이라 넉백은 그대로 건다.
                 if (cHitEnemy != null)
                 {
                     Vector2 vAway = cHitEnemy.POS - vPlayerPos;
@@ -1235,6 +1258,64 @@ namespace Client
                     cHitEnemy.Push(vAway.normalized, PLAYER_HIT_KNOCKBACK_CELL * m_cGrid.CELL_SIZE, PLAYER_HIT_KNOCKBACK_DURATION);
                 }
             }
+
+            Tick_Fuse(fDeltaTime);
+        }
+
+        // 260924_도화선 발화 — 몬스터가 처음 닿은 트레일 칸에서 불이 붙는다. 그 몬스터의 공격력을 미리
+        // 적어 둔다 — 불이 다 타들어올 때쯤엔 그 몬스터가 어디 있는지(살아 있는지조차) 알 수 없어서다.
+        private void Ignite_Fuse(Vector2Int vTouch, CEnemy cEnemy)
+        {
+            int iIndex = m_cGrid.Get_TrailIndex(vTouch);
+            if (iIndex < 0)
+                return;
+
+            m_bFuseArmed             = true;
+            m_iFuseStartIndex        = iIndex;
+            m_iFuseFrontIndex        = iIndex;
+            m_fFuseBurned            = 0f;
+            m_iFuseDamage            = cEnemy != null ? cEnemy.ATTACK : 1;
+            m_cGrid.IS_TRAIL_BURNING = true;
+
+            OnFuseIgnited?.Invoke(vTouch);
+        }
+
+        /// <summary>
+        /// 260924_도화선을 매 프레임 태운다. 발화 지점부터 트레일 끝(플레이어가 있는 칸)까지 따라잡으면
+        /// 선을 통째로 잃고 HP가 깎인다 — 그 전에 플레이어가 안전 지대로 돌아오면(CTerritoryGrid.Step_To)
+        /// 선만 잃고 끝난다. 화면 없이도 발화 지점 · 속도만으로 검증할 수 있다(CProtoTest).
+        /// </summary>
+        private void Tick_Fuse(float fDeltaTime)
+        {
+            if (m_bFuseArmed == false)
+                return;
+
+            // 몸에 맞아 죽거나 마감 스킬로 트레일이 먼저 사라지면 도화선도 같이 꺼진다.
+            if (m_cGrid.IS_DRAWING == false)
+            {
+                m_bFuseArmed = false;
+                m_cGrid.IS_TRAIL_BURNING = false;
+                return;
+            }
+
+            m_fFuseBurned += FUSE_SPEED_CELL_PER_SEC * fDeltaTime;
+            int iTipIndex   = m_cGrid.TRAIL_COUNT - 1;
+            int iFrontIndex = Mathf.Min(m_iFuseStartIndex + Mathf.FloorToInt(m_fFuseBurned), iTipIndex);
+
+            // 새로 태운 칸만큼만 지운다 — 불이 타들어오는 게 보이도록(마스크 렌더러가 지운 칸을 그대로 그린다).
+            for (int i = m_iFuseFrontIndex + 1; i <= iFrontIndex; ++i)
+                m_cGrid.Burn_TrailCell(i);
+            m_iFuseFrontIndex = iFrontIndex;
+
+            if (iFrontIndex < iTipIndex)
+                return;
+
+            // 트레일 끝까지 태웠다 — 따라잡혔다. 선은 무조건 사라지고(보호막은 HP만 막는다),
+            // 발화 당시 몬스터의 공격력만큼 깎인다. 선이 끊긴 것이므로 회피는 못 흘린다(bLineCut=true).
+            m_bFuseArmed = false;
+            m_cGrid.IS_TRAIL_BURNING = false;
+            m_cGrid.Clear_Trail();
+            m_cPlayer.Damage(m_iFuseDamage, true);
         }
 
         /// <summary>

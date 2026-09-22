@@ -123,6 +123,7 @@ namespace Client
         public void Reset(int iBorderThick, int iStartRadius = 0)
         {
             m_lstTrail.Clear();
+            IS_TRAIL_BURNING = false;    // 260924_판을 다시 깔면 타던 도화선도 같이 꺼진다
             m_iOwnedCount    = 0;
             m_iPlayableCount = 0;
 
@@ -362,7 +363,14 @@ namespace Client
         /// </summary>
         /// <param name="fRadiusCells"> 반경(셀) </param>
         public bool Is_StateWithin(Vector2 vWorldPos, float fRadiusCells, CELL_STATE eState)
+            => Try_Find_StateWithin(vWorldPos, fRadiusCells, eState, out Vector2Int _);
+
+        // 260924_Is_StateWithin과 같은 판정이지만 닿은 칸 하나를 함께 돌려준다 — 도화선(2-3)이 어느 트레일
+        // 칸에서 불붙었는지 알아야 하는 곳(CStage_Manager)이 쓴다. 판정 자체는 그대로 재사용한다(1-1).
+        /// <param name="fRadiusCells"> 반경(셀) </param>
+        public bool Try_Find_StateWithin(Vector2 vWorldPos, float fRadiusCells, CELL_STATE eState, out Vector2Int vFound)
         {
+            vFound = Vector2Int.zero;
             Vector2Int vCenter = World_ToCell(vWorldPos);
             int iRange = Mathf.Max(0, Mathf.CeilToInt(fRadiusCells));
             float fRadiusSq = (fRadiusCells * m_fCellSize) * (fRadiusCells * m_fCellSize);
@@ -383,7 +391,10 @@ namespace Client
                     float fDy = Mathf.Max(0f, Mathf.Abs(vWorldPos.y - vCellCenter.y) - m_fCellSize * 0.5f);
 
                     if (fDx * fDx + fDy * fDy <= fRadiusSq)
+                    {
+                        vFound = new Vector2Int(x, y);
                         return true;
+                    }
                 }
             }
 
@@ -521,6 +532,43 @@ namespace Client
             vCell = new Vector2Int(iIndex % m_iWidth, iIndex / m_iWidth);
             return true;
         }
+
+        // 260924_도화선(2-3) — 몬스터가 선에 닿으면 그 지점에서 불이 붙어 트레일 끝(플레이어)을 향해 타들어온다.
+        // 언제·얼마나 태울지(타이머·속도)는 CStage_Manager가 잰다 — 그리드는 "몇 번째 칸인지"와
+        // "그 칸을 지운다"만 안다(누가·왜 태우는지는 모른다, 2-3 "누가 죽는지는 그리드가 모른다"와 같은 이유).
+        /// <summary> vCell이 지금 트레일의 몇 번째(0부터)인지. 트레일이 아니면 -1. </summary>
+        public int Get_TrailIndex(Vector2Int vCell)
+        {
+            if (Is_InBounds(vCell.x, vCell.y) == false)
+                return -1;
+
+            return m_lstTrail.IndexOf(To_Index(vCell.x, vCell.y));
+        }
+
+        /// <summary>
+        /// 트레일의 iTrailIndex번째 칸만 도로 빈 땅으로 되돌린다. 목록(m_lstTrail) 순서는 그대로 둔다 —
+        /// 도화선이 다음 칸을 계속 찾아가야 하고, 아직 다 타지 않은 앞쪽 칸은 여전히 선으로 남아 있어야 한다.
+        /// 범위를 벗어났거나 이미 지워졌으면 아무 일도 하지 않는다.
+        /// </summary>
+        public void Burn_TrailCell(int iTrailIndex)
+        {
+            if (iTrailIndex < 0 || iTrailIndex >= m_lstTrail.Count)
+                return;
+
+            int iCellIndex = m_lstTrail[iTrailIndex];
+            if (m_arrCell[iCellIndex] != CELL_STATE.TRAIL)
+                return;
+
+            m_arrCell[iCellIndex] = CELL_STATE.EMPTY;
+            Set_CellDirty(iCellIndex);
+        }
+
+        /// <summary>
+        /// 260924_도화선이 타는 동안인가. 켜져 있으면 Step_To가 안전 지대로 돌아와도 점령하지 않고
+        /// 트레일만 지운다 — "불보다 먼저 내 땅에 닿으면 선만 잃는다"는 규칙을 여기서 지킨다.
+        /// CStage_Manager가 발화·소화 시점에 이 값을 켜고 끈다.
+        /// </summary>
+        public bool IS_TRAIL_BURNING { get; set; }
         #endregion 트레일
 
         #region 260921_잠식 — 땅 갉는 자
@@ -637,6 +685,14 @@ namespace Client
                 default:
                     if (IS_DRAWING == false)
                         return STEP_RESULT.SAFE;
+
+                    // 260924_도화선이 타는 동안 돌아왔다 — 불보다 먼저 왔으니 살지만, 점령은 안 된다(2-3).
+                    if (IS_TRAIL_BURNING == true)
+                    {
+                        Clear_Trail();
+                        IS_TRAIL_BURNING = false;
+                        return STEP_RESULT.SAFE;
+                    }
 
                     iCapturedCount = Capture();
                     return STEP_RESULT.CAPTURE;
