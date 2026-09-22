@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Client
 {
@@ -60,15 +60,15 @@ namespace Client
                 Reset();
         }
 
-        /// <param name="iTrailCount"> 지금 그리는 중인 선의 칸 수(CTerritoryGrid.TRAIL_COUNT) </param>
+        /// <param name="fTrailLength"> 지금 그리는 중인 선의 길이(칸, CTerritoryGrid.TRAIL_LENGTH) </param>
         /// <param name="fOwnedRatio"> 지금 점령률 0~1(CTerritoryGrid.OWNED_RATIO) </param>
         /// <returns> 카메라 크기에 곱할 배율 </returns>
-        public float Tick(int iTrailCount, float fOwnedRatio, float fDeltaTime)
+        public float Tick(float fTrailLength, float fOwnedRatio, float fDeltaTime)
         {
             if (m_bEnabled == false)
                 return 1f;
 
-            float fTarget = Get_TargetRate(iTrailCount, fOwnedRatio);
+            float fTarget = Get_TargetRate(fTrailLength, fOwnedRatio);
             m_fRate = Mathf.SmoothDamp(m_fRate, fTarget, ref m_fVelocity, m_fFollowTime, Mathf.Infinity, fDeltaTime);
             return m_fRate;
         }
@@ -77,12 +77,12 @@ namespace Client
         /// 목표 배율. 선 길이와 점령률을 **더한다** — 멀리 나가 있고 땅도 넓으면 둘 다 담아야 한다.
         /// 선을 거두고(0칸) 점령률이 0이면 1배로 돌아온다.
         /// </summary>
-        public float Get_TargetRate(int iTrailCount, float fOwnedRatio)
+        public float Get_TargetRate(float fTrailLength, float fOwnedRatio)
         {
             float fRate = 1f;
 
-            if (iTrailCount > 0)
-                fRate += iTrailCount * m_fPerTrailCell;
+            if (fTrailLength > 0f)
+                fRate += fTrailLength * m_fPerTrailCell;
 
             fRate += Mathf.Clamp01(fOwnedRatio) * m_fPerOwnedRatio;
 

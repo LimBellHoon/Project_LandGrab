@@ -22,7 +22,8 @@ namespace Client
     public class CPlayerDesc : CGameObjectDesc
     {
         public CTerritoryGrid   cGrid       { get; set; }
-        public Vector2Int       vStartCell  { get; set; }
+        // 260923_시작 자리(그리드 공간). 땅이 다각형이라 칸이 아니라 점이다 — 시작 섬 경계 위
+        public Vector2          vStartPos   { get; set; }
         public float            fMoveSpeed  { get; set; }
         // 260918_시작 목숨 수 (다시 목숨제, 2-14)
         public int              iLife       { get; set; }

@@ -3,76 +3,71 @@
 namespace Client
 {
     // 260901_땅따먹기 프로토타입: 셀 단위 이동 + 셀 사이 보간
+    // 260923_땅이 다각형이 되면서 **칸 없이 연속 좌표로** 움직인다 (2-3, 2-22)
     /// <summary>
-    /// 플레이어는 항상 셀 격자 위를 움직인다. 셀과 셀 사이는 보간해서 부드럽게 보이지만,
-    /// 게임 규칙(트레일/점령/사망) 판정은 셀에 '도착'하는 순간에만 일어난다.
+    /// 위치는 그리드 공간(칸 하나 = 1)의 점이다. 두 가지 상태가 있다.
+    ///   · 내 땅 위(안전) — **경계선을 따라 미끄러진다.** 누른 방향과 가장 잘 맞는 쪽으로 변을 타고 가고,
+    ///     꼭짓점에서 다음 변이 누른 방향과 너무 어긋나면 거기서 선다(예전 칸 시절의 '선 자동 추적'과 같은 감각).
+    ///     누른 방향이 빈 땅 쪽이면 그 자리에서 선을 긋기 시작한다.
+    ///   · 선을 긋는 중 — 캐릭터 방식대로 곧게(4방향 · 8방향) 또는 나선으로 나아가고, 한 걸음마다
+    ///     CTerritoryGrid.Step_To가 판정한다(자기 선 · 점령 · 계속). 규칙은 거기에만 있다(2-3).
+    /// 손을 떼면 어느 상태든 그 자리에 선다(260921).
     /// </summary>
-    public partial class CMoveHandler
+    public class CMoveHandler
     {
+        private const float EXIT_PROBE     = 0.12f;    // 나갈지 볼 때 누른 방향으로 이만큼 앞의 점을 본다(칸)
+        private const float EXIT_MARGIN    = 0.03f;    // 그 점이 경계에서 이만큼은 떨어진 바깥이어야 '나간다'
+        private const float SLIDE_MIN_DOT  = 0.25f;    // 변을 타려면 누른 방향이 변 방향과 이만큼은 맞아야 한다(약 75도)
+        private const float REVERSE_DOT    = -0.5f;    // 선을 긋는 중 이보다 뒤를 향한 입력은 무시하고 선다 — 자기 선을 밟는 즉사를 막는다
+        private const float VERTEX_SNAP    = 0.1f;     // 꼭짓점에서 이만큼 안이면 꼭짓점에 선 것으로 본다(칸) — 모서리 코앞에서 꺾을 때 걸리지 않게
+        private const int   MAX_SLIDE_STEP = 64;       // 한 프레임에 넘길 꼭짓점 수 상한(곡선은 꼭짓점이 촘촘하다)
+        private const int   CLAMP_ITERATION = 12;
+
+        // 아르키메데스 나선 r = a + bθ(2-22). 시작 반지름과 한 바퀴에 벌어지는 폭(칸).
+        // 폭이 2칸보다 좁으면 다음 고리가 앞 고리에 붙어 자기 선을 밟기 쉽다.
+        private const float SPIRAL_START_RADIUS  = 4f;
+        private const float SPIRAL_GROW_PER_TURN = 4f;
+        private const float SPIRAL_TURN_DONE     = Mathf.PI * 2f;    // 한 바퀴 돌면 닫으러 간다
+
         private CTerritoryGrid  m_cGrid;
-
-        private Vector2Int      m_vCurCell;
-        private Vector2Int      m_vNextCell;
-        private MOVE_DIR        m_eCurDir   = MOVE_DIR.NONE;
-        private float           m_fProgress;                // 현재 셀 → 다음 셀 진행도 0~1
-        private float           m_fSpeed;                   // 초당 이동 셀 수
+        private Vector2         m_vPos;             // 그리드 공간
+        private float           m_fSpeed;           // 초당 칸
+        private MOVE_DIR        m_eCurDir = MOVE_DIR.NONE;  // 마지막으로 움직인 방향을 상하좌우로 — 잔상 · 점멸이 읽는다
+        private Vector2         m_vHeading = Vector2.up;    // 선을 긋는 중 나아가는 방향
         private bool            m_bMoving;
-        private bool            m_bFollowing;               // 직전 이동이 선분 자동 추적이었는가
-        // 260920_캐릭터별 이동 방식(2-22). 대각선 입력은 '가로 한 칸 → 세로 한 칸'으로 밟는다.
-        // m_ePendingDir이 그 두 번째 칸이다 — 첫 칸에 도착하면 입력과 상관없이 곧바로 이어 간다.
         private MOVE_STYLE      m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
-        private MOVE_DIR        m_ePendingDir = MOVE_DIR.NONE;
-        // 260921_나선형 입력은 '새로 누른 순간'만 본다(CMoveHandler_Free). 누르고 있는 동안 계속 이기면
-        // 나선이 매 프레임 처음부터 다시 시작돼 곧게 가 버린다
-        private MOVE_DIR        m_eSpiralInput = MOVE_DIR.NONE;
-        // 260921_대각선 두 칸을 몸은 비스듬히 한 번에 가는 것처럼 그린다. 0 = 대각선 아님, 1 = 첫 칸, 2 = 둘째 칸
-        private int             m_iDiagPhase;
-        private Vector2Int      m_vDiagFrom;
 
-        // 260916_런 스킬(뱀서라이크) — '월보'/'어디로든 신발'이 걸어 두는 플래그.
-        // CPlayer가 CRunSkillEffect를 통해 켜고 끈다. 그리드 규칙 자체(Step_To)는 그대로 두고
-        // 이동 가능 여부(Can_Move)만 완화/확장하는 자리라 여기 둔다.
+        // 경계 위 자리 — 몇 번째 고리의 몇 번째 변, 변 위 어디(0~1). 점령지가 바뀌면 다시 잡는다
+        private int             m_iRing = -1;
+        private int             m_iSeg;
+        private float           m_fT;
+        private int             m_iRingVersion = -1;
+
+        // 260921_나선형
+        private float           m_fSpiralAngle;
+        private bool            m_bSpiralClosing;
+        private Vector2         m_vSpiralHome;
+        // 새로 누른 방향만 본다 — 누르고 있는 동안 계속 이기면 나선이 매 프레임 처음부터 다시 시작돼 곧게 가 버린다
+        private MOVE_DIR        m_eSpiralInput = MOVE_DIR.NONE;
+
+        // 260916_런 스킬 — '월보'/'어디로든 신발'이 걸어 두는 플래그. 규칙(Step_To)은 그대로 두고 갈 수 있는 곳만 넓힌다
         private bool            m_bAllowOwnedInterior;      // 월보 — 점령지 내부도 통과
         private bool            m_bEdgeWrap;                // 어디로든 신발 — 좌우 끝을 잇는다
 
-        public Vector2Int   CUR_CELL    => m_vCurCell;
+        public Vector2      POS         => m_vPos;
+        public Vector3      WORLD_POS   => m_cGrid != null ? m_cGrid.Grid_ToWorld(m_vPos) : Vector3.zero;
+        public Vector2Int   CUR_CELL    => m_cGrid != null ? m_cGrid.Grid_ToCell(m_vPos) : Vector2Int.zero;
         public MOVE_DIR     CUR_DIR     => m_eCurDir;
-        public bool         IS_MOVING   => m_bMoving || (m_bFree == true && m_bFreeMoving == true);
+        public Vector2      HEADING     => m_vHeading;
+        public bool         IS_MOVING   => m_bMoving;
         public float        SPEED       { get { return m_fSpeed; } set { m_fSpeed = Mathf.Max(0f, value); } }
+        public MOVE_STYLE   MOVE_STYLE_NOW => m_eMoveStyle;
 
         public void Set_AllowOwnedInterior(bool bAllow) => m_bAllowOwnedInterior = bAllow;
         public void Set_EdgeWrap(bool bWrap) => m_bEdgeWrap = bWrap;
 
-        public Vector3 WORLD_POS
-        {
-            get
-            {
-                // 260921_선을 긋는 동안의 자유 각도 이동(CMoveHandler_Free)
-                if (m_bFree == true)
-                    return Get_FreeWorldPos();
-
-                // 260921_대각선은 가로 · 세로 두 칸을 밟지만(규칙) 몸은 비스듬히 곧게 미끄러진다(보이는 것).
-                // 칸을 그대로 따라 그리면 계단이 좌우로 꺾이는 지그재그로 보여 대각선으로 읽히지 않았다.
-                if (m_iDiagPhase != 0 && Is_DiagonalSpan() == true)
-                {
-                    Vector3 vDiagFrom = m_cGrid.Cell_ToWorld(m_vDiagFrom);
-                    Vector3 vDiagTo   = m_cGrid.Cell_ToWorld(Get_DiagTarget());
-                    float   fHalf     = m_iDiagPhase == 1 ? 0f : 0.5f;
-                    float   fStep     = m_bMoving == true ? m_fProgress * 0.5f
-                                      : (m_iDiagPhase == 1 && m_ePendingDir != MOVE_DIR.NONE ? 0.5f : -1f);
-                    if (fStep >= 0f)
-                        return Vector3.Lerp(vDiagFrom, vDiagTo, fHalf + fStep);
-                }
-
-                Vector3 vFrom = m_cGrid.Cell_ToWorld(m_vCurCell);
-                if (m_bMoving == false)
-                    return vFrom;
-
-                return Vector3.Lerp(vFrom, m_cGrid.Cell_ToWorld(m_vNextCell), m_fProgress);
-            }
-        }
-
-        public bool Initialize(CTerritoryGrid cGrid, Vector2Int vStartCell, float fSpeed)
+        /// <param name="vStartPos"> 그리드 공간의 시작 자리(보통 시작 섬의 경계 위) </param>
+        public bool Initialize(CTerritoryGrid cGrid, Vector2 vStartPos, float fSpeed)
         {
             if (cGrid == null)
             {
@@ -82,280 +77,458 @@ namespace Client
 
             m_cGrid  = cGrid;
             m_fSpeed = Mathf.Max(0f, fSpeed);
-            Teleport(vStartCell);
-            return true;
-        }
-
-        /// <summary> 사망 후 부활 등, 이동 상태를 통째로 리셋하고 특정 셀로 옮긴다. </summary>
-        public void Teleport(Vector2Int vCell) => Teleport(vCell, MOVE_DIR.NONE);
-
-        // 260905_워프는 진행 방향을 지키며 순간 이동한다.
-        // 방향을 NONE으로 되돌리면 미점령 지대에서 멈추지 못하는 규칙에 걸려 그대로 군다.
-        /// <param name="eKeepDir"> 유지할 진행 방향. NONE이면 멈춘다. </param>
-        public void Teleport(Vector2Int vCell, MOVE_DIR eKeepDir)
-        {
-            m_vCurCell  = vCell;
-            m_vNextCell = vCell;
-            m_eCurDir    = eKeepDir;
-            m_fProgress  = 0f;
-            m_bMoving    = false;
-            m_bFollowing = false;
-            m_ePendingDir = MOVE_DIR.NONE;
-            m_iDiagPhase  = 0;
-            m_eSpiralInput = MOVE_DIR.NONE;
-            Reset_Free();
-        }
-
-        /// <summary>
-        /// 이동을 진행한다.
-        /// </summary>
-        /// <returns> 이번 프레임에 새 셀에 도착했으면 true (규칙 판정 시점) </returns>
-        public bool Tick(float fDeltaTime, MOVE_DIR eDesiredDir, out Vector2Int vArrivedCell)
-        {
-            vArrivedCell = m_vCurCell;
-
-            // 260921_8방향 · 나선형은 선을 긋는 동안 칸이 아니라 각도로 움직인다(CMoveHandler_Free)
-            Refresh_FreeMode();
-            if (m_bFree == true)
-                return Tick_Free(fDeltaTime, eDesiredDir, out vArrivedCell);
-
-            if (m_bMoving == false && Try_StartMove(eDesiredDir) == false)
-                return false;
-
-            m_fProgress += m_fSpeed * fDeltaTime;
-            if (m_fProgress < 1f)
-                return false;
-
-            // 남은 진행도는 다음 셀로 이월해 프레임레이트에 따라 속도가 달라지지 않게 한다.
-            m_fProgress = Mathf.Min(m_fProgress - 1f, 0.999f);
-
-            m_vCurCell   = m_vNextCell;
-            m_bMoving    = false;
-            vArrivedCell = m_vCurCell;
+            m_eCurDir = MOVE_DIR.NONE;
+            Teleport(vStartPos);
             return true;
         }
 
         /// <summary> 260920_캐릭터가 쓸 이동 방식. 스테이지에 들어갈 때 한 번 정한다(2-22). </summary>
         public void Set_MoveStyle(MOVE_STYLE eStyle)
         {
-            m_eMoveStyle  = eStyle;
-            m_ePendingDir = MOVE_DIR.NONE;
-            m_iDiagPhase  = 0;
-            m_eSpiralInput = MOVE_DIR.NONE;
-            Reset_Free();
+            m_eMoveStyle = eStyle;
+            Reset_Spiral();
         }
 
-        public MOVE_STYLE MOVE_STYLE_NOW => m_eMoveStyle;
-
-        /// <summary>
-        /// 260920_지금 칸을 그대로 갈아 끼운다(이동 중이던 것은 취소). 점령 직후 경계선으로 되돌릴 때 쓴다.
-        /// 규칙 판정(Step_To)을 거치지 않으므로 **이미 안전하다고 확인된 칸에만** 쓸 것.
-        /// </summary>
-        public void Snap_To(Vector2Int vCell)
+        /// <summary> 사망 후 부활 등, 이동 상태를 통째로 리셋하고 그 자리로 옮긴다. </summary>
+        public void Teleport(Vector2 vPos)
         {
-            m_vCurCell    = vCell;
-            m_vNextCell   = vCell;
-            m_bMoving     = false;
-            m_bFollowing  = false;
-            m_fProgress   = 0f;
-            m_ePendingDir = MOVE_DIR.NONE;
-            m_iDiagPhase  = 0;
-            Reset_Free();
+            m_vPos         = vPos;
+            m_bMoving      = false;
+            m_iRing        = -1;
+            m_iRingVersion = -1;
+            Reset_Spiral();
         }
 
-        /// <summary>
-        /// 대각선 입력을 두 칸으로 나눈다. 갈 수 있는 축을 먼저 밟고 나머지를 예약한다 —
-        /// 한 축이 막혀 있으면 나머지 한 축으로만 간다(코너에 끼지 않는다).
-        /// </summary>
-        private MOVE_DIR Resolve_Diagonal(MOVE_DIR eDesiredDir)
+        /// <summary> 260920_점령 직후 · 부활 때 가장 가까운 경계 위로 옮긴다. 안전한 곳은 경계선뿐이다(2-3). </summary>
+        public void Snap_ToBoundary()
         {
-            if (m_eMoveStyle != MOVE_STYLE.EIGHT_WAY || CTerritoryGrid.Is_Diagonal(eDesiredDir) == false)
-                return eDesiredDir;
+            m_iRingVersion = -1;
+            Ensure_OnRing();
+        }
 
-            CTerritoryGrid.Dir_Split(eDesiredDir, out MOVE_DIR eHorizontal, out MOVE_DIR eVertical);
+        /// <summary> 한 프레임 이동. 입력이 없으면 선다. 선을 긋는 중 판정이 나오면 그 결과를 돌려준다. </summary>
+        /// <param name="iCapturedCount"> CAPTURE일 때 새로 점령한 넓이(칸) </param>
+        public STEP_RESULT Tick(float fDeltaTime, MOVE_DIR eDesiredDir, out int iCapturedCount)
+        {
+            m_bMoving = false;
+            return Move(eDesiredDir, m_fSpeed * fDeltaTime, false, out iCapturedCount);
+        }
 
-            // 번갈아 가며 먼저 밟을 축을 바꾸면 계단이 잘게 쪼개져 대각선처럼 보인다.
-            bool bHorizontalFirst = m_eCurDir != eHorizontal;
-            MOVE_DIR eFirst  = bHorizontalFirst ? eHorizontal : eVertical;
-            MOVE_DIR eSecond = bHorizontalFirst ? eVertical   : eHorizontal;
+        /// <summary> 260923_점멸 — 그 방향으로 fDistance(칸)만큼 한 번에 간다. 판정은 평소 이동과 같다 </summary>
+        public STEP_RESULT Warp(MOVE_DIR eDir, float fDistance, out int iCapturedCount)
+            => Move(eDir, fDistance, true, out iCapturedCount);
 
-            if (Can_Move(eFirst) == false)
+        /// <summary> 260923_마감 — 선을 긋는 중이면 vTarget(점령지 경계)까지 곧게 이어 붙인다 </summary>
+        public STEP_RESULT Draw_To(Vector2 vTarget, out int iCapturedCount)
+        {
+            iCapturedCount = 0;
+            if (m_cGrid.IS_DRAWING == false)
+                return STEP_RESULT.SAFE;
+
+            Vector2 vDir = vTarget - m_vPos;
+            if (vDir.sqrMagnitude < 1e-10f)
+                return STEP_RESULT.DRAW;
+
+            m_vHeading = vDir.normalized;
+            return Step(vTarget + m_vHeading * 0.02f, out iCapturedCount);   // 경계를 살짝 넘겨야 '들어갔다'가 된다
+        }
+
+        private STEP_RESULT State => m_cGrid.IS_DRAWING == true ? STEP_RESULT.DRAW : STEP_RESULT.SAFE;
+
+        private STEP_RESULT Move(MOVE_DIR eDir, float fDistance, bool bStraight, out int iCapturedCount)
+        {
+            iCapturedCount = 0;
+
+            if (m_cGrid == null || eDir == MOVE_DIR.NONE || fDistance <= 0f)
+                return m_cGrid != null ? State : STEP_RESULT.SAFE;
+
+            // 4방향 · 나선형은 대각선 입력을 받지 않는다(조이스틱이 이미 4방향으로 자르지만 한 번 더 막는다)
+            if (m_eMoveStyle != MOVE_STYLE.EIGHT_WAY && CTerritoryGrid.Is_Diagonal(eDir) == true)
+                return State;
+
+            if (m_cGrid.IS_DRAWING == true)
+                return Move_Drawing(eDir, fDistance, bStraight, out iCapturedCount);
+
+            return Move_Safe(eDir, fDistance, bStraight, out iCapturedCount);
+        }
+
+        #region 내 땅 위 — 경계를 따라 미끄러진다
+        private STEP_RESULT Move_Safe(MOVE_DIR eDir, float fDistance, bool bStraight, out int iCapturedCount)
+        {
+            iCapturedCount = 0;
+            Vector2 vInput = CTerritoryGrid.Dir_ToVector(eDir);
+
+            // 260916_월보 — 점령지 안쪽으로 누르면 경계를 떠나 안을 가로지른다
+            if (m_bAllowOwnedInterior == true && (Is_Interior(m_vPos) == true || Is_Interior(m_vPos + vInput * EXIT_PROBE) == true))
+                return Move_Interior(eDir, fDistance, bStraight, out iCapturedCount);
+
+            if (Ensure_OnRing() == false)
+                return STEP_RESULT.SAFE;
+
+            float fLeft = fDistance;
+            int   iSign = 0;
+
+            for (int iStep = 0; iStep < MAX_SLIDE_STEP; ++iStep)
             {
-                m_ePendingDir = MOVE_DIR.NONE;
-                return eSecond;
-            }
-
-            m_ePendingDir = eSecond;
-            m_vDiagFrom   = m_vCurCell;     // 260921_몸이 비스듬히 미끄러질 출발점
-            m_iDiagPhase  = 1;
-            return eFirst;
-        }
-
-        // 좌우 랩어라운드(어디로든 신발)로 반대편에 넘어간 경우는 비스듬히 그리지 않는다 — 화면을 가로질러 날아간다
-        private bool Is_DiagonalSpan()
-        {
-            Vector2Int vDelta = Get_DiagTarget() - m_vDiagFrom;
-            return Mathf.Abs(vDelta.x) == 1 && Mathf.Abs(vDelta.y) == 1;
-        }
-
-        // 두 칸을 다 밟았을 때 설 자리 = 출발점 + 첫 칸 + 둘째 칸
-        private Vector2Int Get_DiagTarget()
-            => m_vNextCell + (m_iDiagPhase == 1 ? CTerritoryGrid.Dir_ToOffset(m_ePendingDir) : Vector2Int.zero);
-
-        private bool Try_StartMove(MOVE_DIR eDesiredDir)
-        {
-            // 예약된 두 번째 칸이 있으면 입력보다 그쪽이 먼저다 — 대각선 한 번을 끝까지 마친다.
-            if (m_ePendingDir != MOVE_DIR.NONE)
-            {
-                MOVE_DIR ePending = m_ePendingDir;
-                m_ePendingDir = MOVE_DIR.NONE;
-
-                if (Can_Move(ePending) == true)
+                // 누른 쪽이 빈 땅이면 그 자리에서 선을 긋기 시작한다 — 꼭짓점에 닿을 때마다도 본다(모서리를 돌아 나가기)
+                if (Can_Exit(vInput) == true)
                 {
-                    eDesiredDir  = ePending;
-                    m_iDiagPhase = 2;
+                    Start_Drawing(eDir);
+                    return Move_Drawing(eDir, fLeft, bStraight, out iCapturedCount);
+                }
+
+                if (fLeft <= 1e-6f)
+                    break;
+
+                Vector2[] arrRing = m_cGrid.RINGS[m_iRing];
+                int iCount = arrRing.Length;
+                Vector2 a = arrRing[m_iSeg];
+                Vector2 b = arrRing[(m_iSeg + 1) % iCount];
+                Vector2 vSeg = b - a;
+                float fLen = vSeg.magnitude;
+
+                if (fLen < 1e-6f)
+                {
+                    m_iSeg = (m_iSeg + (iSign >= 0 ? 1 : iCount - 1)) % iCount;
+                    m_fT   = iSign >= 0 ? 0f : 1f;
+                    continue;
+                }
+
+                Vector2 vSegDir = vSeg / fLen;
+                float fDot = Vector2.Dot(vInput, vSegDir);
+
+                // 꼭짓점 위에서 막 출발할 때는 붙어 있는 두 변 중 누른 방향에 더 맞는 쪽을 탄다
+                if (iSign == 0 && Mathf.Abs(fDot) < SLIDE_MIN_DOT && Try_SwitchAtVertex(vInput, iCount) == true)
+                    continue;
+
+                int iWant = fDot >= SLIDE_MIN_DOT ? 1 : fDot <= -SLIDE_MIN_DOT ? -1 : 0;
+
+                // 누른 방향이 이 변과 너무 어긋나거나, 꼭짓점을 넘은 뒤 되돌아가야 한다면 선다
+                if (iWant == 0 || (iSign != 0 && iWant != iSign))
+                    break;
+
+                iSign = iWant;
+                float fAvail = iSign > 0 ? (1f - m_fT) * fLen : m_fT * fLen;
+                float fMove  = Mathf.Min(fLeft, fAvail);
+
+                m_fT   = Mathf.Clamp01(m_fT + iSign * fMove / fLen);
+                fLeft -= fMove;
+                m_vPos = Vector2.Lerp(a, b, m_fT);
+
+                if (fMove > 0f)
+                {
+                    m_bMoving = true;
+                    m_eCurDir = CTerritoryGrid.Vector_ToDir4(vSegDir * iSign);
+                }
+
+                // 변 끝에 닿았으면 다음 변으로 넘어간다
+                if (iSign > 0 && m_fT >= 1f - 1e-5f)
+                {
+                    m_iSeg = (m_iSeg + 1) % iCount;
+                    m_fT   = 0f;
+                }
+                else if (iSign < 0 && m_fT <= 1e-5f)
+                {
+                    m_iSeg = (m_iSeg - 1 + iCount) % iCount;
+                    m_fT   = 1f;
                 }
                 else
                 {
-                    // 둘째 칸이 막혔다 — 대각선을 접고 이번 입력을 새로 해석한다(그대로 두면 날것의 대각선이 들어가 멈춘다)
-                    m_iDiagPhase = 0;
-                    eDesiredDir  = Resolve_Diagonal(eDesiredDir);
+                    break;      // 변 중간에서 거리를 다 썼다
                 }
+            }
+
+            return STEP_RESULT.SAFE;
+        }
+
+        // 지금 꼭짓점 위(VERTEX_SNAP 안)에 있으면 옆 변으로 갈아탄다(그 변이 누른 방향과 맞을 때만)
+        private bool Try_SwitchAtVertex(Vector2 vInput, int iCount)
+        {
+            Vector2[] arrRing = m_cGrid.RINGS[m_iRing];
+            float fLen = (arrRing[(m_iSeg + 1) % iCount] - arrRing[m_iSeg]).magnitude;
+
+            int   iOther;
+            float fOtherT;
+            if (m_fT * fLen <= VERTEX_SNAP)
+            {
+                iOther  = (m_iSeg - 1 + iCount) % iCount;
+                fOtherT = 1f;
+            }
+            else if ((1f - m_fT) * fLen <= VERTEX_SNAP)
+            {
+                iOther  = (m_iSeg + 1) % iCount;
+                fOtherT = 0f;
             }
             else
             {
-                m_iDiagPhase = 0;
-                eDesiredDir = Resolve_Diagonal(eDesiredDir);
+                return false;
             }
 
-            MOVE_DIR eDir = eDesiredDir;
+            Vector2 vOther = arrRing[(iOther + 1) % iCount] - arrRing[iOther];
+            if (vOther.sqrMagnitude < 1e-12f || Mathf.Abs(Vector2.Dot(vInput, vOther.normalized)) < SLIDE_MIN_DOT)
+                return false;
 
-            bool bFollowing = false;
-
-            if (Can_Move(eDir) == false)
-            {
-                // 260921_선을 긋는 중에도 **입력이 없거나 막히면 멈춘다.** 예전에는 미점령 지대에서 멈출 수 없어
-                // 손을 떼도 가던 방향으로 저절로 나아갔다 — 조작하지 않은 움직임으로 죽는 일이 잦았다.
-                // 선 위(안전 지대)에서는 가려던 방향이 막혀도 선이 꺾여 이어지면 그쪽으로 따라간다.
-                if (m_cGrid.IS_DRAWING == false)
-                {
-                    eDir = Find_FollowDir(eDesiredDir);
-                    bFollowing = eDir != MOVE_DIR.NONE;
-                }
-
-                if (Can_Move(eDir) == false)
-                {
-                    m_fProgress   = 0f;
-                    m_iDiagPhase  = 0;
-                    m_ePendingDir = MOVE_DIR.NONE;
-                    return false;
-                }
-            }
-
-            m_bFollowing = bFollowing;
-            m_eCurDir   = eDir;
-            m_vNextCell = Get_NextCell(eDir);
-            m_bMoving   = true;
+            m_iSeg = iOther;
+            m_fT   = fOtherT;
+            m_vPos = Vector2.Lerp(arrRing[iOther], arrRing[(iOther + 1) % iCount], fOtherT);
             return true;
         }
 
-        // 260916_다음 셀 계산을 한 곳으로 모은다 — '어디로든 신발'의 좌우 랩어라운드가
-        // Can_Move/Can_Follow/Try_StartMove 세 곳 중 한 곳만 반영되면 판정과 실제 이동이 어긋난다.
-        private Vector2Int Get_NextCell(MOVE_DIR eDir)
+        // 누른 방향으로 조금 앞이 '확실히' 빈 땅인가 — 변을 따라 누른 것은 경계 위라 나가지 않는다
+        private bool Can_Exit(Vector2 vInput)
         {
-            Vector2Int vNext = m_vCurCell + CTerritoryGrid.Dir_ToOffset(eDir);
-
-            if (m_bEdgeWrap == true && m_cGrid.WIDTH > 0)
-                vNext.x = ((vNext.x % m_cGrid.WIDTH) + m_cGrid.WIDTH) % m_cGrid.WIDTH;
-
-            return vNext;
+            Vector2 vProbe = m_vPos + vInput * EXIT_PROBE;
+            return m_cGrid.Is_PlayablePoint(vProbe) == true
+                && m_cGrid.Is_OwnedPoint(vProbe) == false
+                && m_cGrid.Distance_ToBoundary(vProbe) > EXIT_MARGIN;
         }
 
-        // 260902_선분 자동 추적
+        private bool Is_Interior(Vector2 vPoint)
+            => m_cGrid.Is_OwnedPoint(vPoint) == true && m_cGrid.Distance_ToBoundary(vPoint) > EXIT_MARGIN;
+
+        // 경계 위 자리를 다시 잡는다(점령지가 바뀌었거나 순간 이동했으면). 점령지가 없으면 false
+        private bool Ensure_OnRing()
+        {
+            if (m_iRing >= 0 && m_iRingVersion == m_cGrid.OWNED_VERSION && m_iRing < m_cGrid.RINGS.Count)
+                return true;
+
+            if (m_cGrid.Try_Find_BoundaryLocation(m_vPos, out Vector2 vNearest, out int iRing, out int iSeg, out float fT) == false)
+            {
+                m_iRing = -1;
+                return false;
+            }
+
+            m_vPos         = vNearest;
+            m_iRing        = iRing;
+            m_iSeg         = iSeg;
+            m_fT           = fT;
+            m_iRingVersion = m_cGrid.OWNED_VERSION;
+            return true;
+        }
+
+        private void Start_Drawing(MOVE_DIR eDir)
+        {
+            m_cGrid.Begin_Trail(m_vPos);
+            m_vHeading      = CTerritoryGrid.Dir_ToVector(eDir);
+            m_iRing         = -1;
+            m_fSpiralAngle  = 0f;
+            m_bSpiralClosing = false;
+            m_vSpiralHome   = m_vPos;
+            m_eSpiralInput  = eDir;     // 나올 때 누른 방향 — 그대로 누르고 있어도 나선이 다시 시작되지 않는다
+        }
+
+        // 260916_월보 — 점령지 안을 곧게 가로지른다. 안쪽에서 빈 땅으로 나가면 그 경계에서 선을 긋기 시작한다
+        private STEP_RESULT Move_Interior(MOVE_DIR eDir, float fDistance, bool bStraight, out int iCapturedCount)
+        {
+            iCapturedCount = 0;
+            Vector2 vInput = CTerritoryGrid.Dir_ToVector(eDir);
+            Vector2 vTo    = Clamp_ToPlayable(m_vPos, m_vPos + vInput * fDistance);
+
+            m_iRing = -1;
+            if ((vTo - m_vPos).sqrMagnitude < 1e-12f)
+                return STEP_RESULT.SAFE;
+
+            m_bMoving = true;
+            m_eCurDir = CTerritoryGrid.Vector_ToDir4(vInput);
+
+            if (m_cGrid.Is_OwnedPoint(vTo) == true)
+            {
+                m_vPos = vTo;
+                return STEP_RESULT.SAFE;
+            }
+
+            // 점령지 끝을 찾아 거기까지 가고, 남은 거리로 선을 긋는다
+            float fLo = 0f, fHi = 1f;
+            Vector2 vFrom = m_vPos;
+            for (int i = 0; i < CLAMP_ITERATION; ++i)
+            {
+                float fMid = (fLo + fHi) * 0.5f;
+                if (m_cGrid.Is_OwnedPoint(Vector2.Lerp(vFrom, vTo, fMid)) == true)
+                    fLo = fMid;
+                else
+                    fHi = fMid;
+            }
+
+            m_vPos = Vector2.Lerp(vFrom, vTo, fLo);
+            Start_Drawing(eDir);
+            return Move_Drawing(eDir, Vector2.Distance(vFrom, vTo) * (1f - fLo), bStraight, out iCapturedCount);
+        }
+        #endregion 내 땅 위
+
+        #region 선을 긋는 중
+        private STEP_RESULT Move_Drawing(MOVE_DIR eDir, float fDistance, bool bStraight, out int iCapturedCount)
+        {
+            iCapturedCount = 0;
+            Vector2 vInput = CTerritoryGrid.Dir_ToVector(eDir);
+
+            if (bStraight == false && m_eMoveStyle == MOVE_STYLE.SPIRAL)
+            {
+                Steer_Spiral(fDistance, eDir);
+            }
+            else
+            {
+                // 뒤로 꺾는 입력은 무시하고 그 자리에 선다(260921_막힌 방향도 멈춘다)
+                if (Vector2.Dot(vInput, m_vHeading) < REVERSE_DOT)
+                    return STEP_RESULT.DRAW;
+
+                m_vHeading = vInput;
+            }
+
+            Vector2 vTo = m_vPos + m_vHeading * fDistance;
+
+            // 260916_어디로든 신발 — 좌우 끝을 넘으면 거기서 선을 끊고 반대편에서 이어 긋는다
+            if (m_bEdgeWrap == true && (vTo.x < 0f || vTo.x >= m_cGrid.WIDTH) && Mathf.Abs(m_vHeading.x) > 1e-5f)
+            {
+                float fEdgeX  = vTo.x < 0f ? 0f : m_cGrid.WIDTH - 1e-3f;
+                float fToEdge = (fEdgeX - m_vPos.x) / m_vHeading.x;
+                Vector2 vEdge = m_vPos + m_vHeading * fToEdge;
+
+                STEP_RESULT eResult = Step(vEdge, out iCapturedCount);
+                if (eResult != STEP_RESULT.DRAW || Vector2.Distance(m_vPos, vEdge) > 1e-3f)
+                    return eResult;
+
+                m_vPos = new Vector2(vTo.x < 0f ? m_cGrid.WIDTH - 1e-3f : 1e-3f, m_vPos.y);
+                m_cGrid.Break_Trail(m_vPos);
+                vTo = m_vPos + m_vHeading * Mathf.Max(0f, fDistance - fToEdge);
+            }
+
+            // 맵 끝 · 잘린 칸 앞에서는 선다. 비스듬히 부딪혔으면 벽을 따라 한 축만 간다
+            Vector2 vClamped = Clamp_ToPlayable(m_vPos, vTo);
+            if ((vClamped - m_vPos).sqrMagnitude < (vTo - m_vPos).sqrMagnitude * 0.25f)
+            {
+                Vector2 vSlide = Try_WallSlide(vTo - m_vPos);
+                if (vSlide != Vector2.zero)
+                    vClamped = vSlide;
+            }
+
+            if ((vClamped - m_vPos).sqrMagnitude < 1e-12f)
+                return STEP_RESULT.DRAW;
+
+            return Step(vClamped, out iCapturedCount);
+        }
+
+        // 한 걸음을 규칙에 넘긴다 — 판정은 전부 CTerritoryGrid.Step_To에 있다(2-3)
+        private STEP_RESULT Step(Vector2 vTo, out int iCapturedCount)
+        {
+            Vector2 vMove = vTo - m_vPos;
+            STEP_RESULT eResult = m_cGrid.Step_To(m_vPos, vTo, out Vector2 vEnd, out iCapturedCount);
+
+            if ((vEnd - m_vPos).sqrMagnitude > 1e-12f)
+            {
+                m_bMoving = true;
+                m_eCurDir = CTerritoryGrid.Vector_ToDir4(vMove);
+            }
+
+            m_vPos = vEnd;
+
+            if (eResult != STEP_RESULT.DRAW)
+            {
+                m_iRing = -1;
+                Reset_Spiral();
+            }
+
+            return eResult;
+        }
+
+        // 맵 밖 · 잘린 칸으로 나가는 걸음은 그 앞까지만 간다
+        private Vector2 Clamp_ToPlayable(Vector2 vFrom, Vector2 vTo)
+        {
+            if (m_cGrid.Is_PlayablePoint(vTo) == true)
+                return vTo;
+
+            float fLo = 0f, fHi = 1f;
+            for (int i = 0; i < CLAMP_ITERATION; ++i)
+            {
+                float fMid = (fLo + fHi) * 0.5f;
+                if (m_cGrid.Is_PlayablePoint(Vector2.Lerp(vFrom, vTo, fMid)) == true)
+                    fLo = fMid;
+                else
+                    fHi = fMid;
+            }
+
+            return Vector2.Lerp(vFrom, vTo, fLo);
+        }
+
+        // 벽에 비스듬히 부딪혔을 때 가로 · 세로 중 갈 수 있는 한 축으로 미끄러진다
+        private Vector2 Try_WallSlide(Vector2 vMove)
+        {
+            Vector2 vX = m_vPos + new Vector2(vMove.x, 0f);
+            Vector2 vY = m_vPos + new Vector2(0f, vMove.y);
+
+            if (Mathf.Abs(vMove.x) > 1e-6f && m_cGrid.Is_PlayablePoint(vX) == true)
+                return vX;
+
+            if (Mathf.Abs(vMove.y) > 1e-6f && m_cGrid.Is_PlayablePoint(vY) == true)
+                return vY;
+
+            return Vector2.zero;
+        }
+
         /// <summary>
-        /// 가려던 방향이 막혔을 때, 그 방향과 수직으로 이어지는 '선'을 찾는다.
-        /// 미점령 지대로 나가는 방향은 후보에서 제외한다 — 안 그러면 벽에 부딪힐 때마다
-        /// 의도치 않게 땅따먹기가 시작돼 그대로 죽는다.
+        /// 나선형 — 시계 방향으로 돌며 반지름이 r = a + bθ로 커진다(아르키메데스 나선).
+        /// 곡률 1/r로 방향을 틀어 가며 적분하므로 어느 방향으로 나가든 그 자리에서 나선이 시작된다.
+        /// 한 바퀴를 돌면 가장 가까운 내 땅으로 방향을 틀어 도형을 닫는다 — 선이 스스로는 닫히지 않기 때문이다.
         /// </summary>
-        private MOVE_DIR Find_FollowDir(MOVE_DIR eDesiredDir)
+        private void Steer_Spiral(float fDistance, MOVE_DIR eDesiredDir)
         {
-            if (eDesiredDir == MOVE_DIR.NONE)
-                return MOVE_DIR.NONE;
-
-            CTerritoryGrid.Dir_Perpendicular(eDesiredDir, out MOVE_DIR eFirst, out MOVE_DIR eSecond);
-
-            bool bFirst  = Can_Follow(eFirst);
-            bool bSecond = Can_Follow(eSecond);
-
-            // 길이 하나뿐이면 고민 없이 그 길로
-            if (bFirst != bSecond)
-                return bFirst == true ? eFirst : eSecond;
-
-            if (bFirst == false)
-                return MOVE_DIR.NONE;
-
-            // 갈림길 — 가던 방향을 이어갈 수 있으면 잇고, 아니면 멈춰서 플레이어가 고르게 한다.
-            if (m_eCurDir == eFirst || m_eCurDir == eSecond)
-                return m_eCurDir;
-
-            return MOVE_DIR.NONE;
-        }
-
-        private bool Can_Follow(MOVE_DIR eDir)
-        {
-            // 자동 추적으로 들어온 길을 자동 추적으로 되돌아가면 막다른 길에서 무한 왕복한다.
-            // (플레이어가 직접 방향을 눌러 되돌아가는 것은 막지 않는다)
-            if (m_bFollowing == true && eDir == CTerritoryGrid.Dir_Reverse(m_eCurDir))
-                return false;
-
-            Vector2Int vNext = Get_NextCell(eDir);
-            if (m_cGrid.Get_Cell(vNext) != CELL_STATE.OWNED)
-                return false;
-
-            return Can_Move(eDir);
-        }
-
-        private bool Can_Move(MOVE_DIR eDir)
-        {
-            if (eDir == MOVE_DIR.NONE)
-                return false;
-
-            // 260920_대각선으로 한 칸에 가는 일은 없다 — 가로 · 세로 두 칸으로 쪼개 밟는다(2-22).
-            // 4방향 캐릭터에게 대각선 입력이 들어와도 여기서 막힌다.
-            if (CTerritoryGrid.Is_Diagonal(eDir) == true)
-                return false;
-
-            Vector2Int vNext = Get_NextCell(eDir);
-            if (m_cGrid.Is_InBounds(vNext.x, vNext.y) == false)
-                return false;
-
-            // 260904_맵 모양 마스크로 잘라낸 칸은 맵 밖과 똑같이 취급한다.
-            if (m_cGrid.Is_Blocked(vNext) == true)
-                return false;
-
-            // 선을 그리는 중 뒤로 꺾어 자기 선을 밟는 즉사를 막는다(입력 실수 방지).
-            if (m_cGrid.IS_DRAWING == true
-                && m_cGrid.Try_Get_PrevTrailCell(out Vector2Int vPrevTrail) == true
-                && vNext == vPrevTrail)
+            // 다른 방향을 누르면 그쪽으로 곧게 틀고 나선을 처음부터 다시 그린다 — 입력은 방향만 바꾼다.
+            // 같은 방향을 다시 누르는 것(손을 뗐다 다시 누름)은 방향을 바꾸지 않는다 — 멈췄던 자리에서 이어서 돈다
+            if (eDesiredDir != m_eSpiralInput)
             {
-                return false;
+                m_eSpiralInput = eDesiredDir;
+                Vector2 vWant = CTerritoryGrid.Dir_ToVector(eDesiredDir);
+                if (Vector2.Dot(vWant, m_vHeading) > REVERSE_DOT)
+                {
+                    m_vHeading       = vWant;
+                    m_fSpiralAngle   = 0f;
+                    m_bSpiralClosing = false;
+                    return;
+                }
             }
 
-            // 260902_점령지 '내부'는 통과할 수 없다 — 영토의 선(경계)만 따라 움직인다.
-            // 단, 내부에 갇힌 경우에는 선으로 빠져나가야 하므로 허용한다. 260920_점령 직후에는
-            // CPlayer가 경계선으로 되돌려 놓으므로(Snap_To) 이 예외는 사실상 안전망으로만 남는다 —
-            // 예전에는 이 예외 덕에 내부에 선 동안 '월보를 공짜로 얻은 것처럼' 마음대로 돌아다닐 수 있었다.
-            // (선을 그리는 중에는 현재 칸이 TRAIL이라 Is_Boundary가 false → 도형을 닫는 이동은 항상 통과)
-            // 260916_런 스킬 '월보'를 들고 있으면 이 제한 자체를 끈다.
-            if (m_bAllowOwnedInterior == false
-                && m_cGrid.Get_Cell(vNext) == CELL_STATE.OWNED
-                && m_cGrid.Is_Boundary(vNext) == false
-                && m_cGrid.Is_Boundary(m_vCurCell) == true)
+            if (m_bSpiralClosing == false)
             {
-                return false;
+                float fRadius = Get_SpiralRadius(m_fSpiralAngle);
+                float fTurn   = fDistance / Mathf.Max(0.5f, fRadius);
+                m_fSpiralAngle += fTurn;
+                m_vHeading = Rotate(m_vHeading, -fTurn);
+
+                if (m_fSpiralAngle >= SPIRAL_TURN_DONE)
+                {
+                    m_bSpiralClosing = true;
+                    if (m_cGrid.Try_Find_NearestBoundary(m_vPos, out Vector2 vHome) == true)
+                        m_vSpiralHome = vHome;
+                }
+                return;
             }
 
-            return true;
+            // 닫으러 간다 — 처음 반지름과 같은 곡률까지만 틀어 급하게 꺾지 않는다
+            Vector2 vToHome = m_vSpiralHome - m_vPos;
+            if (vToHome.sqrMagnitude < 1e-8f)
+                return;
+
+            float fMaxTurn = fDistance / SPIRAL_START_RADIUS;
+            float fAngle   = Vector2.SignedAngle(m_vHeading, vToHome) * Mathf.Deg2Rad;
+            m_vHeading = Rotate(m_vHeading, Mathf.Clamp(fAngle, -fMaxTurn, fMaxTurn));
         }
+
+        /// <summary> 나선이 θ만큼 돌았을 때의 반지름(칸). 한 바퀴에 SPIRAL_GROW_PER_TURN만큼 벌어진다. </summary>
+        public static float Get_SpiralRadius(float fAngle)
+            => SPIRAL_START_RADIUS + SPIRAL_GROW_PER_TURN * Mathf.Max(0f, fAngle) / SPIRAL_TURN_DONE;
+
+        private static Vector2 Rotate(Vector2 v, float fRad)
+        {
+            float c = Mathf.Cos(fRad);
+            float s = Mathf.Sin(fRad);
+            return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c).normalized;
+        }
+
+        private void Reset_Spiral()
+        {
+            m_fSpiralAngle   = 0f;
+            m_bSpiralClosing = false;
+            m_eSpiralInput   = MOVE_DIR.NONE;
+        }
+        #endregion 선을 긋는 중
     }
 }

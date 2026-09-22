@@ -1,82 +1,91 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+
+using Clipper2Lib;
 
 using UnityEngine;
 
 namespace Client
 {
     // 260901_땅따먹기 프로토타입: 영토 그리드 (상태 + 트레일 + 플러드필 점령)
+    // 260923_땅을 칸이 아니라 **다각형**으로 든다 (2-3). 선은 선분, 점령은 빈 땅을 선으로 잘라 가장 큰 조각만 남긴다.
     /// <summary>
-    /// 맵을 셀 격자로 관리한다. MonoBehaviour가 아닌 순수 클래스이므로 테스트/재사용이 쉽다.
-    /// 좌표계: 셀 (0,0)이 좌하단. 인덱스 = y * W + x.
+    /// 땅의 진짜 모양은 다각형(m_pOwned)이다. 칸으로 들면 사선 · 원이 계단이 되어 그 모양으로 점령할 수 없었다.
+    /// 자르기 · 합치기는 Clipper2가 하고, 가벼운 판정(안에 있나 · 가장 가까운 경계 · 선분 교차)은 CPolygon_Utility가 한다.
+    ///
+    /// 칸 격자(m_arrCell)는 **다각형을 다시 찍은 조회용 사본**으로 남는다 — 스폰 자리 찾기처럼 칸 하나 정밀도면 되는 곳이
+    /// 그대로 쓰게 하려는 것이다. 규칙(점령 · 선 · 점령률)은 전부 다각형으로 판정한다. 사본은 점령지가 바뀔 때만 다시 찍는다.
+    ///
+    /// 좌표는 두 가지다.
+    ///   · 칸 (x, y)        — Vector2Int. 칸 (0,0)이 좌하단
+    ///   · 그리드 공간 (gx, gy) — Vector2. 칸 하나가 1이고 칸 (x, y)는 [x, x+1) × [y, y+1)을 차지한다. 다각형은 이 공간에 있다
+    /// MonoBehaviour가 아닌 순수 클래스라 화면 없이 테스트한다.
     /// </summary>
     public class CTerritoryGrid
     {
-        private const int DIR_COUNT = 4;        // 플러드필이 쓰는 4방향 연결. 대각선을 여기 넣으면 점령 판정이 새 나간다
         private const int DIR_COUNT_ALL = 8;    // 260920_이동 입력용 — 뒤 넷은 대각선(2-22)
-        // MOVE_DIR(UP, DOWN, LEFT, RIGHT) 순서와 인덱스를 맞춘다.
+        // MOVE_DIR(UP, DOWN, LEFT, RIGHT, 대각 넷) 순서와 인덱스를 맞춘다.
         private static readonly int[] ARR_DIR_X = { 0, 0, -1, 1, -1,  1, -1, 1 };
         private static readonly int[] ARR_DIR_Y = { 1, -1, 0, 0,  1,  1, -1, -1 };
 
-        // 260902_경계 판정은 8방향. 4방향만 보면 테두리의 모서리 칸이 경계에서 빠져 길이 끊긴다.
-        private const int DIR8_COUNT = 8;
-        private static readonly int[] ARR_DIR8_X = { 0, 0, -1, 1, -1, 1, -1, 1 };
-        private static readonly int[] ARR_DIR8_Y = { 1, -1, 0, 0, 1, 1, -1, -1 };
+        // 260923_다각형 계산 정밀도와 여유값. 전부 그리드 공간(칸 하나 = 1) 기준이다
+        private const int    CLIP_PRECISION    = 3;         // 0.001칸까지 본다
+        private const double TRAIL_STRIP_HALF  = 0.01;      // 점령할 때 선을 이만큼 두께로 부풀려 빈 땅을 가른다
+        private const float  TRAIL_END_BITE    = 0.05f;     // 선 양 끝을 점령지 안쪽으로 이만큼 늘린다 — 끝이 딱 맞닿으면 틈으로 샌다
+        private const float  ENTRY_PROBE       = 0.005f;    // 경계를 넘은 직후 이만큼 들어간 점이 점령지 안이어야 '들어갔다'로 본다
+        private const float  MERGE_COS         = 0.9999f;   // 같은 방향으로 이어지는 선은 점을 늘리지 않고 끝점만 옮긴다
+        private const int    ERODE_CIRCLE_STEP = 20;
 
         private int         m_iWidth;
         private int         m_iHeight;
         private float       m_fCellSize;
-        private Vector2     m_vOrigin;          // 셀 (0,0)의 좌하단 월드 좌표
+        private Vector2     m_vOrigin;          // 칸 (0,0)의 좌하단 월드 좌표
 
+        // 조회용 칸 사본 — OWNED · EMPTY · BLOCK. 다각형이 바뀔 때마다 다시 찍는다(Rasterize)
         private CELL_STATE[] m_arrCell;
-
-        // 플러드필 스크래치 버퍼 — 매 점령마다 재할당하지 않고 재사용해 GC를 막는다.
-        private int[]           m_arrRegion;        // -1: EMPTY가 아님, 0 이상: 영역 ID
-        private Queue<int>      m_qFill         = new Queue<int>();
-        private List<int>       m_lstRegionSize = new List<int>();
-        private List<bool>      m_lstRegionSafe = new List<bool>();   // 몬스터가 들어있는 영역 = 점령 불가
-
-        private List<int>       m_lstTrail      = new List<int>();    // 현재 그리는 중인 트레일 셀 인덱스(순서 보존)
-
-        private int             m_iOwnedCount;
-        private int             m_iPlayableCount;   // BLOCK을 뺀 칸 수 = 점령률의 분모
-
         // 260904_맵 모양 마스크. Reset이 BLOCK을 되살려야 하므로 셀 상태와 따로 들고 있는다.
-        private bool[]          m_arrBlocked;
+        private bool[]       m_arrBlocked;
 
-        // 260904_바뀐 칸만 다시 그리기 위한 목록.
-        // 그리는 중에는 매 프레임 한두 칸만 바뀌는데 전체를 다시 찍으면 모바일에서 낭비가 크다.
-        // 점령처럼 한 번에 많이 바뀔 때는 목록 대신 IS_FULL_DIRTY로 전체 갱신을 요청한다.
-        private readonly List<int> m_lstDirtyCell = new List<int>();
+        // 260923_진짜 모양
+        private PathsD              m_pPlayable = new PathsD();     // 맵 전체에서 잘라낸 칸(BLOCK)을 뺀 것
+        private PathsD              m_pOwned    = new PathsD();
+        private double              m_dPlayableArea;
+        private double              m_dOwnedArea;
+        private readonly List<Vector2[]> m_lstRing  = new List<Vector2[]>();   // 점령지 경계 고리 — 걷기 · 판정용
+        private readonly List<Rect>      m_lstBound = new List<Rect>();
+
+        // 260923_선 — 조각 여러 개일 수 있다(어디로든 신발로 좌우 끝을 넘으면 거기서 끊기고 반대편에서 이어진다)
+        private readonly List<List<Vector2>> m_lstTrailPiece = new List<List<Vector2>>();
+        private float m_fTrailLength;
+
+        private readonly List<float> m_lstRowCross = new List<float>();
 
         public int      WIDTH           => m_iWidth;
         public int      HEIGHT          => m_iHeight;
         public float    CELL_SIZE       => m_fCellSize;
         public Vector2  ORIGIN          => m_vOrigin;
-        public bool     IS_DRAWING      => m_lstTrail.Count > 0;
-        public int      TRAIL_COUNT     => m_lstTrail.Count;
-        public float    OWNED_RATIO     => m_iPlayableCount > 0 ? (float)m_iOwnedCount / m_iPlayableCount : 0f;
-        public int      PLAYABLE_COUNT  => m_iPlayableCount;
-        /// <summary> 렌더러가 다시 그려야 하는지 여부. 렌더 후 Clear_Dirty()로 내린다. </summary>
+        public bool     IS_DRAWING      => m_lstTrailPiece.Count > 0;
+        /// <summary> 260923_지금 긋고 있는 선의 길이(칸). 예전의 '선 칸 수'와 같은 뜻이다 </summary>
+        public float    TRAIL_LENGTH    => m_fTrailLength;
+        public float    OWNED_RATIO     => m_dPlayableArea > 0.0 ? (float)(m_dOwnedArea / m_dPlayableArea) : 0f;
+        /// <summary> 점령률의 분모 — 잘라낸 칸을 뺀 넓이(칸²). 한 번에 먹은 넓이와 같은 단위다 </summary>
+        public int      PLAYABLE_COUNT  => Mathf.RoundToInt((float)m_dPlayableArea);
+        /// <summary> 점령지가 바뀔 때마다 오른다 — 경계를 걷는 쪽이 자기 자리를 다시 잡을 때를 안다 </summary>
+        public int      OWNED_VERSION   { get; private set; }
+        /// <summary> 렌더러가 가림막을 다시 뚫어야 하는지. 렌더 후 Clear_Dirty()로 내린다. </summary>
         public bool     IS_DIRTY        { get; private set; }
-        /// <summary> true면 DIRTY_CELLS를 무시하고 전부 다시 그려야 한다. </summary>
-        public bool     IS_FULL_DIRTY   { get; private set; }
-        /// <summary> 마지막 렌더 이후 바뀐 칸 목록 (IS_FULL_DIRTY일 때는 비어 있다). </summary>
-        public IReadOnlyList<int> DIRTY_CELLS => m_lstDirtyCell;
+
+        public IReadOnlyList<Vector2[]>       RINGS       => m_lstRing;
+        public IReadOnlyList<List<Vector2>>   TRAIL_PIECES => m_lstTrailPiece;
 
         public Vector2  WORLD_SIZE      => new Vector2(m_iWidth * m_fCellSize, m_iHeight * m_fCellSize);
         public Vector2  WORLD_CENTER    => m_vOrigin + WORLD_SIZE * 0.5f;
 
         #region Initialize
-        /// <param name="vOrigin"> 셀 (0,0)의 좌하단 월드 좌표 </param>
-        /// <param name="iBorderThick"> 시작 시 점령된 외곽 테두리 두께(셀). 0이면 테두리를 주지 않는다. </param>
-        /// <param name="iStartRadius">
-        /// 260920_맵 한가운데에 깔아 줄 '시작 섬'의 반경(셀). 중심에서 상하좌우로 이만큼씩 점령된 채 시작한다.
-        /// 0이면 만들지 않는다.
-        /// </param>
-        /// <param name="arrPlayable">
-        /// 260904_맵 모양 마스크. 길이 iWidth*iHeight, false인 칸은 BLOCK이 된다.
-        /// null이면 직사각형 전체를 쓴다.
-        /// </param>
+        /// <param name="vOrigin"> 칸 (0,0)의 좌하단 월드 좌표 </param>
+        /// <param name="iBorderThick"> 시작 시 점령된 외곽 테두리 두께(칸). 0이면 테두리를 주지 않는다. </param>
+        /// <param name="arrPlayable"> 260904_맵 모양 마스크. 길이 iWidth*iHeight, false인 칸은 BLOCK이 된다. null이면 직사각형 전체 </param>
+        /// <param name="iStartRadius"> 260920_'시작 섬'의 반경(칸). 중심에서 상하좌우로 이만큼씩 점령된 채 시작한다. 0이면 없다 </param>
         public bool Initialize(int iWidth, int iHeight, float fCellSize, Vector2 vOrigin, int iBorderThick,
                                bool[] arrPlayable = null, int iStartRadius = 0)
         {
@@ -90,80 +99,91 @@ namespace Client
 
             if (arrPlayable != null && arrPlayable.Length != iCellCount)
             {
-                Debug.LogError($"[CTerritoryGrid] 모양 마스크 길이가 맞지 않는다 : "
-                             + $"{arrPlayable.Length}, 기대 {iCellCount}");
+                Debug.LogError($"[CTerritoryGrid] 모양 마스크 길이가 맞지 않는다 : {arrPlayable.Length}, 기대 {iCellCount}");
                 return false;
             }
 
-            m_iWidth        = iWidth;
-            m_iHeight       = iHeight;
-            m_fCellSize     = fCellSize;
-            m_vOrigin       = vOrigin;
+            m_iWidth    = iWidth;
+            m_iHeight   = iHeight;
+            m_fCellSize = fCellSize;
+            m_vOrigin   = vOrigin;
 
             if (m_arrCell == null || m_arrCell.Length != iCellCount)
             {
                 m_arrCell    = new CELL_STATE[iCellCount];
-                m_arrRegion  = new int[iCellCount];
                 m_arrBlocked = new bool[iCellCount];
             }
 
             for (int i = 0; i < iCellCount; ++i)
                 m_arrBlocked[i] = arrPlayable != null && arrPlayable[i] == false;
 
+            Build_Playable();
+
             m_vStartCenter = new Vector2Int(m_iWidth / 2, m_iHeight / 2);
             Reset(iBorderThick, iStartRadius);
             return true;
         }
 
-        /// <summary>
-        /// 전 셀을 EMPTY로 되돌리고 시작 안전 지대(외곽 테두리 · 가운데 시작 섬)만 OWNED로 채운다.
-        /// 260904_모양 마스크로 잘라낸 BLOCK 칸은 그대로 두고 점령률 분모에서도 뺀다.
-        /// 웨이브가 넘어갈 때마다 이 함수로 판을 다시 깐다.
-        /// </summary>
-        public void Reset(int iBorderThick, int iStartRadius = 0)
+        // 맵 직사각형에서 잘라낸 칸을 뺀 모양. 잘라낸 칸이 없으면 직사각형 그대로다.
+        private void Build_Playable()
         {
-            m_lstTrail.Clear();
-            IS_TRAIL_BURNING = false;    // 260924_판을 다시 깔면 타던 도화선도 같이 꺼진다
-            m_iOwnedCount    = 0;
-            m_iPlayableCount = 0;
+            PathsD pRect = new PathsD { Make_Rect(0f, 0f, m_iWidth, m_iHeight) };
 
-            // 260920_0을 허용한다 — 외벽이 점령지가 아니어야 '벽을 찍어서 점령'이 막힌다(2-3).
-            iBorderThick = Mathf.Clamp(iBorderThick, 0, Mathf.Min(m_iWidth, m_iHeight) / 2);
-
+            PathsD pBlocked = new PathsD();
             for (int y = 0; y < m_iHeight; ++y)
             {
                 for (int x = 0; x < m_iWidth; ++x)
                 {
-                    int iIndex = To_Index(x, y);
-
-                    if (m_arrBlocked[iIndex] == true)
-                    {
-                        m_arrCell[iIndex] = CELL_STATE.BLOCK;
-                        continue;
-                    }
-
-                    ++m_iPlayableCount;
-
-                    bool bBorder = x < iBorderThick || y < iBorderThick
-                                || x >= m_iWidth - iBorderThick || y >= m_iHeight - iBorderThick;
-
-                    if (bBorder == true)
-                    {
-                        m_arrCell[iIndex] = CELL_STATE.OWNED;
-                        ++m_iOwnedCount;
-                        continue;
-                    }
-
-                    m_arrCell[iIndex] = CELL_STATE.EMPTY;
+                    if (m_arrBlocked[To_Index(x, y)] == true)
+                        pBlocked.Add(Make_Rect(x, y, x + 1, y + 1));
                 }
             }
 
-            Fill_StartArea(iStartRadius);
-            Set_FullDirty();
+            m_pPlayable = pBlocked.Count > 0
+                        ? Clipper.Difference(pRect, Clipper.Union(pBlocked, FillRule.NonZero), FillRule.NonZero, CLIP_PRECISION)
+                        : pRect;
+            m_dPlayableArea = Math.Abs(Clipper.Area(m_pPlayable));
         }
 
         /// <summary>
-        /// 260920_맵 한가운데를 정사각형으로 점령해 둔다 — 플레이어가 여기서 시작한다(2-3).
+        /// 점령지를 시작 안전 지대(외곽 테두리 · 시작 섬)만으로 되돌리고 선을 지운다.
+        /// 웨이브가 넘어갈 때마다 이 함수로 판을 다시 깐다.
+        /// </summary>
+        public void Reset(int iBorderThick, int iStartRadius = 0)
+        {
+            m_lstTrailPiece.Clear();
+            m_fTrailLength   = 0f;
+            IS_TRAIL_BURNING = false;    // 260924_판을 다시 깔면 타던 도화선도 같이 꺼진다
+            Clear_Burn();
+
+            // 260920_0을 허용한다 — 외벽이 점령지가 아니어야 '벽을 찍어서 점령'이 막힌다(2-3).
+            iBorderThick = Mathf.Clamp(iBorderThick, 0, Mathf.Min(m_iWidth, m_iHeight) / 2);
+
+            PathsD pStart = new PathsD();
+            if (iBorderThick > 0)
+            {
+                PathsD pRing = Clipper.Difference(new PathsD { Make_Rect(0f, 0f, m_iWidth, m_iHeight) },
+                                                  new PathsD { Make_Rect(iBorderThick, iBorderThick,
+                                                                         m_iWidth - iBorderThick, m_iHeight - iBorderThick) },
+                                                  FillRule.NonZero, CLIP_PRECISION);
+                pStart.AddRange(pRing);
+            }
+
+            if (iStartRadius > 0)
+            {
+                Vector2Int vCenter = START_CENTER;
+                pStart.Add(Make_Rect(vCenter.x - iStartRadius, vCenter.y - iStartRadius,
+                                     vCenter.x + iStartRadius + 1, vCenter.y + iStartRadius + 1));
+            }
+
+            PathsD pOwned = pStart.Count > 0
+                          ? Clipper.Intersect(Clipper.Union(pStart, FillRule.NonZero), m_pPlayable, FillRule.NonZero, CLIP_PRECISION)
+                          : new PathsD();
+            Set_Owned(pOwned);
+        }
+
+        /// <summary>
+        /// 260920_시작 섬의 가운데 칸 — 플레이어가 여기서 시작한다(2-3).
         /// 외벽에서 시작하면 벽을 따라 한 번에 크게 그어 판이 순식간에 끝났다.
         /// 가운데에서 시작하면 어느 방향으로 나가든 **돌아올 거리가 생긴다.**
         /// </summary>
@@ -198,43 +218,28 @@ namespace Client
 
             return true;
         }
-
-        private void Fill_StartArea(int iStartRadius)
-        {
-            if (iStartRadius <= 0)
-                return;
-
-            Vector2Int vCenter = START_CENTER;
-
-            for (int y = vCenter.y - iStartRadius; y <= vCenter.y + iStartRadius; ++y)
-            {
-                for (int x = vCenter.x - iStartRadius; x <= vCenter.x + iStartRadius; ++x)
-                {
-                    if (Is_InBounds(x, y) == false)
-                        continue;
-
-                    int iIndex = To_Index(x, y);
-                    if (m_arrCell[iIndex] != CELL_STATE.EMPTY)
-                        continue;   // BLOCK(맵 밖)은 건드리지 않는다
-
-                    m_arrCell[iIndex] = CELL_STATE.OWNED;
-                    ++m_iOwnedCount;
-                }
-            }
-        }
         #endregion Initialize
 
         #region 좌표 변환
         public int To_Index(int x, int y) => y * m_iWidth + x;
         public bool Is_InBounds(int x, int y) => x >= 0 && x < m_iWidth && y >= 0 && y < m_iHeight;
 
+        /// <summary> 칸의 '중심' 월드 좌표 </summary>
         public Vector3 Cell_ToWorld(int x, int y)
-        {
-            // 셀의 '중심' 월드 좌표
-            return new Vector3(m_vOrigin.x + (x + 0.5f) * m_fCellSize,
-                               m_vOrigin.y + (y + 0.5f) * m_fCellSize, 0f);
-        }
+            => new Vector3(m_vOrigin.x + (x + 0.5f) * m_fCellSize, m_vOrigin.y + (y + 0.5f) * m_fCellSize, 0f);
         public Vector3 Cell_ToWorld(Vector2Int vCell) => Cell_ToWorld(vCell.x, vCell.y);
+
+        // 260923_그리드 공간 ↔ 월드
+        public Vector3 Grid_ToWorld(Vector2 vGrid)
+            => new Vector3(m_vOrigin.x + vGrid.x * m_fCellSize, m_vOrigin.y + vGrid.y * m_fCellSize, 0f);
+        public Vector2 World_ToGrid(Vector2 vWorld)
+            => new Vector2((vWorld.x - m_vOrigin.x) / m_fCellSize, (vWorld.y - m_vOrigin.y) / m_fCellSize);
+        /// <summary> 칸 가운데의 그리드 좌표 </summary>
+        public static Vector2 Cell_ToGrid(Vector2Int vCell) => new Vector2(vCell.x + 0.5f, vCell.y + 0.5f);
+        /// <summary> 그 점이 들어 있는 칸(맵 밖이면 가장자리 칸으로 끌어당긴다) </summary>
+        public Vector2Int Grid_ToCell(Vector2 vGrid)
+            => new Vector2Int(Mathf.Clamp(Mathf.FloorToInt(vGrid.x), 0, m_iWidth - 1),
+                              Mathf.Clamp(Mathf.FloorToInt(vGrid.y), 0, m_iHeight - 1));
 
         /// <summary>
         /// 260922_월드 좌표가 맵 안인가. World_ToCell은 맵 밖을 가장자리 칸으로 끌어당기므로 그것만 보면
@@ -242,17 +247,11 @@ namespace Client
         /// </summary>
         public bool Is_WorldInside(Vector2 vWorld)
         {
-            float fX = (vWorld.x - m_vOrigin.x) / m_fCellSize;
-            float fY = (vWorld.y - m_vOrigin.y) / m_fCellSize;
-            return fX >= 0f && fY >= 0f && fX < m_iWidth && fY < m_iHeight;
+            Vector2 vGrid = World_ToGrid(vWorld);
+            return vGrid.x >= 0f && vGrid.y >= 0f && vGrid.x < m_iWidth && vGrid.y < m_iHeight;
         }
 
-        public Vector2Int World_ToCell(Vector3 vWorld)
-        {
-            int x = Mathf.FloorToInt((vWorld.x - m_vOrigin.x) / m_fCellSize);
-            int y = Mathf.FloorToInt((vWorld.y - m_vOrigin.y) / m_fCellSize);
-            return new Vector2Int(Mathf.Clamp(x, 0, m_iWidth - 1), Mathf.Clamp(y, 0, m_iHeight - 1));
-        }
+        public Vector2Int World_ToCell(Vector3 vWorld) => Grid_ToCell(World_ToGrid(vWorld));
 
         public static Vector2Int Dir_ToOffset(MOVE_DIR eDir)
         {
@@ -262,18 +261,20 @@ namespace Client
 
             return new Vector2Int(ARR_DIR_X[i], ARR_DIR_Y[i]);
         }
-        // 260902_선분 자동 추적: 진행 방향이 막혔을 때 살펴볼 두 방향
-        public static void Dir_Perpendicular(MOVE_DIR eDir, out MOVE_DIR eFirst, out MOVE_DIR eSecond)
-        {
-            if (eDir == MOVE_DIR.LEFT || eDir == MOVE_DIR.RIGHT)
-            {
-                eFirst  = MOVE_DIR.UP;
-                eSecond = MOVE_DIR.DOWN;
-                return;
-            }
 
-            eFirst  = MOVE_DIR.LEFT;
-            eSecond = MOVE_DIR.RIGHT;
+        /// <summary> 260923_방향의 단위 벡터. NONE이면 0 </summary>
+        public static Vector2 Dir_ToVector(MOVE_DIR eDir) => ((Vector2)Dir_ToOffset(eDir)).normalized;
+
+        /// <summary> 260923_움직인 방향을 가장 가까운 상하좌우 하나로. 거의 멈췄으면 NONE </summary>
+        public static MOVE_DIR Vector_ToDir4(Vector2 vDir)
+        {
+            if (vDir.sqrMagnitude < 1e-8f)
+                return MOVE_DIR.NONE;
+
+            if (Mathf.Abs(vDir.x) >= Mathf.Abs(vDir.y))
+                return vDir.x > 0f ? MOVE_DIR.RIGHT : MOVE_DIR.LEFT;
+
+            return vDir.y > 0f ? MOVE_DIR.UP : MOVE_DIR.DOWN;
         }
 
         public static MOVE_DIR Dir_Reverse(MOVE_DIR eDir)
@@ -291,11 +292,7 @@ namespace Client
         // 260920_캐릭터별 이동 방식(2-22)
         public static bool Is_Diagonal(MOVE_DIR eDir) => eDir >= MOVE_DIR.UP_LEFT;
 
-        /// <summary>
-        /// 대각선을 가로 · 세로 두 방향으로 쪼갠다. 대각선 한 번은 이 두 칸을 잇따라 밟는 것이다 —
-        /// 진짜로 비스듬히 한 칸 가면 트레일이 대각선으로만 이어져 **4방향 플러드필이 그 틈으로 새어 나간다**
-        /// (점령이 엉뚱하게 터진다). 규칙(Step_To)을 건드리지 않으려면 이 방법뿐이다.
-        /// </summary>
+        /// <summary> 대각선을 가로 · 세로 두 방향으로 쪼갠다(점멸이 대각선 입력에서 한 축을 고를 때 쓴다). </summary>
         public static void Dir_Split(MOVE_DIR eDir, out MOVE_DIR eHorizontal, out MOVE_DIR eVertical)
         {
             eHorizontal = MOVE_DIR.NONE;
@@ -310,7 +307,7 @@ namespace Client
         }
         #endregion 좌표 변환
 
-        #region 셀 조회
+        #region 칸 조회 (다각형을 다시 찍은 사본)
         public CELL_STATE Get_Cell(int x, int y)
         {
             if (Is_InBounds(x, y) == false)
@@ -319,146 +316,14 @@ namespace Client
             return m_arrCell[To_Index(x, y)];
         }
         public CELL_STATE Get_Cell(Vector2Int vCell) => Get_Cell(vCell.x, vCell.y);
-        /// <summary> 셀 인덱스로 바로 읽는다 — 렌더러가 나눗셈 없이 훑기 위한 것. </summary>
+        /// <summary> 셀 인덱스로 바로 읽는다 </summary>
         public CELL_STATE Get_Cell(int iIndex) => m_arrCell[iIndex];
 
         // 260904_맵 모양 마스크로 잘라낸 칸 — 플레이어도 몬스터도 못 들어간다.
-        public bool Is_Blocked(int x, int y) => Get_Cell(x, y) == CELL_STATE.BLOCK;
+        public bool Is_Blocked(int x, int y) => Is_InBounds(x, y) == false || m_arrBlocked[To_Index(x, y)] == true;
         public bool Is_Blocked(Vector2Int vCell) => Is_Blocked(vCell.x, vCell.y);
 
-        // 260902_영토의 '선'만 따라 이동
-        /// <summary>
-        /// 점령지의 경계('선')인가 — 점령지이면서 이웃 8칸 중 하나라도 점령지가 아닌 칸.
-        ///
-        /// 260920_**맵 밖도 '점령지가 아닌 것'으로 센다.** 예전에는 Get_Cell이 맵 밖을 OWNED(벽)로
-        /// 돌려주는 것을 그대로 써서, 내 땅이 맵 가장자리에 닿으면 그 줄이 통째로 '내부'가 되어
-        /// **가장자리를 따라 걸을 수 없었다**(점령 직후 가장자리에 서면 움직일 곳이 없어 갇혔다).
-        /// 옛 규칙은 외곽 테두리가 통째로 점령지이던 시절의 것인데, 그 테두리는 260920에 없앴다(2-3).
-        /// </summary>
-        public bool Is_Boundary(int x, int y)
-        {
-            if (Get_Cell(x, y) != CELL_STATE.OWNED)
-                return false;
-
-            for (int d = 0; d < DIR8_COUNT; ++d)
-            {
-                int nx = x + ARR_DIR8_X[d];
-                int ny = y + ARR_DIR8_Y[d];
-
-                if (Is_InBounds(nx, ny) == false)
-                    return true;    // 맵 끝 = 더 먹을 것이 없는 쪽. 여기도 내 땅의 '선'이다
-
-                if (m_arrCell[To_Index(nx, ny)] != CELL_STATE.OWNED)
-                    return true;
-            }
-
-            return false;
-        }
-        public bool Is_Boundary(Vector2Int vCell) => Is_Boundary(vCell.x, vCell.y);
-
-        /// <summary>
-        /// 260920_월드 좌표에서 반경 안에 그 상태인 칸이 있는가. **몸 크기로 판정해야 하는 것**이 쓴다 —
-        /// 몬스터가 선에 닿았는지를 중심 한 점으로만 보면, 화면에서는 몸이 선을 덮고 있는데도
-        /// 중심이 그 칸에 들어가기 전까지 아무 일도 일어나지 않아 '왜 안 죽지'가 된다.
-        /// </summary>
-        /// <param name="fRadiusCells"> 반경(셀) </param>
-        public bool Is_StateWithin(Vector2 vWorldPos, float fRadiusCells, CELL_STATE eState)
-            => Try_Find_StateWithin(vWorldPos, fRadiusCells, eState, out Vector2Int _);
-
-        // 260924_Is_StateWithin과 같은 판정이지만 닿은 칸 하나를 함께 돌려준다 — 도화선(2-3)이 어느 트레일
-        // 칸에서 불붙었는지 알아야 하는 곳(CStage_Manager)이 쓴다. 판정 자체는 그대로 재사용한다(1-1).
-        /// <param name="fRadiusCells"> 반경(셀) </param>
-        public bool Try_Find_StateWithin(Vector2 vWorldPos, float fRadiusCells, CELL_STATE eState, out Vector2Int vFound)
-        {
-            vFound = Vector2Int.zero;
-            Vector2Int vCenter = World_ToCell(vWorldPos);
-            int iRange = Mathf.Max(0, Mathf.CeilToInt(fRadiusCells));
-            float fRadiusSq = (fRadiusCells * m_fCellSize) * (fRadiusCells * m_fCellSize);
-
-            for (int dy = -iRange; dy <= iRange; ++dy)
-            {
-                for (int dx = -iRange; dx <= iRange; ++dx)
-                {
-                    int x = vCenter.x + dx;
-                    int y = vCenter.y + dy;
-
-                    if (Is_InBounds(x, y) == false || m_arrCell[To_Index(x, y)] != eState)
-                        continue;
-
-                    // 칸의 중심이 아니라 칸 '면'까지의 거리로 본다 — 닿았으면 닿은 것이다.
-                    Vector2 vCellCenter = Cell_ToWorld(x, y);
-                    float fDx = Mathf.Max(0f, Mathf.Abs(vWorldPos.x - vCellCenter.x) - m_fCellSize * 0.5f);
-                    float fDy = Mathf.Max(0f, Mathf.Abs(vWorldPos.y - vCellCenter.y) - m_fCellSize * 0.5f);
-
-                    if (fDx * fDx + fDy * fDy <= fRadiusSq)
-                    {
-                        vFound = new Vector2Int(x, y);
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// 260920_가장 가까운 점령지 경계 칸을 찾는다. 점령 직후 플레이어가 '내부'에 남았을 때
-        /// 선 위로 되돌려 놓는 데 쓴다(2-3) — 안전한 곳은 경계선 위뿐이라는 규칙을 지키기 위해서다.
-        /// </summary>
-        public bool Try_Find_NearestBoundary(Vector2Int vFrom, int iMaxRadius, out Vector2Int vFound)
-        {
-            vFound = vFrom;
-
-            if (Is_Boundary(vFrom) == true)
-                return true;
-
-            for (int r = 1; r <= iMaxRadius; ++r)
-            {
-                for (int dy = -r; dy <= r; ++dy)
-                {
-                    for (int dx = -r; dx <= r; ++dx)
-                    {
-                        // 이미 살펴본 안쪽은 건너뛴다 — 테두리만 본다.
-                        if (Mathf.Abs(dx) != r && Mathf.Abs(dy) != r)
-                            continue;
-
-                        Vector2Int vCell = new Vector2Int(vFrom.x + dx, vFrom.y + dy);
-                        if (Is_InBounds(vCell.x, vCell.y) == false || Is_Boundary(vCell) == false)
-                            continue;
-
-                        vFound = vCell;
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        public void Clear_Dirty()
-        {
-            IS_DIRTY      = false;
-            IS_FULL_DIRTY = false;
-            m_lstDirtyCell.Clear();
-        }
-
-        private void Set_CellDirty(int iIndex)
-        {
-            IS_DIRTY = true;
-
-            // 이미 전체 갱신이 예약돼 있으면 목록을 쌓아 봐야 버려진다.
-            if (IS_FULL_DIRTY == false)
-                m_lstDirtyCell.Add(iIndex);
-        }
-
-        private void Set_FullDirty()
-        {
-            IS_DIRTY      = true;
-            IS_FULL_DIRTY = true;
-            m_lstDirtyCell.Clear();
-        }
-
-        // 260902_몬스터가 점령지 안에 갇혔을 때 빠져나올 곳을 찾는 용도
+        // 260902_몬스터가 점령지 안에 갇혔을 때 빠져나올 곳 · 스폰 자리를 찾는 용도
         /// <summary> vFrom에서 가장 가까운 eState 칸을 링 탐색으로 찾는다. </summary>
         public bool Try_Find_NearestCell(Vector2Int vFrom, CELL_STATE eState, int iMaxRadius, out Vector2Int vFound)
         {
@@ -491,331 +356,482 @@ namespace Client
 
             return false;
         }
-        #endregion 셀 조회
 
-        #region 트레일
-        /// <summary> 미점령 셀을 밟았을 때 선분을 남긴다. </summary>
-        public void Add_Trail(Vector2Int vCell)
+        // 칸 가운데가 점령지 안이면 OWNED. 가로줄마다 경계와 만나는 x를 구해 그 사이를 채운다.
+        private void Rasterize()
         {
-            if (Is_InBounds(vCell.x, vCell.y) == false)
-                return;
-
-            int iIndex = To_Index(vCell.x, vCell.y);
-            if (m_arrCell[iIndex] != CELL_STATE.EMPTY)
-                return;
-
-            m_arrCell[iIndex] = CELL_STATE.TRAIL;
-            m_lstTrail.Add(iIndex);
-            Set_CellDirty(iIndex);
-        }
-
-        /// <summary> 사망 등으로 점령에 실패했을 때 그리던 선분을 되돌린다. </summary>
-        public void Clear_Trail()
-        {
-            for (int i = 0; i < m_lstTrail.Count; ++i)
+            for (int y = 0; y < m_iHeight; ++y)
             {
-                m_arrCell[m_lstTrail[i]] = CELL_STATE.EMPTY;
-                Set_CellDirty(m_lstTrail[i]);
-            }
+                int iRow = y * m_iWidth;
+                for (int x = 0; x < m_iWidth; ++x)
+                    m_arrCell[iRow + x] = m_arrBlocked[iRow + x] == true ? CELL_STATE.BLOCK : CELL_STATE.EMPTY;
 
-            m_lstTrail.Clear();
+                CPolygon_Utility.Collect_RowCrossings(m_lstRing, y + 0.5f, m_lstRowCross);
+
+                for (int k = 0; k + 1 < m_lstRowCross.Count; k += 2)
+                {
+                    int x0 = Mathf.Max(0, Mathf.CeilToInt(m_lstRowCross[k] - 0.5f));
+                    int x1 = Mathf.Min(m_iWidth - 1, Mathf.CeilToInt(m_lstRowCross[k + 1] - 0.5f) - 1);
+
+                    for (int x = x0; x <= x1; ++x)
+                    {
+                        if (m_arrCell[iRow + x] == CELL_STATE.EMPTY)
+                            m_arrCell[iRow + x] = CELL_STATE.OWNED;
+                    }
+                }
+            }
         }
 
-        /// <summary> 트레일의 마지막에서 두 번째 셀 — 180도 반전 입력을 막는 데 쓴다. </summary>
-        public bool Try_Get_PrevTrailCell(out Vector2Int vCell)
+        public void Clear_Dirty() => IS_DIRTY = false;
+        #endregion 칸 조회
+
+        #region 260923_다각형 조회
+        /// <summary> 점(그리드 공간)이 점령지 안인가. 경계 바로 위는 어느 쪽으로든 나올 수 있다 </summary>
+        public bool Is_OwnedPoint(Vector2 vGrid) => CPolygon_Utility.Is_Inside(m_lstRing, m_lstBound, vGrid);
+
+        /// <summary> 점이 맵 안이고 잘라낸 칸이 아닌가 </summary>
+        public bool Is_PlayablePoint(Vector2 vGrid)
         {
-            vCell = Vector2Int.zero;
-            if (m_lstTrail.Count < 2)
+            if (vGrid.x < 0f || vGrid.y < 0f || vGrid.x >= m_iWidth || vGrid.y >= m_iHeight)
                 return false;
 
-            int iIndex = m_lstTrail[m_lstTrail.Count - 2];
-            vCell = new Vector2Int(iIndex % m_iWidth, iIndex / m_iWidth);
+            return m_arrBlocked[To_Index(Mathf.FloorToInt(vGrid.x), Mathf.FloorToInt(vGrid.y))] == false;
+        }
+
+        /// <summary> 빈 땅(맵 안이고 점령지가 아닌 곳)인가 </summary>
+        public bool Is_EmptyPoint(Vector2 vGrid) => Is_PlayablePoint(vGrid) == true && Is_OwnedPoint(vGrid) == false;
+
+        /// <summary> 점령지 경계에서 가장 가까운 곳. 점령지가 없으면 false </summary>
+        public bool Try_Find_NearestBoundary(Vector2 vGrid, out Vector2 vNearest)
+            => CPolygon_Utility.Try_Find_Nearest(m_lstRing, vGrid, out vNearest, out int _, out int _, out float _);
+
+        /// <summary> 경계에서 가장 가까운 곳과 그 자리(몇 번째 고리 · 몇 번째 변 · 변 위 위치) — 경계를 걷는 쪽이 쓴다 </summary>
+        public bool Try_Find_BoundaryLocation(Vector2 vGrid, out Vector2 vNearest, out int iRing, out int iSeg, out float fT)
+            => CPolygon_Utility.Try_Find_Nearest(m_lstRing, vGrid, out vNearest, out iRing, out iSeg, out fT);
+
+        /// <summary> 점령지 경계까지의 거리(칸). 점령지가 없으면 아주 큰 값 </summary>
+        public float Distance_ToBoundary(Vector2 vGrid)
+            => Try_Find_NearestBoundary(vGrid, out Vector2 vNearest) == true ? Vector2.Distance(vNearest, vGrid) : float.MaxValue;
+        #endregion 다각형 조회
+
+        #region 트레일
+        /// <summary> 경계 위 vStart에서 선을 긋기 시작한다. </summary>
+        public void Begin_Trail(Vector2 vStart)
+        {
+            m_lstTrailPiece.Clear();
+            m_lstTrailPiece.Add(new List<Vector2> { vStart });
+            m_fTrailLength = 0f;
+            IS_TRAIL_BURNING = false;
+            Clear_Burn();
+        }
+
+        /// <summary> 260923_선을 여기서 끊고 vStart에서 새 조각을 시작한다 — 어디로든 신발로 반대편에 나타날 때 </summary>
+        public void Break_Trail(Vector2 vStart)
+        {
+            if (IS_DRAWING == false)
+                return;
+
+            m_lstTrailPiece.Add(new List<Vector2> { vStart });
+        }
+
+        // 같은 방향으로 계속 가면 끝점만 옮긴다 — 점이 프레임마다 늘면 판정 · 그리기가 선 길이만큼 무거워진다
+        private void Extend_Trail(Vector2 vPoint)
+        {
+            List<Vector2> lstPiece = m_lstTrailPiece[m_lstTrailPiece.Count - 1];
+            Vector2 vLast = lstPiece[lstPiece.Count - 1];
+            float fAdd = Vector2.Distance(vLast, vPoint);
+            if (fAdd < 1e-6f)
+                return;
+
+            m_fTrailLength += fAdd;
+
+            if (lstPiece.Count >= 2)
+            {
+                Vector2 vPrev = lstPiece[lstPiece.Count - 2];
+                Vector2 vA = (vLast - vPrev).normalized;
+                Vector2 vB = (vPoint - vLast).normalized;
+                if (Vector2.Dot(vA, vB) >= MERGE_COS)
+                {
+                    lstPiece[lstPiece.Count - 1] = vPoint;
+                    return;
+                }
+            }
+
+            lstPiece.Add(vPoint);
+        }
+
+        /// <summary> 사망 등으로 점령에 실패했을 때 그리던 선을 지운다. </summary>
+        public void Clear_Trail()
+        {
+            m_lstTrailPiece.Clear();
+            m_fTrailLength   = 0f;
+            IS_TRAIL_BURNING = false;
+            Clear_Burn();
+        }
+
+        /// <summary> 선의 끝(플레이어가 있는 곳). 선이 없으면 false </summary>
+        public bool Try_Get_TrailTip(out Vector2 vTip)
+        {
+            vTip = Vector2.zero;
+            if (IS_DRAWING == false)
+                return false;
+
+            List<Vector2> lstPiece = m_lstTrailPiece[m_lstTrailPiece.Count - 1];
+            vTip = lstPiece[lstPiece.Count - 1];
             return true;
         }
 
-        // 260924_도화선(2-3) — 몬스터가 선에 닿으면 그 지점에서 불이 붙어 트레일 끝(플레이어)을 향해 타들어온다.
-        // 언제·얼마나 태울지(타이머·속도)는 CStage_Manager가 잰다 — 그리드는 "몇 번째 칸인지"와
-        // "그 칸을 지운다"만 안다(누가·왜 태우는지는 모른다, 2-3 "누가 죽는지는 그리드가 모른다"와 같은 이유).
-        /// <summary> vCell이 지금 트레일의 몇 번째(0부터)인지. 트레일이 아니면 -1. </summary>
-        public int Get_TrailIndex(Vector2Int vCell)
+        /// <summary>
+        /// 260923_선에 반경 fRadius(칸) 안으로 닿았는가. 닿았으면 선 시작점부터 잰 그 자리의 길이(fArc)를 돌려준다 —
+        /// 도화선(2-3)이 어디서 불붙었는지 · 아슬아슬(2-24)이 얼마나 붙었는지를 같은 판정으로 본다(1-1).
+        /// </summary>
+        public bool Try_Find_TrailTouch(Vector2 vGrid, float fRadius, out float fArc)
         {
-            if (Is_InBounds(vCell.x, vCell.y) == false)
-                return -1;
+            fArc = 0f;
+            float fOffset = 0f;
+            float fBest   = float.MaxValue;
 
-            return m_lstTrail.IndexOf(To_Index(vCell.x, vCell.y));
+            for (int p = 0; p < m_lstTrailPiece.Count; ++p)
+            {
+                List<Vector2> lstPiece = m_lstTrailPiece[p];
+                float fDist = CPolygon_Utility.Distance_ToPolyline(lstPiece, vGrid, out float fLocal);
+                if (fDist < fBest)
+                {
+                    fBest = fDist;
+                    fArc  = fOffset + fLocal;
+                }
+
+                fOffset += CPolygon_Utility.Get_Length(lstPiece);
+            }
+
+            return fBest <= fRadius;
         }
 
-        /// <summary>
-        /// 트레일의 iTrailIndex번째 칸만 도로 빈 땅으로 되돌린다. 목록(m_lstTrail) 순서는 그대로 둔다 —
-        /// 도화선이 다음 칸을 계속 찾아가야 하고, 아직 다 타지 않은 앞쪽 칸은 여전히 선으로 남아 있어야 한다.
-        /// 범위를 벗어났거나 이미 지워졌으면 아무 일도 하지 않는다.
-        /// </summary>
-        public void Burn_TrailCell(int iTrailIndex)
+        /// <summary> 선 시작점부터 fArc만큼 간 자리 </summary>
+        public Vector2 Get_TrailPoint(float fArc)
         {
-            if (iTrailIndex < 0 || iTrailIndex >= m_lstTrail.Count)
-                return;
+            Vector2 vLast = Vector2.zero;
 
-            int iCellIndex = m_lstTrail[iTrailIndex];
-            if (m_arrCell[iCellIndex] != CELL_STATE.TRAIL)
-                return;
+            for (int p = 0; p < m_lstTrailPiece.Count; ++p)
+            {
+                List<Vector2> lstPiece = m_lstTrailPiece[p];
+                vLast = lstPiece[0];
 
-            m_arrCell[iCellIndex] = CELL_STATE.EMPTY;
-            Set_CellDirty(iCellIndex);
+                for (int i = 0; i + 1 < lstPiece.Count; ++i)
+                {
+                    float fLen = Vector2.Distance(lstPiece[i], lstPiece[i + 1]);
+                    if (fArc <= fLen)
+                        return Vector2.Lerp(lstPiece[i], lstPiece[i + 1], fLen > 0f ? fArc / fLen : 0f);
+
+                    fArc -= fLen;
+                    vLast = lstPiece[i + 1];
+                }
+            }
+
+            return vLast;
+        }
+
+        // 260924_도화선(2-3) — 몬스터가 선에 닿으면 그 지점에서 불이 붙어 선 끝(플레이어)을 향해 타들어온다.
+        // 언제 · 얼마나 태울지(타이머 · 속도)는 CStage_Manager가 잰다. 그리드는 "어디부터 어디까지 탔는지"만 들고,
+        // 그려질 때 그 구간을 빼는 것은 렌더러가 한다(누가 · 왜 태우는지는 모른다 — 2-3과 같은 이유).
+        /// <summary> 불이 붙은 자리(선 길이). 안 타고 있으면 음수 </summary>
+        public float BURN_FROM { get; private set; } = -1f;
+        /// <summary> 불이 지금 닿은 자리(선 길이) </summary>
+        public float BURN_TO   { get; private set; } = -1f;
+
+        public void Set_Burn(float fFrom, float fTo)
+        {
+            BURN_FROM = fFrom;
+            BURN_TO   = Mathf.Max(fFrom, fTo);
+        }
+
+        private void Clear_Burn()
+        {
+            BURN_FROM = -1f;
+            BURN_TO   = -1f;
         }
 
         /// <summary>
         /// 260924_도화선이 타는 동안인가. 켜져 있으면 Step_To가 안전 지대로 돌아와도 점령하지 않고
         /// 트레일만 지운다 — "불보다 먼저 내 땅에 닿으면 선만 잃는다"는 규칙을 여기서 지킨다.
-        /// CStage_Manager가 발화·소화 시점에 이 값을 켜고 끈다.
+        /// CStage_Manager가 발화 · 소화 시점에 이 값을 켜고 끈다.
         /// </summary>
         public bool IS_TRAIL_BURNING { get; set; }
         #endregion 트레일
 
         #region 260921_잠식 — 땅 갉는 자
         /// <summary>
-        /// 점령한 칸을 도로 빈 땅으로 되돌린다. **빈 땅과 맞닿은 가장자리 칸만** 갉힌다 —
-        /// 안쪽부터 구멍이 뚫리면 점령지가 스펀지처럼 되어 어디가 안전한지 읽을 수 없다.
-        /// 점령 규칙이 칸을 바꾸는 곳은 여기와 Step_To뿐이다(2-3).
+        /// vCenter에서 fRange(칸) 안의 가장 가까운 점령지 가장자리를 동그랗게 도로 빈 땅으로 되돌린다.
+        /// 한 번에 갉는 넓이가 대략 iCount칸이 되게 반지름을 잡는다(가장자리에 반원만 걸리므로 원 넓이의 절반).
+        /// vProtect 둘레 fProtectRadius(칸)에 걸리면 갉지 않는다 — 플레이어 발밑이 사라지면
+        /// 선을 긋지도 않았는데 빈 땅 위에 서 버린다. 점령 규칙이 땅을 바꾸는 곳은 여기와 Step_To뿐이다(2-3).
         /// </summary>
-        public bool Erode(Vector2Int vCell)
+        /// <returns> 실제로 갉은 넓이(칸, 반올림). 갉지 못했으면 0 </returns>
+        public int Erode_Near(Vector2 vCenter, float fRange, int iCount, Vector2 vProtect, float fProtectRadius)
         {
-            if (Can_Erode(vCell.x, vCell.y) == false)
-                return false;
-
-            int iIndex = To_Index(vCell.x, vCell.y);
-            m_arrCell[iIndex] = CELL_STATE.EMPTY;
-            --m_iOwnedCount;
-            Set_CellDirty(iIndex);
-            return true;
-        }
-
-        /// <summary>
-        /// vCenter에서 반경 fRange(칸) 안의 가장자리 칸을 가까운 순으로 iCount개까지 갉는다.
-        /// vProtect 둘레 iProtectRadius칸은 건드리지 않는다 — 플레이어가 서 있거나 막 밟으려는 칸이
-        /// 발밑에서 사라지면 선을 긋지도 않았는데 빈 땅 위에 서 버린다.
-        /// </summary>
-        /// <returns> 실제로 갉은 칸 수 </returns>
-        public int Erode_Near(Vector2Int vCenter, float fRange, int iCount, Vector2Int vProtect, int iProtectRadius)
-        {
-            if (iCount <= 0 || fRange <= 0f)
+            if (iCount <= 0 || fRange <= 0f || Try_Find_NearestBoundary(vCenter, out Vector2 vBite) == false)
                 return 0;
 
-            s_lstErode.Clear();
-            int   iReach   = Mathf.CeilToInt(fRange);
-            float fRangeSq = fRange * fRange;
+            if (Vector2.Distance(vBite, vCenter) > fRange)
+                return 0;
 
-            for (int dy = -iReach; dy <= iReach; ++dy)
-            {
-                for (int dx = -iReach; dx <= iReach; ++dx)
-                {
-                    int x = vCenter.x + dx;
-                    int y = vCenter.y + dy;
-                    int iDistSq = dx * dx + dy * dy;
+            float fRadius = Mathf.Sqrt(2f * iCount / Mathf.PI);
+            if (Vector2.Distance(vBite, vProtect) < fProtectRadius + fRadius)
+                return 0;
 
-                    if (iDistSq > fRangeSq || Can_Erode(x, y) == false)
-                        continue;
+            PathD pCircle = Clipper.Ellipse(new PointD(vBite.x, vBite.y), fRadius, fRadius, ERODE_CIRCLE_STEP);
+            double dBefore = m_dOwnedArea;
+            Set_Owned(Clipper.Difference(m_pOwned, new PathsD { pCircle }, FillRule.NonZero, CLIP_PRECISION));
 
-                    if (Mathf.Abs(x - vProtect.x) <= iProtectRadius && Mathf.Abs(y - vProtect.y) <= iProtectRadius)
-                        continue;
-
-                    s_lstErode.Add(new Vector3Int(x, y, iDistSq));
-                }
-            }
-
-            s_lstErode.Sort((a, b) => a.z.CompareTo(b.z));
-
-            int iEroded = 0;
-            for (int i = 0; i < s_lstErode.Count && iEroded < iCount; ++i)
-            {
-                if (Erode(new Vector2Int(s_lstErode[i].x, s_lstErode[i].y)) == true)
-                    ++iEroded;
-            }
-
-            return iEroded;
-        }
-
-        private static readonly List<Vector3Int> s_lstErode = new List<Vector3Int>();
-
-        // 점령한 칸이고, 상하좌우 중 하나가 빈 땅이다(맵 끝은 빈 땅이 아니다 — 벽 쪽 가장자리는 안 갉힌다)
-        private bool Can_Erode(int x, int y)
-        {
-            if (Is_InBounds(x, y) == false || m_arrCell[To_Index(x, y)] != CELL_STATE.OWNED)
-                return false;
-
-            for (int d = 0; d < 4; ++d)
-            {
-                int nx = x + ARR_DIR_X[d];
-                int ny = y + ARR_DIR_Y[d];
-                if (Is_InBounds(nx, ny) == true && m_arrCell[To_Index(nx, ny)] == CELL_STATE.EMPTY)
-                    return true;
-            }
-
-            return false;
+            return Mathf.RoundToInt((float)(dBefore - m_dOwnedArea));
         }
         #endregion 잠식
 
         #region 상태 전이
         /// <summary>
-        /// 플레이어가 한 셀에 '도착'했을 때의 상태 전이를 처리한다.
-        /// 땅따먹기 규칙의 단일 진입점 — 플레이어/테스트 모두 이 함수만 호출한다.
+        /// 260923_선을 긋는 중 vFrom → vTo로 한 걸음 옮길 때의 판정. **땅따먹기 규칙의 단일 진입점**이다(2-3).
+        ///   · 가던 길에 자기 선을 가로지르면  DEAD (그 자리가 vEnd)
+        ///   · 점령지로 들어가면              CAPTURE (도화선이 타는 중이면 선만 지우고 SAFE)
+        ///   · 그 외                        DRAW — 선을 vTo까지 늘린다
+        /// 둘이 한 걸음 안에 다 일어나면 먼저 닿은 쪽이다. 선을 긋기 시작하는 것은 Begin_Trail이다.
         /// </summary>
-        /// <param name="lstEnemyCell"> 점령 판정에 쓸 몬스터 셀 목록 (없으면 null) </param>
-        /// <param name="iCapturedCount"> CAPTURE일 때 새로 점령한 셀 개수 </param>
-        public STEP_RESULT Step_To(Vector2Int vCell, out int iCapturedCount)
+        /// <param name="iCapturedCount"> CAPTURE일 때 새로 점령한 넓이(칸, 반올림) </param>
+        public STEP_RESULT Step_To(Vector2 vFrom, Vector2 vTo, out Vector2 vEnd, out int iCapturedCount)
         {
             iCapturedCount = 0;
+            vEnd = vFrom;
 
-            switch (Get_Cell(vCell))
+            if (IS_DRAWING == false)
+                return STEP_RESULT.SAFE;
+
+            float fSelf  = Find_SelfCross(vFrom, vTo);
+            float fEntry = Find_OwnedEntry(vFrom, vTo);
+
+            if (fSelf <= 1f && fSelf <= fEntry)
             {
-                // 260904_맵 밖으로 잘라낸 칸. 이동 판정(CMoveHandler.Can_Move)이 이미 막으므로
-                // 여기까지 오지 않지만, 혹시 오더라도 점령 판정으로 새지 않게 명시해 둔다.
-                case CELL_STATE.BLOCK:
-                    return STEP_RESULT.SAFE;
-
-                // 자기가 그리던 선을 밟았다
-                case CELL_STATE.TRAIL:
-                    return STEP_RESULT.DEAD;
-
-                // 미점령 지대 — 선분을 남기며 전진 (이 상태에서 몬스터/탄에 피격된다)
-                case CELL_STATE.EMPTY:
-                    Add_Trail(vCell);
-                    return STEP_RESULT.DRAW;
-
-                // 안전 지대 — 선을 그리던 중이었다면 도형이 닫힌 것이므로 점령한다
-                default:
-                    if (IS_DRAWING == false)
-                        return STEP_RESULT.SAFE;
-
-                    // 260924_도화선이 타는 동안 돌아왔다 — 불보다 먼저 왔으니 살지만, 점령은 안 된다(2-3).
-                    if (IS_TRAIL_BURNING == true)
-                    {
-                        Clear_Trail();
-                        IS_TRAIL_BURNING = false;
-                        return STEP_RESULT.SAFE;
-                    }
-
-                    iCapturedCount = Capture();
-                    return STEP_RESULT.CAPTURE;
+                vEnd = Vector2.Lerp(vFrom, vTo, fSelf);
+                return STEP_RESULT.DEAD;
             }
+
+            if (fEntry <= 1f)
+            {
+                vEnd = Vector2.Lerp(vFrom, vTo, fEntry);
+                Extend_Trail(vEnd);
+
+                // 260924_도화선이 타는 동안 돌아왔다 — 불보다 먼저 왔으니 살지만, 점령은 안 된다(2-3).
+                if (IS_TRAIL_BURNING == true)
+                {
+                    Clear_Trail();
+                    return STEP_RESULT.SAFE;
+                }
+
+                iCapturedCount = Capture();
+                return STEP_RESULT.CAPTURE;
+            }
+
+            Extend_Trail(vTo);
+            vEnd = vTo;
+            return STEP_RESULT.DRAW;
+        }
+
+        // 자기 선과 처음 만나는 곳(0~1). 없으면 2. 방금 그은 마지막 변은 지금 자리와 붙어 있으니 뺀다.
+        private float Find_SelfCross(Vector2 vFrom, Vector2 vTo)
+        {
+            float fBest = 2f;
+            int iLastPiece = m_lstTrailPiece.Count - 1;
+
+            for (int p = 0; p <= iLastPiece; ++p)
+            {
+                List<Vector2> lstPiece = m_lstTrailPiece[p];
+                int iSegCount = lstPiece.Count - 1;
+                if (p == iLastPiece)
+                    --iSegCount;
+
+                for (int i = 0; i < iSegCount; ++i)
+                {
+                    if (CPolygon_Utility.Try_Intersect(vFrom, vTo, lstPiece[i], lstPiece[i + 1], out float fT, out float _) == true
+                     && fT > 1e-5f && fT < fBest)
+                        fBest = fT;
+                }
+            }
+
+            return fBest;
+        }
+
+        // 점령지로 '들어가는' 곳(0~1). 없으면 2. 경계를 스치기만 하거나 경계에서 떠나는 것은 들어간 것이 아니다 —
+        // 넘은 직후 조금 더 간 점이 점령지 안이어야 한다(선을 막 긋기 시작한 첫 걸음이 경계 위에서 출발하므로).
+        private float Find_OwnedEntry(Vector2 vFrom, Vector2 vTo)
+        {
+            float fLen = Vector2.Distance(vFrom, vTo);
+            if (fLen < 1e-7f)
+                return 2f;
+
+            Vector2 vDir = (vTo - vFrom) / fLen;
+            float fBest = 2f;
+
+            for (int r = 0; r < m_lstRing.Count; ++r)
+            {
+                Vector2[] arrRing = m_lstRing[r];
+                int iCount = arrRing.Length;
+
+                for (int i = 0; i < iCount; ++i)
+                {
+                    if (CPolygon_Utility.Try_Intersect(vFrom, vTo, arrRing[i], arrRing[(i + 1) % iCount], out float fT, out float _) == false
+                     || fT >= fBest)
+                        continue;
+
+                    Vector2 vProbe = vFrom + vDir * (fT * fLen + ENTRY_PROBE);
+                    if (Is_OwnedPoint(vProbe) == true)
+                        fBest = fT;
+                }
+            }
+
+            // 변과 만나지 않았는데 끝점이 안이면(경계 바로 위에서 출발해 교차가 0으로 잡힌 경우) 끝점을 들어간 곳으로 본다
+            if (fBest > 1f && Is_OwnedPoint(vTo) == true && Is_OwnedPoint(vFrom) == false)
+                fBest = 1f;
+
+            return fBest;
         }
         #endregion 상태 전이
 
-        #region 점령 (플러드필)
+        #region 점령
         /// <summary>
-        /// 트레일이 안전 지대에 닿아 도형이 닫혔을 때 호출한다.
-        /// 트레일을 점령지로 승격시킨 뒤, **가장 넓은 영역 하나만 남기고 나머지를 전부 점령한다.**
+        /// 선이 점령지에 닿아 도형이 닫혔을 때 부른다. 빈 땅을 선으로 갈라 **가장 넓은 조각 하나만 남기고 나머지를 전부 점령한다.**
+        /// 선을 아주 얇은 띠로 부풀려 빈 땅에서 빼면 빈 땅이 여러 조각으로 나뉜다 — 칸 시절의 플러드필과 같은 규칙을
+        /// 다각형으로 한 것이라, 선이 어떤 모양이든(사선 · 원 · 여러 번 꺾임) 같은 방식으로 닫힌다.
         ///
-        /// 260920_예전에는 몬스터가 서 있는 영역을 점령에서 뺐다. 그런데 몬스터는 계속 돌아다니므로
-        /// **애써 가둔 도형이 아무 설명 없이 점령되지 않는 일**이 잦았다(가둔 것이 오히려 손해였다).
-        /// 이제 가두면 무조건 먹고, **그 안에 있던 몬스터는 죽는다** — 죽이는 것은 몬스터를 들고 있는
-        /// CStage_Manager가 한다(여기는 칸만 안다). 점령이 곧 공격 수단이 됐다.
+        /// 260920_가두면 무조건 먹고, **그 안에 있던 몬스터는 죽는다** — 죽이는 것은 몬스터를 들고 있는
+        /// CStage_Manager가 한다(여기는 땅만 안다). 점령이 곧 공격 수단이다.
         /// </summary>
-        /// <returns> 이번에 새로 점령한 셀 개수 </returns>
+        /// <returns> 이번에 새로 점령한 넓이(칸, 반올림) </returns>
         public int Capture()
         {
-            if (m_lstTrail.Count == 0)
+            if (IS_DRAWING == false)
                 return 0;
 
-            // 1. 트레일 → 점령지
-            for (int i = 0; i < m_lstTrail.Count; ++i)
+            PathsD pLine = new PathsD();
+            for (int p = 0; p < m_lstTrailPiece.Count; ++p)
+                pLine.Add(To_BittenPath(m_lstTrailPiece[p]));
+
+            PathsD pStrip = Clipper.InflatePaths(pLine, TRAIL_STRIP_HALF, JoinType.Miter, EndType.Butt, 2.0, CLIP_PRECISION);
+            PathsD pWall  = Clipper.Union(m_pOwned, pStrip, FillRule.NonZero, CLIP_PRECISION);
+
+            PolyTreeD cTree = new PolyTreeD();
+            Clipper.BooleanOp(ClipType.Difference, m_pPlayable, pWall, cTree, FillRule.NonZero, CLIP_PRECISION);
+
+            // 빈 땅 조각마다 (바깥 고리 + 구멍) 넓이를 재어 가장 넓은 것 하나만 남긴다
+            s_lstComponent.Clear();
+            s_lstComponentArea.Clear();
+            for (int i = 0; i < cTree.Count; ++i)
+                Collect_Component(cTree[i]);
+
+            int iLargest = -1;
+            for (int i = 0; i < s_lstComponent.Count; ++i)
             {
-                m_arrCell[m_lstTrail[i]] = CELL_STATE.OWNED;
-                ++m_iOwnedCount;
-            }
-            int iCapturedCount = m_lstTrail.Count;
-            m_lstTrail.Clear();
-
-            // 2. 남은 EMPTY 영역들을 라벨링
-            int iRegionCount = Label_EmptyRegions();
-            if (iRegionCount == 0)
-            {
-                Set_FullDirty();
-                return iCapturedCount;
-            }
-
-            // 3. 가장 넓은 영역 하나만 남긴다 — 그게 '아직 안 먹은 바깥'이다.
-            m_lstRegionSafe[Find_LargestRegion()] = true;
-
-            // 4. 남기지 않은 영역 = 플레이어가 가둔 영역 → 전부 점령
-            for (int i = 0; i < m_arrCell.Length; ++i)
-            {
-                int iRegion = m_arrRegion[i];
-                if (iRegion < 0 || m_lstRegionSafe[iRegion] == true)
-                    continue;
-
-                m_arrCell[i] = CELL_STATE.OWNED;
-                ++m_iOwnedCount;
-                ++iCapturedCount;
+                if (iLargest < 0 || s_lstComponentArea[i] > s_lstComponentArea[iLargest])
+                    iLargest = i;
             }
 
-            Set_FullDirty();
-            return iCapturedCount;
+            double dBefore = m_dOwnedArea;
+            PathsD pNewOwned = iLargest >= 0
+                             ? Clipper.Difference(m_pPlayable, s_lstComponent[iLargest], FillRule.NonZero, CLIP_PRECISION)
+                             : new PathsD(m_pPlayable);
+
+            Clear_Trail();
+            Set_Owned(pNewOwned);
+
+            return Mathf.Max(0, Mathf.RoundToInt((float)(m_dOwnedArea - dBefore)));
         }
 
-        /// <summary> EMPTY 셀들을 4방향 연결 영역으로 묶어 ID를 매긴다. </summary>
-        private int Label_EmptyRegions()
+        private static readonly List<PathsD> s_lstComponent     = new List<PathsD>();
+        private static readonly List<double> s_lstComponentArea = new List<double>();
+
+        // 바깥 고리 하나 = 조각 하나. 그 구멍들을 같이 담고, 구멍 안에 또 있는 바깥 고리는 따로 조각으로 센다.
+        private static void Collect_Component(PolyPathD cOuter)
         {
-            m_lstRegionSize.Clear();
-            m_lstRegionSafe.Clear();
+            if (cOuter.Polygon == null)
+                return;
 
-            for (int i = 0; i < m_arrRegion.Length; ++i)
-                m_arrRegion[i] = -1;
+            PathsD pPaths = new PathsD { cOuter.Polygon };
+            double dArea  = Math.Abs(Clipper.Area(cOuter.Polygon));
 
-            int iRegionId = 0;
-
-            for (int iStart = 0; iStart < m_arrCell.Length; ++iStart)
+            for (int h = 0; h < cOuter.Count; ++h)
             {
-                if (m_arrCell[iStart] != CELL_STATE.EMPTY || m_arrRegion[iStart] >= 0)
-                    continue;
-
-                int iSize = 0;
-                m_qFill.Clear();
-                m_qFill.Enqueue(iStart);
-                m_arrRegion[iStart] = iRegionId;
-
-                while (m_qFill.Count > 0)
+                PolyPathD cHole = cOuter[h];
+                if (cHole.Polygon != null)
                 {
-                    int iCur = m_qFill.Dequeue();
-                    ++iSize;
-
-                    int cx = iCur % m_iWidth;
-                    int cy = iCur / m_iWidth;
-
-                    for (int d = 0; d < DIR_COUNT; ++d)
-                    {
-                        int nx = cx + ARR_DIR_X[d];
-                        int ny = cy + ARR_DIR_Y[d];
-
-                        if (Is_InBounds(nx, ny) == false)
-                            continue;
-
-                        int iNext = To_Index(nx, ny);
-                        if (m_arrCell[iNext] != CELL_STATE.EMPTY || m_arrRegion[iNext] >= 0)
-                            continue;
-
-                        m_arrRegion[iNext] = iRegionId;
-                        m_qFill.Enqueue(iNext);
-                    }
+                    pPaths.Add(cHole.Polygon);
+                    dArea -= Math.Abs(Clipper.Area(cHole.Polygon));
                 }
 
-                m_lstRegionSize.Add(iSize);
-                m_lstRegionSafe.Add(false);
-                ++iRegionId;
+                for (int o = 0; o < cHole.Count; ++o)
+                    Collect_Component(cHole[o]);
             }
 
-            return iRegionId;
+            s_lstComponent.Add(pPaths);
+            s_lstComponentArea.Add(dArea);
         }
 
-        private int Find_LargestRegion()
+        // 선 조각을 다각형 경로로 — 양 끝을 가던 방향으로 조금씩 더 늘린다(점령지 안쪽으로 파고들게)
+        private static PathD To_BittenPath(List<Vector2> lstPiece)
         {
-            int iBest = 0;
-            for (int i = 1; i < m_lstRegionSize.Count; ++i)
+            PathD pPath = new PathD(lstPiece.Count);
+            for (int i = 0; i < lstPiece.Count; ++i)
             {
-                if (m_lstRegionSize[i] > m_lstRegionSize[iBest])
-                    iBest = i;
+                Vector2 v = lstPiece[i];
+
+                if (lstPiece.Count >= 2 && i == 0)
+                    v -= (lstPiece[1] - lstPiece[0]).normalized * TRAIL_END_BITE;
+                else if (lstPiece.Count >= 2 && i == lstPiece.Count - 1)
+                    v += (lstPiece[i] - lstPiece[i - 1]).normalized * TRAIL_END_BITE;
+
+                pPath.Add(new PointD(v.x, v.y));
             }
-            return iBest;
+
+            return pPath;
         }
-        #endregion 점령 (플러드필)
+
+        // 점령지를 바꾸는 유일한 자리 — 넓이 · 경계 고리 · 칸 사본을 한꺼번에 맞춘다
+        private void Set_Owned(PathsD pOwned)
+        {
+            m_pOwned     = pOwned ?? new PathsD();
+            m_dOwnedArea = Math.Abs(Clipper.Area(m_pOwned));
+
+            m_lstRing.Clear();
+            m_lstBound.Clear();
+            for (int i = 0; i < m_pOwned.Count; ++i)
+            {
+                Vector2[] arrRing = To_Ring(m_pOwned[i]);
+                if (arrRing.Length < 3)
+                    continue;
+
+                m_lstRing.Add(arrRing);
+                m_lstBound.Add(CPolygon_Utility.Get_Bound(arrRing));
+            }
+
+            Rasterize();
+            ++OWNED_VERSION;
+            IS_DIRTY = true;
+        }
+
+        private static Vector2[] To_Ring(PathD pPath)
+        {
+            List<Vector2> lstPoint = new List<Vector2>(pPath.Count);
+            for (int i = 0; i < pPath.Count; ++i)
+            {
+                Vector2 v = new Vector2((float)pPath[i].x, (float)pPath[i].y);
+                if (lstPoint.Count == 0 || (lstPoint[lstPoint.Count - 1] - v).sqrMagnitude > 1e-10f)
+                    lstPoint.Add(v);
+            }
+
+            if (lstPoint.Count > 1 && (lstPoint[0] - lstPoint[lstPoint.Count - 1]).sqrMagnitude <= 1e-10f)
+                lstPoint.RemoveAt(lstPoint.Count - 1);
+
+            return lstPoint.ToArray();
+        }
+
+        private static PathD Make_Rect(float x0, float y0, float x1, float y1)
+            => new PathD { new PointD(x0, y0), new PointD(x1, y0), new PointD(x1, y1), new PointD(x0, y1) };
+        #endregion 점령
     }
 }

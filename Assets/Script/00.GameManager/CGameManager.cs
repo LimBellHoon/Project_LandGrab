@@ -206,7 +206,7 @@ namespace Client
 
             // 260920_그리는 선이 길수록 · 점령한 땅이 넓을수록 물러난다.
             // 펀치와 같은 자리에서 곱하므로 둘이 서로를 몰라도 겹친다.
-            m_cCamera.orthographicSize *= m_cZoomOut.Tick(m_cStageManager.TRAIL_COUNT,
+            m_cCamera.orthographicSize *= m_cZoomOut.Tick(m_cStageManager.TRAIL_LENGTH,
                                                           m_cStageManager.OWNED_RATIO, Time.deltaTime);
         }
 

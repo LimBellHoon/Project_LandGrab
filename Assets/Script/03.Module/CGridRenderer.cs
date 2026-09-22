@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+
+using UnityEngine;
 
 namespace Client
 {
@@ -14,6 +16,9 @@ namespace Client
     /// N웨이브의 가림막은 이미지 스택의 [N-1]이고, 그걸 다 걷으면 [N]이 나온다.
     /// 그래서 1웨이브의 가림막이 곧 '마스크'다 (MapInfo.csv의 strLayerTex 참고).
     ///
+    /// 260923_땅이 다각형이 되면서 가림막도 **다각형 모양 그대로** 뚫는다 — 가장자리는 픽셀을 나눠 재어 부드럽게 옅어진다.
+    /// 긋는 중인 선은 가림막에 찍지 않고 선(LineRenderer)으로 따로 그린다 — 사선 · 곡선이 계단 없이 보인다.
+    ///
     /// 260912_사본은 원본과 같은 해상도로 만든다.
     /// 한 장이 이번 웨이브에는 보상(reveal)이었다가 다음 웨이브에는 가림막(cover)이 되므로,
     /// 사본을 더 낮은 해상도로 찍으면 같은 그림이 역할만 바뀌었는데 갑자기 거칠어져
@@ -25,9 +30,15 @@ namespace Client
         // 원본이 있으면 그 해상도를 그대로 따라가므로 이 값은 쓰이지 않는다.
         private const int PIXEL_PER_CELL = 4;
 
-        private static readonly Color32 COLOR_OWNED     = new Color32(0, 0, 0, 0);          // 뚫린 칸
-        private static readonly Color32 COLOR_TRAIL     = new Color32(90, 225, 255, 255);   // 그리는 중인 선
+        private static readonly Color   COLOR_TRAIL     = new Color32(90, 225, 255, 255);   // 그리는 중인 선
+        private static readonly Color   COLOR_FIRE      = new Color32(255, 140, 40, 255);   // 260923_도화선의 불 머리
         private static readonly Color32 COLOR_BLOCK     = new Color32(0, 0, 0, 255);        // 맵 밖
+
+        // 260923_가림막을 다각형으로 뚫을 때 한 픽셀 줄을 몇 번 나눠 재는가 — 가장자리가 계단 없이 옅어진다
+        private const int   COVERAGE_SUBROW   = 4;
+        private const float TRAIL_WIDTH_CELL  = 0.55f;     // 선 굵기(칸)
+        private const float FIRE_LENGTH_CELL  = 0.8f;      // 불 머리 길이(칸)
+        private const int   TRAIL_SORT_OFFSET = 1;         // 가림막보다 한 칸 위에 그린다
         private static readonly Color32 COLOR_FALLBACK  = new Color32(8, 10, 20, 235);      // 가림막을 못 읽었을 때
 
         private CTerritoryGrid  m_cGrid;
@@ -40,7 +51,14 @@ namespace Client
 
         private Color32[]   m_arrPixel;         // 마스크 전체 픽셀
         private Color32[]   m_arrCoverPixel;    // 가림막 이미지를 마스크 해상도로 미리 샘플링해 둔 것
-        private Color32[]   m_arrCellPixel;     // 셀 한 칸 부분 갱신용 버퍼
+        private float[]     m_arrRowCoverage;   // 260923_한 줄의 픽셀마다 점령지가 덮은 비율(0~1)
+        private readonly List<float> m_lstCross = new List<float>();
+
+        // 260923_선 — 조각마다 · 탄 구간을 뺀 토막마다 하나씩 쓴다. 모자라면 늘리고 남으면 끈다
+        private GameObject              m_goTrailRoot;
+        private readonly List<LineRenderer> m_lstLine = new List<LineRenderer>();
+        private readonly List<Vector3>  m_lstLinePoint = new List<Vector3>();
+        private int                     m_iLineUsed;
 
         private int m_iTexWidth;
         private int m_iTexHeight;
@@ -68,6 +86,9 @@ namespace Client
             Build_Mask(cGrid.WIDTH * PIXEL_PER_CELL, cGrid.HEIGHT * PIXEL_PER_CELL);
             Fill_CoverFallback();
 
+            m_goTrailRoot = new GameObject("TrailLines");
+            m_goTrailRoot.transform.SetParent(srCover.transform.parent, false);
+
             Refresh_All();
             return true;
         }
@@ -78,6 +99,11 @@ namespace Client
         {
             Clear_Mask();
             Clear_Sprite(m_srReveal, ref m_spReveal);
+
+            if (m_goTrailRoot != null)
+                Object.Destroy(m_goTrailRoot);
+            m_goTrailRoot = null;
+            m_lstLine.Clear();
 
             m_cGrid     = null;
             m_srCover   = null;
@@ -91,10 +117,10 @@ namespace Client
             if (m_texMask != null)
                 Object.Destroy(m_texMask);
 
-            m_texMask       = null;
-            m_arrPixel      = null;
-            m_arrCoverPixel = null;
-            m_arrCellPixel  = null;
+            m_texMask        = null;
+            m_arrPixel       = null;
+            m_arrCoverPixel  = null;
+            m_arrRowCoverage = null;
         }
 
         private static void Clear_Sprite(SpriteRenderer srTarget, ref Sprite spOwned)
@@ -121,17 +147,13 @@ namespace Client
             m_texMask = new Texture2D(m_iTexWidth, m_iTexHeight, TextureFormat.RGBA32, false)
             {
                 name        = "Tex_TerritoryMask",
-                filterMode  = FilterMode.Point,     // 셀 경계가 뭉개지지 않도록
+                filterMode  = FilterMode.Bilinear,  // 260923_다각형 가장자리를 부드럽게 — 칸 경계를 지킬 이유가 사라졌다
                 wrapMode    = TextureWrapMode.Clamp,
             };
 
-            m_arrPixel      = new Color32[m_iTexWidth * m_iTexHeight];
-            m_arrCoverPixel = new Color32[m_iTexWidth * m_iTexHeight];
-
-            // 칸마다 픽셀 수가 1씩 다를 수 있어(나누어떨어지지 않는 경우) 가장 큰 칸에 맞춰 둔다.
-            int iMaxW = Mathf.CeilToInt((float)m_iTexWidth / m_cGrid.WIDTH) + 1;
-            int iMaxH = Mathf.CeilToInt((float)m_iTexHeight / m_cGrid.HEIGHT) + 1;
-            m_arrCellPixel = new Color32[iMaxW * iMaxH];
+            m_arrPixel       = new Color32[m_iTexWidth * m_iTexHeight];
+            m_arrCoverPixel  = new Color32[m_iTexWidth * m_iTexHeight];
+            m_arrRowCoverage = new float[m_iTexWidth];
 
             m_spMask = Sprite.Create(m_texMask, new Rect(0f, 0f, m_iTexWidth, m_iTexHeight),
                                      new Vector2(0.5f, 0.5f), 100f, 0u, SpriteMeshType.FullRect);
@@ -295,52 +317,61 @@ namespace Client
         #endregion 웨이브 이미지
 
         #region 갱신
-        /// <summary> 그리드가 변했을 때만 텍스처를 다시 올린다. </summary>
+        /// <summary> 점령지가 바뀌었을 때만 가림막을 다시 뚫는다. 선은 매 프레임 다시 그린다(점 몇 개뿐이다). </summary>
         public void Tick()
         {
-            if (m_cGrid == null || m_cGrid.IS_DIRTY == false)
+            if (m_cGrid == null)
                 return;
 
-            // 260904_선을 그리는 동안에는 한 프레임에 한두 칸만 바뀐다.
-            // 전체를 다시 찍으면 모바일에서 그대로 낭비이므로 바뀐 칸만 올린다.
-            if (m_cGrid.IS_FULL_DIRTY == true)
+            if (m_cGrid.IS_DIRTY == true)
+            {
                 Refresh_All();
-            else
-                Refresh_DirtyCells();
+                m_cGrid.Clear_Dirty();
+            }
 
-            m_cGrid.Clear_Dirty();
+            Refresh_Trail();
         }
 
-        // 260912_칸 하나가 차지하는 픽셀 범위. 텍스처 크기가 칸 수로 나누어떨어지지 않아도
-        // 빈틈이나 겹침이 생기지 않도록 '다음 칸의 시작'을 끝으로 삼는다.
-        private int Cell_ToPixelX(int x) => x * m_iTexWidth / m_cGrid.WIDTH;
-        private int Cell_ToPixelY(int y) => y * m_iTexHeight / m_cGrid.HEIGHT;
-
+        // 260923_가림막을 점령지 다각형 모양으로 뚫는다. 픽셀 한 줄을 COVERAGE_SUBROW번 나눠 가로줄이 경계와 만나는
+        // x를 구하고, 그 사이에 든 몫만큼 픽셀을 투명하게 한다 — 가장자리가 반쯤 걸친 픽셀은 반쯤 비친다.
         private void Refresh_All()
         {
             if (m_texMask == null)
                 return;
 
-            int iCellCount = m_cGrid.WIDTH * m_cGrid.HEIGHT;
+            IReadOnlyList<Vector2[]> lstRing = m_cGrid.RINGS;
+            float fPixelPerCellX = (float)m_iTexWidth / m_cGrid.WIDTH;
+            float fCellPerPixelY = (float)m_cGrid.HEIGHT / m_iTexHeight;
+            float fSubWeight     = 1f / COVERAGE_SUBROW;
 
-            for (int i = 0; i < iCellCount; ++i)
+            for (int py = 0; py < m_iTexHeight; ++py)
             {
-                CELL_STATE eState = m_cGrid.Get_Cell(i);
+                System.Array.Clear(m_arrRowCoverage, 0, m_iTexWidth);
 
-                int cx = i % m_cGrid.WIDTH;
-                int cy = i / m_cGrid.WIDTH;
-
-                int px0 = Cell_ToPixelX(cx);
-                int px1 = Cell_ToPixelX(cx + 1);
-                int py0 = Cell_ToPixelY(cy);
-                int py1 = Cell_ToPixelY(cy + 1);
-
-                for (int py = py0; py < py1; ++py)
+                for (int iSub = 0; iSub < COVERAGE_SUBROW; ++iSub)
                 {
-                    int iRow = py * m_iTexWidth;
+                    float fGridY = (py + (iSub + 0.5f) * fSubWeight) * fCellPerPixelY;
+                    CPolygon_Utility.Collect_RowCrossings(lstRing, fGridY, m_lstCross);
 
-                    for (int px = px0; px < px1; ++px)
-                        m_arrPixel[iRow + px] = Get_PixelColor(eState, iRow + px);
+                    for (int k = 0; k + 1 < m_lstCross.Count; k += 2)
+                        Add_Span(m_lstCross[k] * fPixelPerCellX, m_lstCross[k + 1] * fPixelPerCellX, fSubWeight);
+                }
+
+                int iRow  = py * m_iTexWidth;
+                int iCellY = Mathf.Min(m_cGrid.HEIGHT - 1, (int)(py * fCellPerPixelY));
+
+                for (int px = 0; px < m_iTexWidth; ++px)
+                {
+                    int iCellX = Mathf.Min(m_cGrid.WIDTH - 1, (int)(px / fPixelPerCellX));
+                    if (m_cGrid.Get_Cell(iCellX, iCellY) == CELL_STATE.BLOCK)
+                    {
+                        m_arrPixel[iRow + px] = COLOR_BLOCK;
+                        continue;
+                    }
+
+                    Color32 cColor = m_arrCoverPixel[iRow + px];
+                    cColor.a = (byte)Mathf.RoundToInt(255f * (1f - Mathf.Clamp01(m_arrRowCoverage[px])));
+                    m_arrPixel[iRow + px] = cColor;
                 }
             }
 
@@ -348,56 +379,134 @@ namespace Client
             m_texMask.Apply(false);
         }
 
-        private void Refresh_DirtyCells()
+        // 픽셀 좌표 [fX0, fX1)을 덮었다 — 걸친 몫만큼 더한다
+        private void Add_Span(float fX0, float fX1, float fWeight)
         {
-            if (m_texMask == null)
+            fX0 = Mathf.Max(0f, fX0);
+            fX1 = Mathf.Min(m_iTexWidth, fX1);
+            if (fX1 <= fX0)
                 return;
 
-            System.Collections.Generic.IReadOnlyList<int> lstDirty = m_cGrid.DIRTY_CELLS;
+            int iStart = (int)fX0;
+            int iEnd   = Mathf.Min(m_iTexWidth - 1, (int)fX1);
 
-            for (int n = 0; n < lstDirty.Count; ++n)
+            if (iStart == iEnd)
             {
-                int iIndex = lstDirty[n];
-                CELL_STATE eState = m_cGrid.Get_Cell(iIndex);
-
-                int cx = iIndex % m_cGrid.WIDTH;
-                int cy = iIndex / m_cGrid.WIDTH;
-
-                int px0 = Cell_ToPixelX(cx);
-                int py0 = Cell_ToPixelY(cy);
-                int iW  = Cell_ToPixelX(cx + 1) - px0;
-                int iH  = Cell_ToPixelY(cy + 1) - py0;
-
-                if (iW <= 0 || iH <= 0)
-                    continue;
-
-                for (int dy = 0; dy < iH; ++dy)
-                {
-                    int iRow = (py0 + dy) * m_iTexWidth;
-
-                    for (int dx = 0; dx < iW; ++dx)
-                    {
-                        Color32 cColor = Get_PixelColor(eState, iRow + px0 + dx);
-                        m_arrPixel[iRow + px0 + dx] = cColor;
-                        m_arrCellPixel[dy * iW + dx] = cColor;
-                    }
-                }
-
-                m_texMask.SetPixels32(px0, py0, iW, iH, m_arrCellPixel);
+                m_arrRowCoverage[iStart] += (fX1 - fX0) * fWeight;
+                return;
             }
 
-            m_texMask.Apply(false);
+            m_arrRowCoverage[iStart] += (iStart + 1 - fX0) * fWeight;
+            for (int px = iStart + 1; px < iEnd; ++px)
+                m_arrRowCoverage[px] += fWeight;
+
+            if (iEnd < m_iTexWidth)
+                m_arrRowCoverage[iEnd] += (fX1 - iEnd) * fWeight;
         }
 
-        private Color32 Get_PixelColor(CELL_STATE eState, int iPixel)
+        // 260923_긋는 중인 선. 도화선이 탄 구간은 빼고, 불 머리는 주황으로 그린다
+        private void Refresh_Trail()
         {
-            switch (eState)
+            m_iLineUsed = 0;
+
+            if (m_cGrid.IS_DRAWING == true)
             {
-                case CELL_STATE.OWNED: return COLOR_OWNED;
-                case CELL_STATE.TRAIL: return COLOR_TRAIL;
-                case CELL_STATE.BLOCK: return COLOR_BLOCK;
-                default:               return m_arrCoverPixel[iPixel];
+                float fBurnFrom = m_cGrid.BURN_FROM;
+                float fBurnTo   = m_cGrid.BURN_TO;
+                bool  bBurning  = fBurnFrom >= 0f;
+                float fOffset   = 0f;
+
+                IReadOnlyList<List<Vector2>> lstPiece = m_cGrid.TRAIL_PIECES;
+                for (int p = 0; p < lstPiece.Count; ++p)
+                {
+                    float fLength = CPolygon_Utility.Get_Length(lstPiece[p]);
+
+                    if (bBurning == false)
+                    {
+                        Draw_Part(lstPiece[p], 0f, fLength, COLOR_TRAIL);
+                    }
+                    else
+                    {
+                        // 이 조각에서 탄 구간 [fBurnFrom, fBurnTo]를 뺀 앞 · 뒤만 그린다
+                        Draw_Part(lstPiece[p], 0f, Mathf.Min(fLength, fBurnFrom - fOffset), COLOR_TRAIL);
+                        Draw_Part(lstPiece[p], Mathf.Max(0f, fBurnTo - fOffset), fLength, COLOR_TRAIL);
+                        Draw_Part(lstPiece[p], Mathf.Max(0f, fBurnTo - fOffset - FIRE_LENGTH_CELL),
+                                  Mathf.Min(fLength, fBurnTo - fOffset), COLOR_FIRE);
+                    }
+
+                    fOffset += fLength;
+                }
             }
+
+            for (int i = m_iLineUsed; i < m_lstLine.Count; ++i)
+            {
+                if (m_lstLine[i].enabled == true)
+                    m_lstLine[i].enabled = false;
+            }
+        }
+
+        // 폴리라인에서 길이 [fFrom, fTo] 구간만 선 하나로 그린다
+        private void Draw_Part(List<Vector2> lstLine, float fFrom, float fTo, Color cColor)
+        {
+            if (fTo - fFrom < 1e-3f || lstLine.Count < 2)
+                return;
+
+            m_lstLinePoint.Clear();
+            float fWalked = 0f;
+
+            for (int i = 0; i + 1 < lstLine.Count; ++i)
+            {
+                Vector2 a = lstLine[i];
+                Vector2 b = lstLine[i + 1];
+                float fLen = Vector2.Distance(a, b);
+                float fSegFrom = fWalked;
+                float fSegTo   = fWalked + fLen;
+                fWalked = fSegTo;
+
+                if (fSegTo < fFrom || fSegFrom > fTo || fLen <= 0f)
+                    continue;
+
+                if (m_lstLinePoint.Count == 0)
+                    m_lstLinePoint.Add(m_cGrid.Grid_ToWorld(Vector2.Lerp(a, b, Mathf.Clamp01((fFrom - fSegFrom) / fLen))));
+
+                m_lstLinePoint.Add(m_cGrid.Grid_ToWorld(Vector2.Lerp(a, b, Mathf.Clamp01((fTo - fSegFrom) / fLen))));
+            }
+
+            if (m_lstLinePoint.Count < 2)
+                return;
+
+            LineRenderer cLine = Get_Line();
+            cLine.startColor    = cColor;
+            cLine.endColor      = cColor;
+            cLine.positionCount = m_lstLinePoint.Count;
+            for (int i = 0; i < m_lstLinePoint.Count; ++i)
+                cLine.SetPosition(i, m_lstLinePoint[i]);
+        }
+
+        private LineRenderer Get_Line()
+        {
+            if (m_iLineUsed < m_lstLine.Count)
+            {
+                LineRenderer cReuse = m_lstLine[m_iLineUsed++];
+                cReuse.enabled = true;
+                return cReuse;
+            }
+
+            GameObject goLine = new GameObject("Trail_" + m_lstLine.Count);
+            goLine.transform.SetParent(m_goTrailRoot.transform, false);
+
+            LineRenderer cLine = goLine.AddComponent<LineRenderer>();
+            cLine.useWorldSpace     = true;
+            cLine.widthMultiplier   = TRAIL_WIDTH_CELL * m_cGrid.CELL_SIZE;
+            cLine.numCapVertices    = 4;
+            cLine.numCornerVertices = 4;
+            cLine.sharedMaterial    = m_srCover.sharedMaterial;      // 스프라이트 재질을 그대로 쓴다 — 셰이더를 따로 찾지 않는다
+            cLine.sortingLayerID    = m_srCover.sortingLayerID;
+            cLine.sortingOrder      = m_srCover.sortingOrder + TRAIL_SORT_OFFSET;
+
+            m_lstLine.Add(cLine);
+            ++m_iLineUsed;
+            return cLine;
         }
         #endregion 갱신
     }

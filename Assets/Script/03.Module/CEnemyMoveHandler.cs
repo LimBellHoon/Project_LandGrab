@@ -133,15 +133,16 @@ namespace Client
             if (m_cGrid.Is_WorldInside(vWorld) == false)
                 return true;
 
-            CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorld));
-            return eState == CELL_STATE.OWNED || eState == CELL_STATE.BLOCK;
+            // 260923_점령지는 다각형으로 본다 — 사선 · 원 모양 가장자리에서 그 모양대로 튕긴다
+            return m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorld)) == CELL_STATE.BLOCK
+                || m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(vWorld)) == true;
         }
 
         private bool Escape_IfTrapped()
         {
             // 260922_이미 맵 밖에 나가 있으면(옛 버그로 나간 몬스터 · 넉백) 가장 가까운 빈 땅으로 데려온다
             bool bOutside = m_cGrid.Is_WorldInside(m_vPos) == false;
-            if (bOutside == false && m_cGrid.Get_Cell(CELL) != CELL_STATE.OWNED)
+            if (bOutside == false && m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(m_vPos)) == false)
                 return false;
 
             if (m_cGrid.Try_Find_NearestCell(CELL, CELL_STATE.EMPTY, ESCAPE_SEARCH_RADIUS, out Vector2Int vEscape) == false)

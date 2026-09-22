@@ -51,9 +51,9 @@ namespace Client
         private const float  FUSE_SPEED_CELL_PER_SEC = 3f;   // 초당 몇 칸을 태우는가 — 연출 값이라 CSV로 빼지 않는다
 
         private bool          m_bFuseArmed;       // 지금 도화선이 타고 있는가
-        private int           m_iFuseStartIndex;  // 불이 붙은 트레일 인덱스(발화 지점, 고정)
-        private int           m_iFuseFrontIndex;  // 지금까지 실제로 지운(Burn_TrailCell) 마지막 인덱스 — 중복 소각 방지
-        private float         m_fFuseBurned;      // 발화 지점에서부터 태운 칸 수(누적, 소수)
+        // 260923_선이 칸이 아니라 선분이 되면서 '몇 번째 칸' 대신 '선 시작점부터 잰 길이'로 불의 자리를 든다
+        private float         m_fFuseFrom;        // 불이 붙은 자리(고정)
+        private float         m_fFuseFront;       // 불이 지금 닿은 자리
         private int           m_iFuseDamage;      // 발화시킨 몬스터의 공격력 — 따라잡히는 순간 그대로 쓴다
         // 260924_불이 붙은 자리 — 스파크 연출을 붙일 자리가 필요해지면 CGameManager가 듣는다(UI는 로컬에서, 3-1).
         public event Action<Vector2Int> OnFuseIgnited;
@@ -195,7 +195,8 @@ namespace Client
         public float            REMAIN_TIME     => m_fRemainTime;
         public float            OWNED_RATIO     => m_cGrid.OWNED_RATIO;
         // 260920_카메라가 선 길이만큼 물러날 때 본다(2-10)
-        public int              TRAIL_COUNT     => m_cGrid.TRAIL_COUNT;
+        /// <summary> 260923_지금 긋는 선의 길이(칸) — 카메라가 물러나는 정도를 정한다(2-10) </summary>
+        public float            TRAIL_LENGTH    => m_cGrid.TRAIL_LENGTH;
         public int              LIFE            => m_cPlayer != null ? m_cPlayer.LIFE : 0;
         public int              MAX_LIFE        => m_cPlayer != null ? m_cPlayer.MAX_LIFE : 0;
         public int              ENEMY_COUNT     => m_lstEnemy.Count;
@@ -942,7 +943,7 @@ namespace Client
                 eObjectType     = OBJECT_TYPE.PLAYER,
                 strPrefabName   = strPrefab,
                 cGrid           = m_cGrid,
-                vStartCell      = Find_StartCell(),
+                vStartPos       = Find_StartPos(),
                 // 260905_능력치 강화 + 260917_캐릭터 배율을 함께 반영
                 fMoveSpeed      = m_cMapInfo.fPlayerSpeed * m_fSpeedRate * m_fCharSpeedRate,
                 fEvasion        = m_fEvasion + m_fCharEvasionBonus,
@@ -978,25 +979,24 @@ namespace Client
         private void Respawn_Player()
         {
             if (m_cPlayer != null)
-                m_cPlayer.Respawn(Find_StartCell());
+                m_cPlayer.Respawn(Find_StartPos());
         }
 
         /// <summary>
         /// 시작 위치는 아래쪽 테두리 가운데. 모양 마스크로 그 자리가 잘려 나갔을 수 있으므로
         /// 가장 가까운 안전 지대를 대신 찾는다.
         /// </summary>
-        private Vector2Int Find_StartCell()
+        private Vector2 Find_StartPos()
         {
-            // 260920_시작 섬의 **아래 경계 칸**에서 시작한다(2-3). 섬 한가운데는 점령지 '내부'라
+            // 260920_시작 섬의 **아래 경계**에서 시작한다(2-3). 섬 한가운데는 점령지 '내부'라
             // 이동 규칙(2-3)에 막혀 한 칸도 못 움직인다 — 안전한 곳은 경계선 위뿐이다.
             // 섬이 없는 맵(테두리만 있는 옛 설정)은 예전처럼 아래 테두리에서 시작한다.
-            Vector2Int vDesired = m_cMapInfo.iStartRadius > 0
-                                ? new Vector2Int(m_cGrid.START_CENTER.x,
-                                                 m_cGrid.START_CENTER.y - m_cMapInfo.iStartRadius)
-                                : new Vector2Int(m_cMapInfo.iGridWidth / 2, Mathf.Max(0, m_cMapInfo.iBorderThick - 1));
+            // 260923_땅이 다각형이라 칸이 아니라 경계 위의 점을 돌려준다(가장 가까운 경계로 붙인다).
+            Vector2 vDesired = m_cMapInfo.iStartRadius > 0
+                             ? new Vector2(m_cGrid.START_CENTER.x + 0.5f, m_cGrid.START_CENTER.y - m_cMapInfo.iStartRadius)
+                             : new Vector2(m_cMapInfo.iGridWidth * 0.5f, m_cMapInfo.iBorderThick);
 
-            if (m_cGrid.Try_Find_NearestCell(vDesired, CELL_STATE.OWNED, SPAWN_SEARCH_RADIUS,
-                                             out Vector2Int vStart) == true)
+            if (m_cGrid.Try_Find_NearestBoundary(vDesired, out Vector2 vStart) == true)
                 return vStart;
 
             Debug.LogError("[CStage_Manager] 플레이어가 설 안전 지대를 찾지 못했습니다. 모양 마스크를 확인하세요.");
@@ -1171,7 +1171,8 @@ namespace Client
                 return;
 
             // 플레이어가 안전 지대(선) 위에 있으면 몬스터는 쫓지 않고 배회한다.
-            bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
+            // 260923_선을 긋는 중 = 안전 지대 밖이다(내 땅 위에서는 경계선을 따라 걷는다)
+            bool bExposed = m_cPlayer.IS_DRAWING;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
             bool bHit = false;          // 260924_이제 '몸'에 부딪혔을 때만 선다 — '선'은 도화선(아래)을 탄다
             CEnemy cHitEnemy = null;    // 260923_HP 풀 — 어느 몬스터가 닿았는지 알아야 공격력 · 넉백을 낼 수 있다
@@ -1211,10 +1212,11 @@ namespace Client
                 // 아니다(2-3). 이미 타고 있으면 새로 붙이지 않는다 — 발화 지점을 뒤로 미루면 오히려 유리해진다.
                 // 무적 중(유령 걸음 등, 2-11-3)에는 몸처럼 선도 그냥 통과한다 — 안 그러면 무적이 끝난 뒤에도
                 // 그때 붙은 불이 계속 쫓아오는, "통과했는데 나중에 맞는" 모순이 생긴다.
+                Vector2 vEnemyGrid = m_cGrid.World_ToGrid(cEnemy.POS);
                 if (m_bFuseArmed == false && m_cPlayer.IS_INVINCIBLE == false
-                 && m_cGrid.Try_Find_StateWithin(cEnemy.POS, cEnemy.HIT_RANGE, CELL_STATE.TRAIL, out Vector2Int vTouch) == true)
+                 && m_cGrid.Try_Find_TrailTouch(vEnemyGrid, cEnemy.HIT_RANGE, out float fTouchArc) == true)
                 {
-                    Ignite_Fuse(vTouch, cEnemy);
+                    Ignite_Fuse(fTouchArc, cEnemy);
                     continue;
                 }
 
@@ -1232,7 +1234,7 @@ namespace Client
                 {
                     float fNear = cEnemy.HIT_RANGE + CStyleTracker.NEAR_MARGIN;
                     bool bNear = Vector2.Distance(cEnemy.POS, vPlayerPos) <= fNear * m_cGrid.CELL_SIZE
-                              || m_cGrid.Is_StateWithin(cEnemy.POS, fNear, CELL_STATE.TRAIL) == true;
+                              || m_cGrid.Try_Find_TrailTouch(vEnemyGrid, fNear, out float _) == true;
 
                     if (m_cStyle.Report_Near(cEnemy.GetInstanceID(), bNear) == true)
                         OnStylish?.Invoke(STYLE_ACTION.NEAR_MISS, 1);
@@ -1262,22 +1264,19 @@ namespace Client
             Tick_Fuse(fDeltaTime);
         }
 
-        // 260924_도화선 발화 — 몬스터가 처음 닿은 트레일 칸에서 불이 붙는다. 그 몬스터의 공격력을 미리
+        // 260924_도화선 발화 — 몬스터가 처음 닿은 선 자리에서 불이 붙는다. 그 몬스터의 공격력을 미리
         // 적어 둔다 — 불이 다 타들어올 때쯤엔 그 몬스터가 어디 있는지(살아 있는지조차) 알 수 없어서다.
-        private void Ignite_Fuse(Vector2Int vTouch, CEnemy cEnemy)
+        /// <param name="fArc"> 선 시작점부터 잰 발화 자리(칸) </param>
+        private void Ignite_Fuse(float fArc, CEnemy cEnemy)
         {
-            int iIndex = m_cGrid.Get_TrailIndex(vTouch);
-            if (iIndex < 0)
-                return;
-
             m_bFuseArmed             = true;
-            m_iFuseStartIndex        = iIndex;
-            m_iFuseFrontIndex        = iIndex;
-            m_fFuseBurned            = 0f;
+            m_fFuseFrom              = fArc;
+            m_fFuseFront             = fArc;
             m_iFuseDamage            = cEnemy != null ? cEnemy.ATTACK : 1;
             m_cGrid.IS_TRAIL_BURNING = true;
+            m_cGrid.Set_Burn(m_fFuseFrom, m_fFuseFront);
 
-            OnFuseIgnited?.Invoke(vTouch);
+            OnFuseIgnited?.Invoke(m_cGrid.Grid_ToCell(m_cGrid.Get_TrailPoint(fArc)));
         }
 
         /// <summary>
@@ -1298,16 +1297,11 @@ namespace Client
                 return;
             }
 
-            m_fFuseBurned += FUSE_SPEED_CELL_PER_SEC * fDeltaTime;
-            int iTipIndex   = m_cGrid.TRAIL_COUNT - 1;
-            int iFrontIndex = Mathf.Min(m_iFuseStartIndex + Mathf.FloorToInt(m_fFuseBurned), iTipIndex);
+            // 불은 선 끝(플레이어) 쪽으로 타들어온다. 탄 구간은 그리드에 적어 두면 렌더러가 그리지 않는다
+            m_fFuseFront += FUSE_SPEED_CELL_PER_SEC * fDeltaTime;
+            m_cGrid.Set_Burn(m_fFuseFrom, Mathf.Min(m_fFuseFront, m_cGrid.TRAIL_LENGTH));
 
-            // 새로 태운 칸만큼만 지운다 — 불이 타들어오는 게 보이도록(마스크 렌더러가 지운 칸을 그대로 그린다).
-            for (int i = m_iFuseFrontIndex + 1; i <= iFrontIndex; ++i)
-                m_cGrid.Burn_TrailCell(i);
-            m_iFuseFrontIndex = iFrontIndex;
-
-            if (iFrontIndex < iTipIndex)
+            if (m_fFuseFront < m_cGrid.TRAIL_LENGTH)
                 return;
 
             // 트레일 끝까지 태웠다 — 따라잡혔다. 선은 무조건 사라지고(보호막은 HP만 막는다),
@@ -1334,7 +1328,7 @@ namespace Client
                 if (cEnemy == null || cEnemy.IS_ALIVE == false)
                     continue;
 
-                if (m_cGrid.Get_Cell(cEnemy.CUR_CELL) != CELL_STATE.OWNED)
+                if (m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(cEnemy.POS)) == false)
                     continue;
 
                 cEnemy.Damage(cEnemy.HP);
@@ -1354,16 +1348,16 @@ namespace Client
         // 기믹 모듈이 직접 풀을 만지면 웨이브가 넘어갈 때 회수할 방법이 없어진다.
         public bool IS_PLAYER_EXPOSED => m_bPlayerExposed;
 
-        // 260921_땅 갉는 자. 플레이어 둘레 GNAW_PROTECT_RADIUS칸은 지킨다 — 서 있거나 막 밟으려는 칸이
+        // 260921_땅 갉는 자. 플레이어 둘레 GNAW_PROTECT_RADIUS칸은 지킨다 — 서 있거나 막 밟으려는 자리가
         // 발밑에서 사라지면 선을 긋지도 않았는데 빈 땅 위에 서 버린다.
-        private const int GNAW_PROTECT_RADIUS = 2;
+        private const float GNAW_PROTECT_RADIUS = 2f;
 
         public int Gnaw_Territory(Vector2Int vCell, float fRange, int iCount)
         {
             if (m_cGrid == null || m_cPlayer == null)
                 return 0;
 
-            return m_cGrid.Erode_Near(vCell, fRange, iCount, m_cPlayer.CUR_CELL, GNAW_PROTECT_RADIUS);
+            return m_cGrid.Erode_Near(CTerritoryGrid.Cell_ToGrid(vCell), fRange, iCount, m_cPlayer.GRID_POS, GNAW_PROTECT_RADIUS);
         }
 
         // 260917_포수가 쏜다. 탄의 수치는 전부 ProjectileInfo.csv에 있다.
@@ -1564,11 +1558,11 @@ namespace Client
             if (WORLD_BOUNDS.Contains(vWorldPos) == false)
                 return true;
 
-            CELL_STATE eState = m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorldPos));
-            if (eState == CELL_STATE.BLOCK)
+            if (m_cGrid.Get_Cell(m_cGrid.World_ToCell(vWorldPos)) == CELL_STATE.BLOCK)
                 return true;
 
-            return eSide == PROJECTILE_SIDE.ENEMY_SHOT && eState == CELL_STATE.OWNED;
+            // 260923_점령지는 다각형으로 본다 — 사선 · 원 모양 가장자리에서 정확히 멈춘다
+            return eSide == PROJECTILE_SIDE.ENEMY_SHOT && m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(vWorldPos)) == true;
         }
 
         public IImpactTarget Find_Target(Vector2 vFrom, PROJECTILE_SIDE eSide)
@@ -1918,7 +1912,7 @@ namespace Client
                     continue;
                 }
 
-                bool bInOwned = m_cGrid.Get_Cell(m_cGrid.World_ToCell(cItem.POS)) == CELL_STATE.OWNED;
+                bool bInOwned = m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(cItem.POS));
                 if (bInOwned == false && Vector2.Distance(cItem.POS, vPlayerPos) > fPickupRange)
                     continue;
 
@@ -1998,7 +1992,7 @@ namespace Client
                 }
 
                 // 260920_가까이 갔거나, 그 칸을 점령해 내 땅이 됐으면 주운 것이다.
-                bool bInOwned = m_cGrid.Get_Cell(m_cGrid.World_ToCell(cSoul.POS)) == CELL_STATE.OWNED;
+                bool bInOwned = m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(cSoul.POS));
                 if (bInOwned == true || Vector2.Distance(cSoul.POS, vPlayerPos) <= fPickupRange)
                 {
                     cSoul.Expire();

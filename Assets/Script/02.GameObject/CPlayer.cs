@@ -10,17 +10,14 @@ namespace Client
     // 260901_땅따먹기 프로토타입: 플레이어
     /// <summary>
     /// Engine.CGameObject를 상속해 오브젝트 풀/레이어 Tick에 그대로 올라탄다.
-    /// 규칙 판정은 '셀에 도착한 순간'에만 수행한다 (CMoveHandler.Tick의 반환값).
+    /// 260923_규칙 판정은 이동 핸들러가 한 걸음마다 CTerritoryGrid.Step_To에 넘기고, 여기는 그 결과에 반응만 한다.
     /// </summary>
     public class CPlayer : CGameObject, IImpactTarget
     {
         private const float INVINCIBLE_TIME  = 1.2f;    // 피격 후 무적 시간
         private const float EVADE_GRACE_TIME = 0.4f;    // 260905_회피 성공 후 빠져나갈 틈
-        // 260912_마감 스킬이 점령지를 찾아 나가는 한계. 맵을 통째로 훑지 않게 막는다.
-        private const int   SEAL_MAX_RADIUS  = 40;      // 셀
-        private const int   SEAL_MAX_STEP    = 120;     // 셀
-        // 260920_점령 직후 경계선으로 되돌릴 때 찾아볼 반경(셀). 한 칸 옆이 보통이라 넉넉하다.
-        private const int   BOUNDARY_SEARCH_RADIUS = 24;
+        // 260923_부활할 자리가 경계에서 이만큼 넘게 떨어졌으면(갉혔으면) 가장 가까운 경계로 옮긴다(칸)
+        private const float SAFE_POS_DRIFT = 0.05f;
         // 260923_자기 선을 밟았을 때의 고정 피해량 — 특정 몬스터의 공격력이 아니므로 EnemyInfo.iAttack과 무관하다.
         // 항상 HP를 전부 비우도록 충분히 큰 값을 쓴다(HP 풀이 아무리 커져도 즉사와 같은 결과).
         private const int   SELF_TRAIL_DAMAGE = 9999;
@@ -37,7 +34,7 @@ namespace Client
         [SerializeField] private SpriteRenderer m_srBody;
 
         private CTerritoryGrid  m_cGrid;
-        private Vector2Int      m_vLastSafeCell;        // 안전 지대를 벗어나기 직전 셀 — 사망 시 복귀 지점
+        private Vector2         m_vLastSafePos;         // 260923_안전 지대를 벗어나기 직전 자리(그리드 공간) — 사망 시 복귀 지점
         // 260923_다시 HP 풀이다 — 몬스터·탄마다 공격력이 달라 몇 번은 버틴다(EnemyInfo.iAttack, 2-14).
         private int             m_iLife;
         private int             m_iMaxLife;
@@ -78,6 +75,8 @@ namespace Client
         public int          LIFE            => m_iLife;
         public int          MAX_LIFE        => m_iMaxLife;
         public Vector2Int   CUR_CELL        => m_cMoveHandler.CUR_CELL;
+        /// <summary> 260923_그리드 공간의 자리(칸 하나 = 1). 땅 판정은 이 좌표로 한다 </summary>
+        public Vector2      GRID_POS        => m_cMoveHandler.POS;
 
         #region IImpactTarget
         public Vector2          POS             => m_cGrid != null ? (Vector2)m_cMoveHandler.WORLD_POS : (Vector2)transform.position;
@@ -110,8 +109,8 @@ namespace Client
         /// <summary> 260916_자석 스킬이 걸어 둔 습득 범위(셀). 픽업 쪽이 읽는다. </summary>
         public float            PICKUP_RADIUS => m_fPickupRadius;
         // 260921_이동 런 스킬이 읽는 상태(2-11-3)
-        /// <summary> 지금 긋고 있는 선의 칸 수. 나선 가속이 본다 </summary>
-        public int              TRAIL_COUNT => m_cGrid != null ? m_cGrid.TRAIL_COUNT : 0;
+        /// <summary> 260923_지금 긋고 있는 선의 길이(칸). 나선 가속이 본다 </summary>
+        public float            TRAIL_LENGTH => m_cGrid != null ? m_cGrid.TRAIL_LENGTH : 0f;
         /// <summary> 지금 선을 긋는 중인가(= 안전 지대 밖) </summary>
         public bool             IS_DRAWING  => m_cGrid != null && m_cGrid.IS_DRAWING;
         /// <summary> 지금 향하고 있는 방향. 멈춰 있으면 마지막 방향, 그것도 없으면 위쪽 </summary>
@@ -119,8 +118,12 @@ namespace Client
         {
             get
             {
-                Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(m_cMoveHandler.CUR_DIR);
-                return vOffset == Vector2Int.zero ? Vector2.up : ((Vector2)vOffset).normalized;
+                // 260923_선을 긋는 중이면 실제로 나아가는 방향(사선 · 나선), 아니면 마지막으로 움직인 방향
+                if (IS_DRAWING == true)
+                    return m_cMoveHandler.HEADING;
+
+                Vector2 vDir = CTerritoryGrid.Dir_ToVector(m_cMoveHandler.CUR_DIR);
+                return vDir == Vector2.zero ? Vector2.up : vDir;
             }
         }
 
@@ -158,7 +161,7 @@ namespace Client
             m_iMaxLife          = Mathf.Max(1, cDesc.iLife);
             m_iLife             = m_iMaxLife;
             m_fInvincibleTimer  = 0f;
-            m_vLastSafeCell     = cDesc.vStartCell;
+            m_vLastSafePos      = cDesc.vStartPos;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
             m_fEvasion          = Mathf.Clamp01(cDesc.fEvasion);
             m_iShield           = 0;
@@ -186,10 +189,11 @@ namespace Client
             m_cMoveHandler.Set_MoveStyle(cDesc.eMoveStyle);
             m_cInputHandler.Set_MoveStyle(cDesc.eMoveStyle);
 
-            if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartCell, cDesc.fMoveSpeed) == false)
+            if (m_cMoveHandler.Initialize(m_cGrid, cDesc.vStartPos, cDesc.fMoveSpeed) == false)
                 return false;
 
-            transform.position = m_cGrid.Cell_ToWorld(cDesc.vStartCell);
+            m_cMoveHandler.Snap_ToBoundary();
+            transform.position = m_cMoveHandler.WORLD_POS;
             // 바디 스프라이트는 1 월드 유닛 크기로 제작되어 있으므로, 셀 크기의 1.6배로 맞춘다.
             transform.localScale = Vector3.one * m_cGrid.CELL_SIZE * 1.6f;
 
@@ -237,15 +241,9 @@ namespace Client
             if (m_cInputHandler.SKILL_PRESSED == true && fDeltaTime > 0f)
                 Request_Skill();
 
-            if (m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out Vector2Int vArrivedCell) == true)
-            {
-                Handle_ArriveCell(vArrivedCell);
-
-                // 260921_자유 각도 이동은 한 프레임에 칸을 여럿 지날 수 있다 — 전부 같은 프레임에 판정한다.
-                // 점령 · 사망으로 자리를 옮기면(Snap_To · Teleport) 남은 칸은 거기서 버려진다.
-                while (m_cMoveHandler.Try_PopArrived(out Vector2Int vMoreCell) == true)
-                    Handle_ArriveCell(vMoreCell);
-            }
+            // 260923_한 걸음의 판정은 이동 핸들러가 그리드(Step_To)에 넘긴다 — 여기는 결과에 반응만 한다
+            STEP_RESULT eResult = m_cMoveHandler.Tick(fDeltaTime, m_cInputHandler.DESIRED_DIR, out int iCapturedCount);
+            Handle_Step(eResult, iCapturedCount);
 
             Tick_MoveSignal();
             transform.position = m_cMoveHandler.WORLD_POS;
@@ -271,11 +269,9 @@ namespace Client
         #endregion Engine.CGameObject
 
         #region 규칙 판정
-        private STEP_RESULT Handle_ArriveCell(Vector2Int vCell)
+        private STEP_RESULT Handle_Step(STEP_RESULT eResult, int iCapturedCount)
         {
             // 규칙 판정 자체는 그리드가 소유한다. 플레이어는 결과에 반응만 한다.
-            STEP_RESULT eResult = m_cGrid.Step_To(vCell, out int iCapturedCount);
-
             switch (eResult)
             {
                 case STEP_RESULT.DEAD:
@@ -288,13 +284,13 @@ namespace Client
                     // 260920_점령하고 나면 방금 그은 선이 점령지 '안쪽'이 되는 일이 잦다.
                     // 그대로 두면 이동 규칙(2-3)의 예외에 걸려 내부를 마음대로 돌아다니게 된다 —
                     // 월보(런 스킬)를 공짜로 얻은 셈이라, 가장 가까운 경계선으로 되돌려 놓는다.
-                    Snap_ToBoundary();
-                    m_vLastSafeCell = m_cMoveHandler.CUR_CELL;
+                    m_cMoveHandler.Snap_ToBoundary();
+                    m_vLastSafePos = m_cMoveHandler.POS;
                     OnCapture?.Invoke(iCapturedCount);
                     break;
 
                 case STEP_RESULT.SAFE:
-                    m_vLastSafeCell = vCell;
+                    m_vLastSafePos = m_cMoveHandler.POS;
                     break;
             }
 
@@ -540,15 +536,17 @@ namespace Client
         // 260904_웨이브가 넘어가면 판을 새로 깔기 때문에 플레이어도 새 시작 칸으로 옮겨야 한다.
         // 목숨과 무적 상태는 웨이브를 넘어가도 이어진다.
         /// <summary> 지정한 칸으로 옮기고 이동/입력 상태를 리셋한다. </summary>
-        public void Respawn(Vector2Int vCell)
+        /// <param name="vPos"> 그리드 공간의 자리. 가장 가까운 경계 위로 붙인다 </param>
+        public void Respawn(Vector2 vPos)
         {
             if (m_cGrid == null)
                 return;
 
-            m_vLastSafeCell = vCell;
-            m_cMoveHandler.Teleport(vCell);
+            m_cMoveHandler.Teleport(vPos);
+            m_cMoveHandler.Snap_ToBoundary();
+            m_vLastSafePos = m_cMoveHandler.POS;
             m_cInputHandler.Clear();
-            transform.position = m_cGrid.Cell_ToWorld(vCell);
+            transform.position = m_cMoveHandler.WORLD_POS;
         }
 
         // 260904_이미 죽었거나 풀에 반납된 뒤의 호출을 막는다.
@@ -600,11 +598,9 @@ namespace Client
             }
 
             // 260921_나가 있는 사이 땅 갉는 자가 돌아갈 자리를 갉았으면 가장 가까운 경계에서 다시 시작한다
-            if (m_cGrid.Get_Cell(m_vLastSafeCell) != CELL_STATE.OWNED
-             && m_cGrid.Try_Find_NearestBoundary(m_vLastSafeCell, BOUNDARY_SEARCH_RADIUS, out Vector2Int vBoundary) == true)
-                m_vLastSafeCell = vBoundary;
-
-            m_cMoveHandler.Teleport(m_vLastSafeCell);
+            m_cMoveHandler.Teleport(m_vLastSafePos);
+            if (m_cGrid.Distance_ToBoundary(m_vLastSafePos) > SAFE_POS_DRIFT)
+                m_cMoveHandler.Snap_ToBoundary();
             m_cInputHandler.Clear();
             m_fInvincibleTimer = INVINCIBLE_TIME;
         }
@@ -675,97 +671,37 @@ namespace Client
             return true;
         }
 
-        // 한 칸씩 나아가며 평소 이동과 똑같은 규칙을 적용한다.
-        // 한 번에 건너뛰지 않는 이유 — 지나간 칸이 선으로 남지 않으면
-        // 도형이 끊겨 점령 판정이 깨진다.
+        // 260923_점멸 — 그 방향으로 한 번에 간다. 판정은 평소 이동과 같은 길(CMoveHandler → Step_To)을 지난다 —
+        // 지나간 자리가 선으로 남아야 도형이 닫힌다. 내 땅 위라면 경계를 따라 미끄러지거나 그 방향으로 나가 선을 긋는다.
         public bool Warp(int iCellCount)
         {
             MOVE_DIR eDir = Get_WarpDir();
             if (eDir == MOVE_DIR.NONE || iCellCount <= 0)
                 return false;   // 한 번도 움직인 적이 없으면 어디로 갈지 알 수 없다
 
-            Vector2Int vOffset = CTerritoryGrid.Dir_ToOffset(eDir);
-            Vector2Int vCell   = m_cMoveHandler.CUR_CELL;
-            bool bMoved = false;
+            Vector2 vBefore = m_cMoveHandler.POS;
+            STEP_RESULT eResult = m_cMoveHandler.Warp(eDir, iCellCount, out int iCapturedCount);
+            bool bMoved = (m_cMoveHandler.POS - vBefore).sqrMagnitude > 1e-6f;
 
-            for (int i = 0; i < iCellCount; ++i)
-            {
-                Vector2Int vNext = vCell + vOffset;
-
-                if (m_cGrid.Is_InBounds(vNext.x, vNext.y) == false || m_cGrid.Is_Blocked(vNext) == true)
-                    break;
-
-                vCell  = vNext;
-                bMoved = true;
-
-                m_cMoveHandler.Teleport(vCell, eDir);
-
-                STEP_RESULT eResult = Handle_ArriveCell(vCell);
-                if (eResult == STEP_RESULT.DEAD || eResult == STEP_RESULT.CAPTURE)
-                    break;
-            }
-
-            if (bMoved == true)
-                transform.position = m_cMoveHandler.WORLD_POS;
-
+            Handle_Step(eResult, iCapturedCount);
+            transform.position = m_cMoveHandler.WORLD_POS;
             return bMoved;
         }
 
         // 260912_마감 — 그은 선을 가장 가까운 점령지까지 이어 붙여 도형을 닫는다.
-        // 점령 판정을 새로 만들지 않는다. 평소 이동과 똑같이 한 칸씩 밟아 Step_To를 지나게 해서,
-        // 규칙이 한 군데(CTerritoryGrid.Step_To)에만 있도록 유지한다.
+        // 260923_ㄱ자가 아니라 곧게 잇는다(땅이 다각형이라). 판정은 평소 이동과 같은 Step_To를 지난다.
         public bool Seal()
         {
             if (m_cGrid == null || m_cGrid.IS_DRAWING == false)
                 return false;   // 선을 긋고 있지 않으면 마감할 것이 없다
 
-            Vector2Int vCur = m_cMoveHandler.CUR_CELL;
-            if (m_cGrid.Try_Find_NearestCell(vCur, CELL_STATE.OWNED, SEAL_MAX_RADIUS,
-                                             out Vector2Int vTarget) == false)
+            if (m_cGrid.Try_Find_NearestBoundary(m_cMoveHandler.POS, out Vector2 vTarget) == false)
                 return false;
 
-            bool bMoved = false;
-
-            // ㄱ자로 붙인다 — 가로를 먼저 맞추고 세로를 맞춘다.
-            // 최단 경로를 찾지 않는 이유는, 막히면 그 자리에서 멈추고 실패로 돌려 주면 되기 때문이다.
-            for (int i = 0; i < SEAL_MAX_STEP; ++i)
-            {
-                if (vCur == vTarget)
-                    break;
-
-                MOVE_DIR eDir = Pick_SealDir(vCur, vTarget);
-                if (eDir == MOVE_DIR.NONE)
-                    break;
-
-                Vector2Int vNext = vCur + CTerritoryGrid.Dir_ToOffset(eDir);
-                if (m_cGrid.Is_InBounds(vNext.x, vNext.y) == false || m_cGrid.Is_Blocked(vNext) == true)
-                    break;
-
-                vCur   = vNext;
-                bMoved = true;
-
-                m_cMoveHandler.Teleport(vCur, eDir);
-
-                STEP_RESULT eResult = Handle_ArriveCell(vCur);
-                if (eResult == STEP_RESULT.DEAD || eResult == STEP_RESULT.CAPTURE)
-                    break;
-            }
-
-            if (bMoved == true)
-                transform.position = m_cMoveHandler.WORLD_POS;
-
-            return bMoved;
-        }
-
-        private static MOVE_DIR Pick_SealDir(Vector2Int vFrom, Vector2Int vTo)
-        {
-            if (vFrom.x != vTo.x)
-                return vTo.x > vFrom.x ? MOVE_DIR.RIGHT : MOVE_DIR.LEFT;
-
-            if (vFrom.y != vTo.y)
-                return vTo.y > vFrom.y ? MOVE_DIR.UP : MOVE_DIR.DOWN;
-
-            return MOVE_DIR.NONE;
+            STEP_RESULT eResult = m_cMoveHandler.Draw_To(vTarget, out int iCapturedCount);
+            Handle_Step(eResult, iCapturedCount);
+            transform.position = m_cMoveHandler.WORLD_POS;
+            return true;
         }
 
 
@@ -784,18 +720,6 @@ namespace Client
             OnLifeChanged?.Invoke(m_iLife);
         }
 
-        /// <summary> 점령 직후 내부에 남았으면 가장 가까운 경계 칸으로 옮긴다. 이미 경계면 아무 일도 없다. </summary>
-        private void Snap_ToBoundary()
-        {
-            Vector2Int vCur = m_cMoveHandler.CUR_CELL;
-            if (m_cGrid.Is_Boundary(vCur) == true)
-                return;
-
-            if (m_cGrid.Try_Find_NearestBoundary(vCur, BOUNDARY_SEARCH_RADIUS, out Vector2Int vCell) == false)
-                return;
-
-            m_cMoveHandler.Snap_To(vCell);
-        }
         #endregion 규칙 판정
 
         private void Refresh_InvincibleBlink()

@@ -578,18 +578,18 @@ namespace Client
             if (m_cOwner == null)
                 return;
 
-            m_cOwner.Set_TrailSpeedScale(Get_Scale(m_cOwner.TRAIL_COUNT, m_fPerCell));
+            m_cOwner.Set_TrailSpeedScale(Get_Scale(m_cOwner.TRAIL_LENGTH, m_fPerCell));
         }
 
         public override void Release() => m_cOwner?.Set_TrailSpeedScale(1f);
 
         /// <summary> 선 길이에 대한 속도 배율. 화면 없이 테스트한다. </summary>
-        public static float Get_Scale(int iTrailCount, float fPerCell)
+        public static float Get_Scale(float fTrailLength, float fPerCell)
         {
-            if (iTrailCount <= 0 || fPerCell <= 0f)
+            if (fTrailLength <= 0f || fPerCell <= 0f)
                 return 1f;
 
-            return 1f + Mathf.Min(iTrailCount * fPerCell, MAX_BONUS);
+            return 1f + Mathf.Min(fTrailLength * fPerCell, MAX_BONUS);
         }
     }
 
