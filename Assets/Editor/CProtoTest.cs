@@ -1634,7 +1634,7 @@ namespace Client
                                    "strWaveClearRatio", "strWaveTimeLimit", "iCoinPerStar", "iCoinPerCell", "iCharacterID",
                                    "iFieldItemOnWave", "fFieldItemCool", "fFieldItemDropRate", "NONE") + "\n"
                 + string.Join(TAB, "1", "테스트", "60", "100", "0.12", "2", "3", "9", "1", "-",
-                                   "A|B", "101*1", "0.6", "90", "50", "1", "0", "2", "0.5", "");
+                                   "A|B", "101*1", "0.6", "90", "50", "1", "0", "2", "20", "0.5", "");
 
             CCSVData_MapInfo cTable = new CCSVData_MapInfo();
             cTable.Read_CSVData(new TextAsset(strCsv));
