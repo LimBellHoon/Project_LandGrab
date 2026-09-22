@@ -34,8 +34,9 @@ namespace Client
         public float            fFireInterval;      // BURST 연발 간격 (초)
 
         // 260918_몬스터별 체력. 예전엔 CEnemy.DEFAULT_HP(3) 고정값을 전 몬스터가 같이 썼다 — 종류별 난이도를 못 줬다.
-        // 공격력(iAttack) 열은 뺐다 — 플레이어가 다시 목숨제라 무엇에 맞든 한 목숨이다(2-14).
         public int              iHp;
+        // 260923_다시 HP 풀이라(2-14) 몬스터별 공격력이 다시 필요하다 — 몸 · 선 접촉 시 이만큼 깎는다.
+        public int              iAttack;
     }
 
     /// <summary>
@@ -91,6 +92,7 @@ namespace Client
                 fFireAngle      = CCSV_Utility.To_Float(arrField, 15),
                 fFireInterval   = CCSV_Utility.To_Float(arrField, 16, 0.12f),
                 iHp             = CCSV_Utility.To_Int(arrField, 17, 3),
+                iAttack         = CCSV_Utility.To_Int(arrField, 18, 1),
             };
 
             if (cInfo.iEnemyID <= 0)

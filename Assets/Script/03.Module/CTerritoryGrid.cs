@@ -47,8 +47,6 @@ namespace Client
         // 그리는 중에는 매 프레임 한두 칸만 바뀌는데 전체를 다시 찍으면 모바일에서 낭비가 크다.
         // 점령처럼 한 번에 많이 바뀔 때는 목록 대신 IS_FULL_DIRTY로 전체 갱신을 요청한다.
         private readonly List<int> m_lstDirtyCell = new List<int>();
-        // 260921_마지막 점령으로 새로 먹은 칸(선 + 가둔 영역). 조각을 방금 닫은 도형 바로 바깥에 떨어뜨릴 때 쓴다
-        private readonly List<int> m_lstLastCaptured = new List<int>();
 
         public int      WIDTH           => m_iWidth;
         public int      HEIGHT          => m_iHeight;
@@ -125,7 +123,6 @@ namespace Client
         public void Reset(int iBorderThick, int iStartRadius = 0)
         {
             m_lstTrail.Clear();
-            m_lstLastCaptured.Clear();
             m_iOwnedCount    = 0;
             m_iPlayableCount = 0;
 
@@ -526,40 +523,6 @@ namespace Client
         }
         #endregion 트레일
 
-        #region 260921_점령 직후 바깥 — 조각을 놓을 자리
-        /// <summary>
-        /// 마지막으로 점령한 칸에서 상하좌우로 iDistance칸 떨어진 **빈 땅**을 모은다 — 방금 닫은 도형의 바로 바깥이다.
-        /// 조각을 맵 아무 데나 뿌리면 줍기가 '먼 곳까지 걸어가는 일'이 된다. 먹은 자리 바로 옆에 두면
-        /// 점령과 줍기가 한 흐름으로 이어지고, 줍는 것은 짧고 위험한 한 번의 돌진이 된다.
-        /// </summary>
-        public void Collect_CaptureFrontier(int iDistance, List<Vector2Int> lstOut)
-        {
-            lstOut.Clear();
-            s_hsFrontier.Clear();
-
-            for (int n = 0; n < m_lstLastCaptured.Count; ++n)
-            {
-                int iIndex = m_lstLastCaptured[n];
-                int cx = iIndex % m_iWidth;
-                int cy = iIndex / m_iWidth;
-
-                for (int d = 0; d < 4; ++d)
-                {
-                    int x = cx + ARR_DIR_X[d] * iDistance;
-                    int y = cy + ARR_DIR_Y[d] * iDistance;
-                    if (Is_InBounds(x, y) == false)
-                        continue;
-
-                    int iNear = To_Index(x, y);
-                    if (m_arrCell[iNear] == CELL_STATE.EMPTY && s_hsFrontier.Add(iNear) == true)
-                        lstOut.Add(new Vector2Int(x, y));
-                }
-            }
-        }
-
-        private static readonly HashSet<int> s_hsFrontier = new HashSet<int>();
-        #endregion 점령 직후 바깥
-
         #region 260921_잠식 — 땅 갉는 자
         /// <summary>
         /// 점령한 칸을 도로 빈 땅으로 되돌린다. **빈 땅과 맞닿은 가장자리 칸만** 갉힌다 —
@@ -697,14 +660,11 @@ namespace Client
             if (m_lstTrail.Count == 0)
                 return 0;
 
-            m_lstLastCaptured.Clear();
-
             // 1. 트레일 → 점령지
             for (int i = 0; i < m_lstTrail.Count; ++i)
             {
                 m_arrCell[m_lstTrail[i]] = CELL_STATE.OWNED;
                 ++m_iOwnedCount;
-                m_lstLastCaptured.Add(m_lstTrail[i]);
             }
             int iCapturedCount = m_lstTrail.Count;
             m_lstTrail.Clear();
@@ -730,7 +690,6 @@ namespace Client
                 m_arrCell[i] = CELL_STATE.OWNED;
                 ++m_iOwnedCount;
                 ++iCapturedCount;
-                m_lstLastCaptured.Add(i);
             }
 
             Set_FullDirty();

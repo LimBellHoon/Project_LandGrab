@@ -58,9 +58,11 @@ namespace Client
         // 260916_런 스킬(회전탄/몽둥이)이 몬스터를 죽일 수 있어야 해서 처음 생긴 HP.
         // 260918_EnemyInfo.csv의 iHp로 몬스터별 값을 받는다. 이 상수는 표에 값이 없는
         // 행(0 이하)이나 CProtoTest처럼 손으로 만든 Desc를 위한 기본값으로만 남았다.
-        // 260918_공격력(iAttack)은 없앴다 — 플레이어가 목숨제라 무엇에 맞든 한 목숨이다(2-14).
         private const int       DEFAULT_HP     = 3;
         private int             m_iHp;
+        // 260923_다시 HP 풀이라(2-14) 몬스터별 공격력이 다시 필요하다 — EnemyInfo.csv의 iAttack.
+        private const int       DEFAULT_ATTACK = 1;
+        private int             m_iAttack;
 
         /// <summary> 260912_EnemyInfo.csv의 ID. 웨이브가 넘어갈 때 종류별 수를 셀 때 쓴다. </summary>
         public int              ENEMY_ID        => m_iEnemyID;
@@ -72,6 +74,8 @@ namespace Client
         public float            HIT_RANGE       => m_fHitRange;
         /// <summary> Engine이 bCollect가 선 오브젝트를 알아서 풀로 돌려준다(CProjectile 설명 참고). </summary>
         public bool             IS_DEAD         => bCollect;
+        /// <summary> 260923_플레이어와 몸 · 선이 닿았을 때 깎을 HP(EnemyInfo.iAttack). CStage_Manager.Tick_Enemy가 읽는다. </summary>
+        public int              ATTACK          => m_iAttack;
 
         #region IImpactTarget
         // 260917_탄 판정 반경은 플레이어 충돌 반경과 같은 값을 쓴다 — 몸 크기가 하나라서.
@@ -115,6 +119,7 @@ namespace Client
             m_fHitRange     = cDesc.fHitRange;
             m_fGimmickRange = cDesc.fGimmickRange;
             m_iHp           = cDesc.iHp > 0 ? cDesc.iHp : DEFAULT_HP;
+            m_iAttack       = cDesc.iAttack > 0 ? cDesc.iAttack : DEFAULT_ATTACK;
             m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
             m_bWhiteShown   = false;
             bCollect        = false;   // 풀에서 재사용되므로 지난 판의 죽음이 남지 않게 내려 둔다

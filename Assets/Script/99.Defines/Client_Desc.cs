@@ -68,6 +68,8 @@ namespace Client
         public float            fFireInterval   { get; set; }
         // 260918_몬스터별 체력/공격력(EnemyInfo.csv). 0 이하로 두면 CEnemy가 기존 고정값으로 대체한다.
         public int              iHp             { get; set; }
+        // 260923_다시 HP 풀이라 필요해진 몬스터별 공격력(2-14).
+        public int              iAttack         { get; set; }
 
         public override void OnReturn()
         {
@@ -369,20 +371,6 @@ namespace Client
         public Vector2          vDir        { get; set; }
         public float            fSpeed      { get; set; }   // 초당 셀
         public float            fLifeTime   { get; set; }   // 초
-
-        public override void OnReturn()
-        {
-            base.OnReturn();
-            cGrid = null;
-        }
-    }
-
-    // 260920_점령 조각(CShard) — 게이지를 올리는 픽업. 수명이 없어 fLifeTime을 받지 않는다.
-    public class CShardDesc : CGameObjectDesc
-    {
-        public CTerritoryGrid   cGrid   { get; set; }
-        public Vector2Int       vCell   { get; set; }
-        public int              iValue  { get; set; }   // 채우는 게이지 양
 
         public override void OnReturn()
         {

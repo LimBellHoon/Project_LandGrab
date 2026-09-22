@@ -21,6 +21,11 @@ namespace Client
         private const int   SEAL_MAX_STEP    = 120;     // 셀
         // 260920_점령 직후 경계선으로 되돌릴 때 찾아볼 반경(셀). 한 칸 옆이 보통이라 넉넉하다.
         private const int   BOUNDARY_SEARCH_RADIUS = 24;
+        // 260923_자기 선을 밟았을 때의 고정 피해량 — 특정 몬스터의 공격력이 아니므로 EnemyInfo.iAttack과 무관하다.
+        // 항상 HP를 전부 비우도록 충분히 큰 값을 쓴다(HP 풀이 아무리 커져도 즉사와 같은 결과).
+        private const int   SELF_TRAIL_DAMAGE = 9999;
+        // 260923_보호막이 한 번에 쌓을 수 있는 최대 충전 수.
+        private const int   SHIELD_MAX = 3;
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
@@ -33,13 +38,14 @@ namespace Client
 
         private CTerritoryGrid  m_cGrid;
         private Vector2Int      m_vLastSafeCell;        // 안전 지대를 벗어나기 직전 셀 — 사망 시 복귀 지점
-        // 260918_다시 목숨제다(2-14). 무엇에 맞든 하나씩 잃는다 — 선에 몬스터가 닿으면 곧바로 한 목숨.
+        // 260923_다시 HP 풀이다 — 몬스터·탄마다 공격력이 달라 몇 번은 버틴다(EnemyInfo.iAttack, 2-14).
         private int             m_iLife;
         private int             m_iMaxLife;
         private float           m_fInvincibleTimer;
         private float           m_fBaseSpeed;       // 260904_거미줄 감속의 기준이 되는 원래 속도
         private float           m_fEvasion;         // 260905_피격 회피 확률 0~1
-        private bool            m_bShield;          // 260905_소모품 보호막. 다음 피격 1회를 막는다
+        // 260923_보호막 충전 수. 맞을 때마다 하나씩 소모해 그 피해를 통째로 막는다(여러 번 버틴다) — 소모품/카드가 중첩해서 쌓을 수 있다.
+        private int             m_iShield;
 
         // 260912_스킬 효과. 종류별 모듈이라 CPlayer에는 분기가 없다.
         private CSkillEffect    m_cSkillEffect;
@@ -82,15 +88,17 @@ namespace Client
         int IImpactTarget.HP => m_iLife;
         public CImpactHandler   IMPACT          => m_cImpact;
 
-        // 260918_탄 피해량(ProjectileInfo.iDamage)과 상관없이 한 목숨이다.
-        public void Take_Damage(int iAmount) => Lose_Life();
+        // 260923_탄 피해량(ProjectileInfo.iDamage)을 그대로 HP에서 뺀다 — 선 접촉이 아니므로 회피는 그대로 듣는다.
+        public void Take_Damage(int iAmount) => Damage(iAmount);
 
         /// <summary> 플레이어는 칸을 따라 움직이므로 밀리지 않는다. 밀면 선이 끊겨 점령 규칙이 깨진다(2-3). </summary>
         public void Push(Vector2 vDir, float fDistance, float fDuration) { }
         #endregion IImpactTarget
         public bool         IS_INVINCIBLE   => m_fInvincibleTimer > 0f;
         /// <summary> 260905_보호막을 들고 있는가. UI가 표시에 쓴다. </summary>
-        public bool         HAS_SHIELD      => m_bShield;
+        public bool         HAS_SHIELD      => m_iShield > 0;
+        /// <summary> 260923_지금 몇 번 더 버티는가. UI가 개수를 보여주려면 이걸 읽는다. </summary>
+        public int          SHIELD_COUNT    => m_iShield;
         /// <summary> 260904_UI가 조이스틱을 그리려고 읽는다. </summary>
         public CVirtualJoystick JOYSTICK    => m_cInputHandler.JOYSTICK;
         /// <summary> 260905_UI가 쿨타임 게이지를 그리려고 읽는다. </summary>
@@ -153,7 +161,7 @@ namespace Client
             m_vLastSafeCell     = cDesc.vStartCell;
             m_fBaseSpeed        = cDesc.fMoveSpeed;
             m_fEvasion          = Mathf.Clamp01(cDesc.fEvasion);
-            m_bShield           = false;
+            m_iShield           = 0;
             m_cSkillHandler.Initialize(cDesc.cSkillInfo, cDesc.iSkillLevel);
 
             // 풀에서 재사용되므로 지난 판의 효과가 남지 않게 전부 되돌린다.
@@ -271,7 +279,9 @@ namespace Client
             switch (eResult)
             {
                 case STEP_RESULT.DEAD:
-                    Lose_Life(true);    // 260922_자기 선 밟기 — 회피로 흘리지 못한다
+                    // 260923_자기 선 밟기는 특정 몬스터가 준 피해가 아니라 고정 피해량을 쓴다 —
+                    // 항상 HP를 전부 비워 즉사와 같은 결과를 낸다(회피는 못 흘리고, 보호막·무적은 그대로 막는다).
+                    Damage(SELF_TRAIL_DAMAGE, true);
                     break;
 
                 case STEP_RESULT.CAPTURE:
@@ -543,23 +553,25 @@ namespace Client
 
         // 260904_이미 죽었거나 풀에 반납된 뒤의 호출을 막는다.
         // 같은 프레임에 여러 몬스터가 겹치거나 스테이지가 끝난 뒤에도 판정이 한 번 더 들어올 수 있어,
-        // 목숨이 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
-        // 260918_HP 풀(260916)에서 다시 목숨제로 돌렸다 — 선에 몬스터가 닿으면 곧바로 한 목숨을 잃는 것이
-        // 이 장르(Qix)의 긴장이고, 판이 빨리 돌아 다시 도전하기도 좋다. 몬스터 · 탄마다 다르던 피해량은 없앴다.
-        /// <summary> 몬스터 · 탄에 맞거나 자기 선을 밟았을 때. 보호막 · 회피가 막지 못하면 목숨 하나를 잃고 안전 칸에서 다시 시작한다. </summary>
+        // HP가 음수로 내려가거나 m_cGrid가 null인 채로 Clear_Trail을 부를 여지가 있었다.
+        // 260923_목숨제(260918)에서 다시 HP 풀로 돌렸다 — 몬스터 · 탄마다 공격력이 달라야
+        // 보스급이 더 아프게 때릴 수 있고, 보호막 · 강화로 "몇 번은 버틴다"는 손맛이 산다.
+        /// <summary> 몬스터 · 탄에 맞거나 자기 선을 밟았을 때. 보호막 · 회피가 막지 못하면 iAmount만큼 HP를 잃고 안전 칸에서 다시 시작한다. </summary>
+        /// <param name="iAmount"> 깎을 HP. 몬스터는 EnemyInfo.iAttack, 탄은 ProjectileInfo.iDamage, 자기 선 밟기는 SELF_TRAIL_DAMAGE(즉사) </param>
         /// <param name="bLineCut"> 260922_그리던 선이 끊겼다(몬스터가 선에 닿음 · 자기 선 밟기). 회피로 흘리지 못한다 —
         /// 선이 끊기면 죽는 것이 이 장르의 규칙이고, 회피가 높으면 몬스터가 선을 지나가도 멀쩡해 규칙이 사라진 것처럼 보였다.
         /// 보호막 · 무적은 그대로 막는다(유령 걸음 · 잔상처럼 '통과'를 약속한 효과라서) </param>
-        public void Lose_Life(bool bLineCut = false)
+        public void Damage(int iAmount, bool bLineCut = false)
         {
-            if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true)
+            if (m_cGrid == null || m_iLife <= 0 || IS_INVINCIBLE == true || iAmount <= 0)
                 return;
 
             // 260905_보호막이 있으면 확정으로 한 번 막는다. 확률인 회피보다 먼저 쓴다 —
             // 회피가 먼저 터지면 아껴 둔 보호막이 그대로 남아 손해처럼 느껴진다.
-            if (m_bShield == true)
+            // 260923_충전이 여러 개면 하나만 소모한다 — 피해량과 무관하게 그 한 번을 통째로 막는다.
+            if (m_iShield > 0)
             {
-                m_bShield = false;
+                --m_iShield;
                 m_fInvincibleTimer = EVADE_GRACE_TIME;
                 OnEvade?.Invoke();
                 return;
@@ -577,7 +589,7 @@ namespace Client
 
             m_cGrid.Clear_Trail();
 
-            m_iLife = Mathf.Max(0, m_iLife - 1);
+            m_iLife = Mathf.Max(0, m_iLife - iAmount);
             OnDamaged?.Invoke();
             OnLifeChanged?.Invoke(m_iLife);
 
@@ -759,7 +771,8 @@ namespace Client
 
         // 260905_소모품 효과
         /// <summary> 보호막을 얻는다. 이미 있으면 그대로 둔다(중첩하지 않는다). </summary>
-        public void Add_Shield() => m_bShield = true;
+        /// <summary> 260923_충전 하나를 더한다. 여러 개면 그만큼 더 버틴다(SHIELD_MAX까지 쌓인다). </summary>
+        public void Add_Shield() => m_iShield = Mathf.Min(SHIELD_MAX, m_iShield + 1);
 
         /// <summary> 목숨을 되찾는다. 최대 목숨을 넘기지 않는다. </summary>
         public void Add_Life(int iAmount)

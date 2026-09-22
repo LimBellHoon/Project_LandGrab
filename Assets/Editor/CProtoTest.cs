@@ -54,7 +54,7 @@ namespace Client
             Test_Currency();
             Test_CaptureReward();
             Test_FieldItem();
-            Test_Gauge();
+            Test_CardReady();
             Test_MoveStyle();
             Test_TrailZoom();
             Test_Account();
@@ -544,6 +544,7 @@ namespace Client
             Check("체력이 0보다 크다", cWanderer.iHp > 0);
             Check("분열체가 배회자보다 단단하다(소환주기가 있어 오래 버텨야 함)",
                   cSplitter.iHp >= cWanderer.iHp);
+            Check("공격력이 0보다 크다", cWanderer.iAttack > 0);
             Check("표에 없는 ID는 null", cTable.Get_Info(99999) == null);
         }
 
@@ -562,30 +563,52 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = vStart,
                 fMoveSpeed    = STEP_SPEED,
-                iLife         = 3,
+                iLife         = 5,
             });
 
-            Check("처음엔 목숨이 가득", cPlayer.LIFE, 3);
-            Check("최대 목숨 기록", cPlayer.MAX_LIFE, 3);
+            Check("처음엔 HP가 가득", cPlayer.LIFE, 5);
+            Check("최대 HP 기록", cPlayer.MAX_LIFE, 5);
 
             int iLastLife = -1;
             cPlayer.OnLifeChanged += iLife => iLastLife = iLife;
 
-            // 탄 피해량이 커도 한 목숨이다
-            cPlayer.Take_Damage(5);
-            Check("무엇에 맞든 한 목숨", cPlayer.LIFE, 2);
-            Check("OnLifeChanged가 남은 목숨을 전달", iLastLife, 2);
+            // 260923_다시 HP 풀이다 — 피해량이 그대로 깎인다(목숨제 때는 무엇에 맞든 1이었다)
+            cPlayer.Take_Damage(3);
+            Check("피해량만큼 깎인다", cPlayer.LIFE, 2);
+            Check("OnLifeChanged가 남은 HP를 전달", iLastLife, 2);
 
             // 방금 맞아 무적 시간이 걸려 있으므로 더 잃지 않는다
-            cPlayer.Lose_Life();
+            cPlayer.Damage(1);
             Check("무적 중엔 안 잃는다", cPlayer.LIFE, 2);
 
             cPlayer.Add_Life(10);
-            Check("최대 목숨을 넘게 되찾지 못한다", cPlayer.LIFE, 3);
+            Check("최대 HP를 넘게 되찾지 못한다", cPlayer.LIFE, 5);
 
-            Check("목숨 표시", CUI_InGame.Get_LifeText(2, 3), "●●○");
+            Check("HP 표시", CUI_InGame.Get_LifeText(2, 5), "●●○○○");
 
             Object.DestroyImmediate(goPlayer);
+
+            // 260923_보호막 — 충전 하나가 피해량과 무관하게 한 번을 통째로 막고, 여러 장 쌓을 수 있다
+            GameObject goShield = new GameObject("Test_ShieldPlayer");
+            CPlayer cShieldPlayer = goShield.AddComponent<CPlayer>();
+            cShieldPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartCell    = vStart,
+                fMoveSpeed    = STEP_SPEED,
+                iLife         = 3,
+            });
+
+            cShieldPlayer.Add_Shield();
+            cShieldPlayer.Add_Shield();
+            Check("보호막 두 장 충전", cShieldPlayer.SHIELD_COUNT, 2);
+            cShieldPlayer.Damage(99);
+            Check("보호막이 큰 피해도 통째로 막는다", cShieldPlayer.LIFE, 3);
+            Check("충전은 하나만 소모", cShieldPlayer.SHIELD_COUNT, 1);
+
+            Object.DestroyImmediate(goShield);
 
             // 치명적 피해 — HP는 0에서 멈추고 OnDead가 발동한다
             GameObject goDeath = new GameObject("Test_HpPlayer_Death");
@@ -597,14 +620,14 @@ namespace Client
                 cGrid         = cGrid,
                 vStartCell    = vStart,
                 fMoveSpeed    = STEP_SPEED,
-                iLife         = 1,
+                iLife         = 3,
             });
 
             bool bDied = false;
             cDeathPlayer.OnDead += () => bDied = true;
-            cDeathPlayer.Lose_Life();
-            Check("마지막 목숨을 잃으면 0", cDeathPlayer.LIFE, 0);
-            Check("목숨이 0이 되면 OnDead 발동", bDied);
+            cDeathPlayer.Damage(99);
+            Check("치명적 피해는 0에서 멈춘다", cDeathPlayer.LIFE, 0);
+            Check("HP가 0이 되면 OnDead 발동", bDied);
 
             Object.DestroyImmediate(goDeath);
         }
@@ -1228,33 +1251,12 @@ namespace Client
             Check("멈추기 — 다시 누르면 간다", Step_Until_Arrive(cMove, MOVE_DIR.LEFT, out Vector2Int _) == true);
         }
 
-        // 260921_3지선다 R&D — 조각은 방금 닫은 도형 바로 바깥에, 다시 뽑기 · 버리기는 같은 것을 가린다
+        // 260923_3지선다 R&D — 다시 뽑기 · 버리기가 같은 선택지를 가리는지, 시작 섬 슬롯이 도는지 본다
+        // (점령 조각으로 여는 방식(2-21)은 다시 점유율 자동 트리거로 되돌렸다 — Test_CardReady 참고)
         private static void Test_PickRnD()
         {
-            // 방금 먹은 칸의 두 칸 바깥 빈 땅
             CTerritoryGrid cGrid = new CTerritoryGrid();
             cGrid.Initialize(30, 30, 1f, Vector2.zero, 0, null, 2);   // 가운데 (15,15), 섬 13~17
-            Vector2Int[] arrPath = { new Vector2Int(15, 12), new Vector2Int(15, 11), new Vector2Int(16, 11),
-                                     new Vector2Int(17, 11), new Vector2Int(17, 12), new Vector2Int(17, 13) };
-            int iCaptured = 0;
-            for (int i = 0; i < arrPath.Length; ++i)
-                cGrid.Step_To(arrPath[i], out iCaptured);
-            Check("조각 자리 — 도형을 닫았다", iCaptured > 0);
-
-            List<Vector2Int> lstSpot = new List<Vector2Int>();
-            cGrid.Collect_CaptureFrontier(2, lstSpot);
-            bool bAllEmpty = lstSpot.Count > 0;
-            for (int i = 0; i < lstSpot.Count; ++i)
-                bAllEmpty &= cGrid.Get_Cell(lstSpot[i]) == CELL_STATE.EMPTY;
-            Check("조각 자리 — 방금 닫은 도형 바깥 빈 땅만 모은다", bAllEmpty);
-            Check("조각 자리 — 도형 근처다", lstSpot.Count > 0 && Mathf.Abs(lstSpot[0].x - 16) <= 4 && Mathf.Abs(lstSpot[0].y - 11) <= 4);
-
-            CStage_Manager.Pick_ShardCluster(lstSpot, 3);
-            bool bApart = lstSpot.Count <= 3;
-            for (int i = 0; i < lstSpot.Count; ++i)
-                for (int j = i + 1; j < lstSpot.Count; ++j)
-                    bApart &= Mathf.Abs(lstSpot[i].x - lstSpot[j].x) > 1 || Mathf.Abs(lstSpot[i].y - lstSpot[j].y) > 1;
-            Check("조각 자리 — 한 무더기로 모으되 서로 겹치지 않는다", lstSpot.Count > 0 && bApart);
 
             // 시작 섬 자리
             Check("시작 섬 — 맵 끝에 걸치면 못 깐다", cGrid.Can_PlaceStartArea(new Vector2Int(1, 1), 2) == false);
@@ -1585,37 +1587,31 @@ namespace Client
             return false;
         }
 
-        // 260920_3지선다 게이지(2-21) — 조각 요구량이 고를수록 늘어난다
-        private static void Test_Gauge()
+        // 260923_3지선다 대기열(2-21) — 점유율 트리거로 되돌리며 조각 · 게이지 열은 MapInfo.csv에서 걷어냈다
+        // (Test_PickRnD 주석 참고). 대기열 자체(한 번에 한 장만 연다)와 문턱 산수만 여기서 본다.
+        private static void Test_CardReady()
         {
             const string TAB = "\t";
-            // MapInfo 헤더 순서 그대로. 마지막 네 열이 조각 · 게이지다.
             string strCsv =
                   string.Join(TAB, "iMapID", "strMapName", "iGridWidth", "iGridHeight", "fCellSize", "iBorderThick",
                                    "iLife", "fPlayerSpeed", "iWaveCount", "strShapeMask", "strLayerTex", "strWaveEnemy",
                                    "strWaveClearRatio", "strWaveTimeLimit", "iCoinPerStar", "iCoinPerCell", "iCharacterID",
-                                   "iFieldItemOnWave", "fFieldItemCool", "fFieldItemDropRate",
-                                   "iCellPerShard", "iShardPerKill", "iGaugeBase", "iGaugeAdd", "NONE") + "\n"
+                                   "iFieldItemOnWave", "fFieldItemCool", "fFieldItemDropRate", "NONE") + "\n"
                 + string.Join(TAB, "1", "테스트", "60", "100", "0.12", "2", "3", "9", "1", "-",
-                                   "A|B", "101*1", "0.6", "90", "50", "1", "0",
-                                   "2", "20", "0.5", "40", "2", "6", "3", "");
+                                   "A|B", "101*1", "0.6", "90", "50", "1", "0", "2", "0.5", "");
 
             CCSVData_MapInfo cTable = new CCSVData_MapInfo();
             cTable.Read_CSVData(new TextAsset(strCsv));
 
             CMapInfo cInfo = cTable.Get_Info(1);
-            Check("조각 · 게이지 열을 읽는다", cInfo != null && cInfo.iCellPerShard == 40 && cInfo.iShardPerKill == 2);
-            Check("게이지 기본 요구량", cInfo.iGaugeBase, 6);
-            Check("게이지 증가량", cInfo.iGaugeAdd, 3);
-            Check("필드 아이템 열도 밀리지 않았다",
-                  cInfo.iFieldItemOnWave == 2 && Mathf.Approximately(cInfo.fFieldItemDropRate, 0.5f));
+            Check("필드 아이템 열이 밀리지 않았다",
+                  cInfo != null && cInfo.iFieldItemOnWave == 2 && Mathf.Approximately(cInfo.fFieldItemDropRate, 0.5f));
 
-            // 요구량은 고른 횟수에 비례해 늘어난다 — GAUGE_NEED와 같은 식이어야 한다
-            for (int iGiven = 0; iGiven < 4; ++iGiven)
-            {
-                int iNeed = cInfo.iGaugeBase + cInfo.iGaugeAdd * iGiven;
-                Check($"{iGiven + 1}번째 고르기에 조각 {iNeed}개", iNeed, 6 + 3 * iGiven);
-            }
+            // 260923_점유율 문턱 산수 — CStage_Manager.CARD_RATIO_STEP(5%)과 같은 식이어야 한다
+            const float CARD_RATIO_STEP = 0.05f;
+            Check("문턱 계산 — 12%면 두 번째 문턱", Mathf.FloorToInt(0.12f / CARD_RATIO_STEP), 2);
+            Check("문턱 계산 — 정확히 10%도 두 번째 문턱", Mathf.FloorToInt(0.10f / CARD_RATIO_STEP), 2);
+            Check("문턱 계산 — 4%는 아직 못 넘는다", Mathf.FloorToInt(0.04f / CARD_RATIO_STEP), 0);
 
             // 260921_자석으로 한꺼번에 넘쳐도 3지선다는 한 장씩 열린다
             CPickQueue cQueue = new CPickQueue();
@@ -2289,7 +2285,7 @@ namespace Client
             Check("반격의 몽둥이 — 범위 1.3배", cClub != null && Mathf.Approximately(cClub.RADIUS_CELLS, fRadiusBefore * 1.3f));
             Check("반격의 몽둥이 — 한 번 휘두르면", cClub != null && cClub.Consume_Swing(out float _) == true);
             Check("반격의 몽둥이 — 쿨이 돈다", cClub != null && cClub.IS_READY == false);
-            cPlayer.Lose_Life();            // 회피 확률 1 — 반드시 회피한다
+            cPlayer.Damage(1);              // 회피 확률 1 — 반드시 회피한다
             Check("반격의 몽둥이 — 회피하면 곧바로 다시 휘두를 수 있다", cClub != null && cClub.IS_READY == true);
 
             CRunSkillInfo cStunShot = cSkillTable.Find_ByType(RUN_SKILL_TYPE.STUN_SHOT);

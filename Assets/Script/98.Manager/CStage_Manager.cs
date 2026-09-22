@@ -23,7 +23,6 @@ namespace Client
         private const string PREFAB_WEB         = "Prefab_Web";
         private const string PREFAB_SOUL        = "Prefab_Soul";
         private const string PREFAB_FIELD_ITEM  = "Prefab_FieldItem";
-        private const string PREFAB_SHARD       = "Prefab_Shard";
 
         private const string PREFAB_DECOY       = "Prefab_Decoy";
         private const int    SPAWN_SEARCH_RADIUS = 24;  // 스폰 자리가 막혔을 때 대신 찾아볼 반경(셀)
@@ -40,6 +39,14 @@ namespace Client
         // 260904_소환 기믹의 안전장치. RefID가 다시 SPAWN 몬스터를 가리키면 끝없이 늘어난다.
         // 규칙 값이 아니라 사고 방지용 상한이라 CSV로 빼지 않는다.
         private const int    MAX_ENEMY          = 32;
+
+        // 260923_플레이어와 부딪힌 몬스터가 튕겨나는 거리 · 시간 — 연출 값이라 CSV로 빼지 않는다(REVEAL_TIME과 같은 자리).
+        private const float  PLAYER_HIT_KNOCKBACK_CELL     = 1.5f;
+        private const float  PLAYER_HIT_KNOCKBACK_DURATION = 0.2f;
+
+        // 260923_3지선다 트리거 — 점유율이 이 폭마다 열린다(2-21의 조각 게이지를 되돌림). 규칙 값이지만
+        // 맵마다 다르게 줄 이유가 아직 없어 CSV로 빼지 않았다 — 필요해지면 MapInfo.csv 열로 옮길 것.
+        private const float  CARD_RATIO_STEP = 0.05f;
 
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
@@ -77,10 +84,10 @@ namespace Client
         // 260912_카드로 얹은 몬스터 감속. 판이 끝날 때까지 유지되므로 타이머가 없다.
         private float                       m_fEnemyCardSlow = 1f;
 
-        // 260912_카드 지급 — 이미 넘긴 지점은 다시 주지 않는다.
-        // 260920_3지선다 게이지(2-21). m_iGauge는 지금까지 모은 조각, m_iPickGiven은 지금까지 고른 횟수다.
-        private int                         m_iGauge;
-        private int                         m_iPickGiven;
+        // 260923_3지선다 트리거 — 다시 점유율 기준이다(2-21 조각 게이지를 되돌림). 점유율이
+        // CARD_RATIO_STEP(5%)을 하나 더 넘을 때마다 하나씩 연다. 웨이브가 넘어가 점유율이
+        // 0으로 돌아가면 이 값도 같이 리셋된다.
+        private int                         m_iRatioStep;
         private readonly CPickQueue         m_cPickQueue = new CPickQueue();   // 260921_한 번에 한 장만
         // 260922_현란한 동작 판정 — 알아보고 알려 주기만 한다(OnStylish)
         private readonly CStyleTracker      m_cStyle = new CStyleTracker();
@@ -89,7 +96,6 @@ namespace Client
         private int                         m_iRerollLeft;
         private int                         m_iBanishLeft;
         private readonly HashSet<string>    m_hsBanished = new HashSet<string>();
-        private readonly List<Vector2Int>   m_lstShardSpot = new List<Vector2Int>();
 
         // 260918_점령 재화 — 안전하게 조금씩과 위험을 감수하고 크게 한 방 사이에 실제 이득 차이를 만든다.
         // 이번 판 누적만 여기서 들고, 실제 보유 코인 반영(디스크 저장)은 스테이지가 끝날 때 CGameManager가 한 번만 한다.
@@ -113,8 +119,6 @@ namespace Client
 
         /// <summary> 260920_개발용 — 캐릭터를 바꾸지 않고 이동 방식만 바꿔 본다(1-6). null이면 캐릭터를 따른다. </summary>
         public void Set_DevMoveStyle(MOVE_STYLE? eStyle) => m_eDevMoveStyle = eStyle;
-        // 260920_점령 조각(2-21). 수명이 없어 그 웨이브 동안 맵에 그대로 남는다.
-        private readonly List<CShard>       m_lstShard      = new List<CShard>();
         // 260921_분신(2-11-3). 한 번에 하나만 둔다 — 여러 개면 어그로가 흩어져 무엇을 노리는지 안 읽힌다.
         private CDecoy                      m_cDecoy;
         private bool                        m_bFieldItemEnabled = true;     // 개발용 스위치(CGameConfig)
@@ -165,9 +169,6 @@ namespace Client
 
         // 260920_필드 아이템을 주웠다 — 화면 연출(소리 · 진동)을 CGameManager가 낸다.
         public event Action<FIELD_ITEM_TYPE> OnFieldItemUsed;
-
-        // 260920_조각 게이지가 바뀌었다 (지금 모은 양, 다음 고르기까지 필요한 양)
-        public event Action<int, int> OnGaugeChanged;
 
         public bool             IS_PAUSED       => m_bPaused;
         public int              MAP_ID          => m_cMapInfo != null ? m_cMapInfo.iMapID : 0;
@@ -309,8 +310,7 @@ namespace Client
             m_fEnemySlowScale = 1f;     // 260912_다음 판에 감속이 남아 있지 않게
             m_fEnemySlowTimer = 0f;
             m_fEnemyCardSlow  = 1f;
-            m_iGauge          = 0;
-            m_iPickGiven      = 0;
+            m_iRatioStep      = 0;
             m_cPickQueue.Clear();
             OnCardReady       = null;
             OnMassStun        = null;
@@ -321,7 +321,6 @@ namespace Client
             m_iStageCoin      = 0;      // 260918_다음 판으로 넘어가지 않게
             OnCoinGained      = null;
             OnFieldItemUsed   = null;
-            OnGaugeChanged    = null;
             m_fFieldItemTimer = 0f;
 
             Collect_Player();
@@ -444,7 +443,6 @@ namespace Client
             Tick_Web();
             Tick_Soul();
             Tick_FieldItem();
-            Tick_Shard();
             Tick_Decoy();
             Tick_FieldItemSpawn(fDeltaTime);
 
@@ -475,18 +473,16 @@ namespace Client
             m_iWave       = iWave;
             m_fRemainTime = cWave.fTimeLimit;
 
-            // 260920_점령을 비우므로 점령률도 0으로 돌아간다. 카드 지점(strCardRatio)도 같이 되돌려
+            // 260920_점령을 비우므로 점령률도 0으로 돌아간다. 카드 문턱(m_iRatioStep)도 같이 되돌려
             // 웨이브마다 다시 준다 — 안 그러면 2·3웨이브에서는 카드가 아예 안 나온다(2-10-1).
             m_cGrid.Reset(m_cMapInfo.iBorderThick, m_cMapInfo.iStartRadius);
-            m_iGauge     = 0;
-            m_iPickGiven = 0;
+            m_iRatioStep = 0;
             Respawn_Player();
 
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
                                             Get_Texture(m_cMapInfo.Get_RevealTex(iWave)));
 
             Collect_All(m_lstFieldItem);       // 260920_지난 웨이브에 못 주운 것은 판과 함께 사라진다
-            Collect_All(m_lstShard);           // 조각도 마찬가지 — 그 웨이브 안에 주우라는 압박이 된다
             m_fFieldItemTimer = 0f;
             // 260921_웨이브 시작 아이템은 시작 섬 자리를 고른 뒤에 깐다(Finish_StartSelect) — 먼저 깔면 섬 밑에 깔려 공짜로 먹힌다
 
@@ -721,27 +717,18 @@ namespace Client
         // 260905_소모품은 인벤토리에서 개수를 깎는 쪽(CGameManager)이 먼저 판단하고,
         // 실제 효과만 여기서 플레이어에게 건다.
         /// <returns> 효과를 걸었으면 true </returns>
-        // 260920_3지선다는 이제 점령률이 아니라 **조각 게이지**가 연다(2-21).
-        // 점령률은 저절로 차올라 "땅을 먹으면 알아서 주는" 수동적인 보상이었다 —
-        // 조각은 미점령 지역에 떨어지므로 위험한 바깥으로 다시 나가야 성장한다.
-        /// <summary> 조각을 주웠을 때 부른다. 한 번에 많이 주우면 연달아 여러 번 열릴 수도 있다. </summary>
-        private void Add_Gauge(int iAmount)
+        /// <summary> 점령으로 점유율이 바뀔 때마다 부른다. 한 번에 많이 먹으면 연달아 여러 번 열릴 수도 있다. </summary>
+        // 260923_점유율이 CARD_RATIO_STEP을 하나 더 넘을 때마다 3지선다를 하나씩 연다(2-21의 조각 게이지를 되돌림).
+        // 큰 도형을 한 번에 닫으면 문턱을 여럿 건너뛸 수 있어, 넘긴 개수만큼 큐에 쌓아 한 장씩 연다
+        // (여러 창이 겹쳐 뜨면 입력이 막히는 문제는 260921에 이미 CPickQueue로 해결해 뒀다 — 그대로 재사용한다).
+        public void Check_CardReady()
         {
-            if (iAmount <= 0 || m_cMapInfo == null)
+            int iThreshold = Mathf.FloorToInt(m_cGrid.OWNED_RATIO / CARD_RATIO_STEP);
+            if (iThreshold <= m_iRatioStep)
                 return;
 
-            m_iGauge += iAmount;
-
-            // 260921_넘친 만큼 쌓아 두고 한 장씩 연다 — 자석으로 한꺼번에 주우면 창이 겹쳐 떠 입력이 막혔다
-            int iReady = 0;
-            while (m_iGauge >= GAUGE_NEED)
-            {
-                m_iGauge -= GAUGE_NEED;
-                ++m_iPickGiven;
-                ++iReady;
-            }
-
-            OnGaugeChanged?.Invoke(m_iGauge, GAUGE_NEED);
+            int iReady = iThreshold - m_iRatioStep;
+            m_iRatioStep = iThreshold;
 
             m_cPickQueue.Add(iReady);
             Try_OpenPick();
@@ -1077,6 +1064,7 @@ namespace Client
                 fFireAngle      = cInfo.fFireAngle,
                 fFireInterval   = cInfo.fFireInterval,
                 iHp             = cInfo.iHp,
+                iAttack         = cInfo.iAttack,
             };
 
             GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
@@ -1108,7 +1096,6 @@ namespace Client
             Collect_All(m_lstWeb);
             Collect_All(m_lstSoul);
             Collect_All(m_lstFieldItem);
-            Collect_All(m_lstShard);
             Collect_Decoy();
         }
 
@@ -1164,7 +1151,8 @@ namespace Client
             bool bExposed = m_cGrid.Get_Cell(m_cPlayer.CUR_CELL) != CELL_STATE.OWNED;
             Vector2 vPlayerPos = m_cPlayer.transform.position;
             bool bHit = false;
-            bool bLineCut = false;      // 260922_선에 닿았다 — 회피로 흘리지 못한다(CPlayer.Lose_Life)
+            bool bLineCut = false;      // 260922_선에 닿았다 — 회피로 흘리지 못한다(CPlayer.Damage)
+            CEnemy cHitEnemy = null;    // 260923_HP 풀 — 어느 몬스터가 닿았는지 알아야 공격력 · 넉백을 낼 수 있다
 
             m_bPlayerExposed = bExposed;
 
@@ -1185,10 +1173,7 @@ namespace Client
                 {
                     // 260920_잡은 자리에 확률로 아이템을 떨어뜨린다. 걷어내기 전에 위치를 먼저 읽어야 한다.
                     if (cEnemy != null)
-                    {
                         Drop_FieldItem(cEnemy.transform.position);
-                        Drop_Shard(cEnemy.transform.position);
-                    }
 
                     m_lstEnemy.RemoveAt(i);
                     continue;
@@ -1207,6 +1192,7 @@ namespace Client
                 {
                     bHit = true;
                     bLineCut = true;
+                    cHitEnemy = cEnemy;
                     continue;
                 }
 
@@ -1215,6 +1201,7 @@ namespace Client
                     && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
                 {
                     bHit = true;
+                    cHitEnemy = cEnemy;
                     continue;
                 }
 
@@ -1232,11 +1219,21 @@ namespace Client
 
             m_cStyle.End_Near();
 
-            // 260918_목숨제 — 몇 마리가 겹쳐도 한 목숨이다(2-14).
+            // 260923_HP 풀 — 몇 마리가 겹쳐도 그 프레임엔 처음 닿은 한 마리의 공격력만 들어간다(2-14).
             if (bHit == true)
             {
                 m_cStyle.Clear_Near();      // 260922_맞았으면 아슬아슬이 아니다
-                m_cPlayer.Lose_Life(bLineCut);
+                m_cPlayer.Damage(cHitEnemy != null ? cHitEnemy.ATTACK : 1, bLineCut);
+
+                // 260923_선이나 몸에 부딪힌 몬스터는 튕겨난다 — 피해가 보호막 · 회피로 막혀도 충돌 자체는 일어난 것이라 넉백은 그대로 건다.
+                if (cHitEnemy != null)
+                {
+                    Vector2 vAway = cHitEnemy.POS - vPlayerPos;
+                    if (vAway.sqrMagnitude < 0.0001f)
+                        vAway = Vector2.up;
+
+                    cHitEnemy.Push(vAway.normalized, PLAYER_HIT_KNOCKBACK_CELL * m_cGrid.CELL_SIZE, PLAYER_HIT_KNOCKBACK_DURATION);
+                }
             }
         }
 
@@ -1266,11 +1263,6 @@ namespace Client
             // 가두는 것도 '때린 것'이다 — 분노 게이지가 오른다(회전탄 · 몽둥이와 같은 자리).
             for (int i = 0; i < iKilled; ++i)
                 m_cPlayer?.On_MonsterHit();
-
-            // 260921_가둬 죽이면 조각을 곧바로 준다(2-21). 몬스터를 도형 안에 넣고 닫는 위험을 감수한 판단에 대한 보상이다.
-            // 쓰러진 자리에 떨어지는 보통 조각(iShardPerKill)은 그대로 떨어진다
-            if (iKilled > 0 && m_cMapInfo != null)
-                Add_Gauge(iKilled * m_cMapInfo.iShardPerTrapKill);
 
             return iKilled;
         }
@@ -1654,13 +1646,6 @@ namespace Client
         public CProjectileCore Spawn_PlayerShot(int iProjectileID, Vector2 vPos, Vector2 vDir, float fScale = 1f)
             => Spawn_Projectile(iProjectileID, vPos, vDir, PROJECTILE_SIDE.PLAYER_SHOT, m_cPlayer, fScale);
 
-        #region 점령 조각 · 게이지 (260920)
-        /// <summary> 다음 고르기까지 필요한 조각 수. 고를수록 늘어난다(뱀서라이크의 레벨업 곡선과 같은 모양). </summary>
-        public int GAUGE_NEED => m_cMapInfo == null
-                               ? 1
-                               : Mathf.Max(1, m_cMapInfo.iGaugeBase + m_cMapInfo.iGaugeAdd * m_iPickGiven);
-        public int GAUGE => m_iGauge;
-
         // 260921_다시 뽑기 · 버리기(2-10-1). 판 전체에서 센다
         public int REROLL_LEFT => m_iRerollLeft;
         public int BANISH_LEFT => m_iBanishLeft;
@@ -1685,134 +1670,6 @@ namespace Client
         }
 
         public bool Is_Banished(CPickOption cOption) => cOption != null && m_hsBanished.Contains(cOption.KEY);
-
-        /// <summary>
-        /// 점령한 만큼 조각을 **미점령 지역에** 뿌린다 — 방금 먹은 땅값을 위험한 바깥에 두고 오는 셈이다.
-        /// 크게 먹을수록 조각이 많지만 그만큼 넓게 흩어져 회수가 위험해진다(2-18의 재화 배율과 같은 결).
-        /// </summary>
-        private void Spawn_CaptureShard(int iCapturedCount)
-        {
-            if (m_cMapInfo == null || m_cMapInfo.iCellPerShard <= 0)
-                return;
-
-            int iCount = iCapturedCount / m_cMapInfo.iCellPerShard;
-            if (iCount <= 0)
-                return;
-
-            // 260921_방금 닫은 도형 **바로 바깥**에 모아 떨어뜨린다. 맵 아무 데나 뿌리면 줍기가 '먼 곳까지 걸어가는 일'이 됐다 —
-            // 먹은 자리 옆에 두면 점령과 줍기가 한 흐름으로 이어지고, 줍는 것은 짧고 위험한 한 번의 돌진이 된다.
-            // 가장자리에 딱 붙이지 않고 두 칸 바깥에 둔다 — 붙어 있으면 경계를 따라 걷기만 해도 주워 위험이 없다.
-            m_cGrid.Collect_CaptureFrontier(2, m_lstShardSpot);
-            if (m_lstShardSpot.Count == 0)
-                m_cGrid.Collect_CaptureFrontier(1, m_lstShardSpot);
-
-            Pick_ShardCluster(m_lstShardSpot, iCount);
-
-            for (int i = 0; i < iCount; ++i)
-                Spawn_Shard(i < m_lstShardSpot.Count ? m_lstShardSpot[i] : (Vector2Int?)null, 1);
-        }
-
-        /// <summary>
-        /// 후보 중 한 곳을 골라 그 둘레로 iCount개를 한 칸씩 띄워 앞에 모은다 — 한 무더기로 보여야
-        /// '저기 떨어졌다'가 읽힌다. 한 칸씩 띄우는 것은 조각끼리 겹쳐 하나로 보이지 않게다.
-        /// </summary>
-        public static void Pick_ShardCluster(List<Vector2Int> lstSpot, int iCount)
-        {
-            if (lstSpot.Count == 0)
-                return;
-
-            Vector2Int vAnchor = lstSpot[UnityEngine.Random.Range(0, lstSpot.Count)];
-            lstSpot.Sort((a, b) => (a - vAnchor).sqrMagnitude.CompareTo((b - vAnchor).sqrMagnitude));
-
-            int iWrite = 0;
-            for (int i = 0; i < lstSpot.Count && iWrite < iCount; ++i)
-            {
-                bool bNear = false;
-                for (int j = 0; j < iWrite && bNear == false; ++j)
-                    bNear = Mathf.Abs(lstSpot[j].x - lstSpot[i].x) <= 1 && Mathf.Abs(lstSpot[j].y - lstSpot[i].y) <= 1;
-
-                if (bNear == false)
-                    lstSpot[iWrite++] = lstSpot[i];
-            }
-
-            lstSpot.RemoveRange(iWrite, lstSpot.Count - iWrite);
-        }
-
-        /// <summary> 몬스터를 잡은 자리에 떨어뜨린다 — 런 스킬 무기를 고를 이유가 된다. </summary>
-        private void Drop_Shard(Vector2 vWorldPos)
-        {
-            if (m_cMapInfo == null || m_cMapInfo.iShardPerKill <= 0)
-                return;
-
-            for (int i = 0; i < m_cMapInfo.iShardPerKill; ++i)
-                Spawn_Shard(m_cGrid.World_ToCell(vWorldPos), 1);
-        }
-
-        /// <param name="vNearCell"> 이 칸 근처에 놓는다. null이면 맵 전체에서 무작위 </param>
-        private void Spawn_Shard(Vector2Int? vNearCell, int iValue)
-        {
-            if (m_cMapInfo == null || Has_Prefab(PREFAB_SHARD) == false)
-                return;
-
-            Vector2Int vDesired = vNearCell ?? new Vector2Int(UnityEngine.Random.Range(0, m_cMapInfo.iGridWidth),
-                                                              UnityEngine.Random.Range(0, m_cMapInfo.iGridHeight));
-            if (m_cGrid.Try_Find_NearestCell(vDesired, CELL_STATE.EMPTY, SPAWN_SEARCH_RADIUS,
-                                             out Vector2Int vCell) == false)
-                return;
-
-            CShardDesc cDesc = new CShardDesc
-            {
-                eObjectType   = OBJECT_TYPE.ENEMY_EFFECT,
-                strPrefabName = PREFAB_SHARD,
-                cGrid         = m_cGrid,
-                vCell         = vCell,
-                iValue        = iValue,
-            };
-
-            GameObject goShard = CGameInstance.Instance.Reuse_Object(cDesc);
-            if (goShard == null)
-                return;
-
-            CShard cShard = goShard.GetComponent<CShard>();
-            if (cShard != null)
-                m_lstShard.Add(cShard);
-        }
-
-        /// <summary>
-        /// 줍는 판정. 가까이 갔거나, 그 칸을 점령해 내 땅이 됐으면 주운 것이다 —
-        /// **크게 한 번에 먹으면 그 안의 조각이 전부 딸려 온다**(260920 결정, 2-20의 픽업 규칙과 같다).
-        /// </summary>
-        private void Tick_Shard()
-        {
-            if (m_cPlayer == null)
-                return;
-
-            Vector2 vPlayerPos   = m_cPlayer.transform.position;
-            float   fPickupRange = (SOUL_PICKUP_RADIUS_BASE + m_cPlayer.PICKUP_RADIUS) * m_cGrid.CELL_SIZE;
-            int     iGained      = 0;
-
-            for (int i = m_lstShard.Count - 1; i >= 0; --i)
-            {
-                CShard cShard = m_lstShard[i];
-
-                if (cShard == null || cShard.IS_EXPIRED == true)
-                {
-                    m_lstShard.RemoveAt(i);
-                    continue;
-                }
-
-                bool bInOwned = m_cGrid.Get_Cell(cShard.CELL) == CELL_STATE.OWNED;
-                if (bInOwned == false && Vector2.Distance(cShard.POS, vPlayerPos) > fPickupRange)
-                    continue;
-
-                cShard.Expire();
-                iGained += cShard.VALUE;
-            }
-
-            // 한꺼번에 여러 개를 먹어도 게이지 계산은 한 번만 한다.
-            Add_Gauge(iGained);
-        }
-        #endregion 점령 조각 · 게이지 (260920)
 
         #region 분신 (260921)
         // 260921_분신은 피해를 주지도 받지도 않는다. 하는 일은 몬스터의 시선을 가져가는 것뿐이다(2-11-3).
@@ -2018,19 +1875,6 @@ namespace Client
         /// <summary> 전체 자석 — 맵 위 픽업을 전부 그 자리에서 먹는다. 다른 아이템도 같이 발동한다. </summary>
         private void Collect_AllPickup()
         {
-            // 260920_흩어진 조각을 한 번에 거두는 것이 이 아이템의 가장 큰 쓸모다(2-21).
-            int iGained = 0;
-            for (int i = m_lstShard.Count - 1; i >= 0; --i)
-            {
-                CShard cShard = m_lstShard[i];
-                if (cShard == null || cShard.IS_EXPIRED == true)
-                    continue;
-
-                cShard.Expire();
-                iGained += cShard.VALUE;
-            }
-            Add_Gauge(iGained);
-
             for (int i = m_lstSoul.Count - 1; i >= 0; --i)
             {
                 CSoul cSoul = m_lstSoul[i];
@@ -2093,13 +1937,15 @@ namespace Client
                 return;
 
             // 260920_가둔 몬스터는 죽는다(2-3). 보상보다 먼저 처리해 둔다 —
-            // 죽은 자리에 떨어지는 조각 · 아이템이 이번 점령의 결과로 같이 읽힌다.
+            // 죽은 자리에 떨어지는 아이템이 이번 점령의 결과로 같이 읽힌다.
             int iTrapped = Kill_EnemiesInOwned();
             Notify_CaptureStyle(iCapturedCount, iTrapped);
 
             Grant_CaptureReward(iCapturedCount);
-            Spawn_CaptureShard(iCapturedCount);
 
+            // 260912_웨이브를 넘기기 전에 카드부터 본다.
+            // 순서가 반대면 판이 넘어가며 점령률이 0으로 돌아가 카드를 영영 못 받는다(2-10-1).
+            Check_CardReady();
 
             CWaveInfo cWave = m_cMapInfo.Get_Wave(m_iWave);
             if (cWave != null && m_cGrid.OWNED_RATIO >= cWave.fClearRatio)
