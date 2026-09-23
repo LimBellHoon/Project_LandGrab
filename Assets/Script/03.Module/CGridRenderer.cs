@@ -499,7 +499,10 @@ namespace Client
             cLine.useWorldSpace     = true;
             cLine.widthMultiplier   = TRAIL_WIDTH_CELL * m_cGrid.CELL_SIZE;
             cLine.numCapVertices    = 4;
-            cLine.numCornerVertices = 4;
+            // 260923_모서리를 둥글리지 않는다(0). 둥근 모서리는 반지름이 굵기의 절반이라, 방향을 막 꺾어
+            // 새 구간이 굵기(0.55칸)보다 짧은 동안(9칸/초면 서너 프레임) 모서리 삼각형이 뭉개져 선이
+            // 한순간 일그러져 보였다. 0이면 구간 길이와 상관없이 항상 같은 모양이다(BakeMesh로 확인).
+            cLine.numCornerVertices = 0;
             cLine.sharedMaterial    = m_srCover.sharedMaterial;      // 스프라이트 재질을 그대로 쓴다 — 셰이더를 따로 찾지 않는다
             cLine.sortingLayerID    = m_srCover.sortingLayerID;
             cLine.sortingOrder      = m_srCover.sortingOrder + TRAIL_SORT_OFFSET;
