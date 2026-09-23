@@ -1080,9 +1080,11 @@ CTerritoryGrid.Step_To       IS_TRAIL_BURNING이 켜져 있으면 안전 지대�
 - 발화 지점을 알릴 자리로 `CStage_Manager.OnFuseIgnited`(칸 좌표)를 훅만 뚫어 뒀다 — 스파크 이펙트는
   프리팹이 있어야 해서 클라우드 세션에서는 못 붙인다(2-17의 캐릭터 프리팹 폴백과 같은 사정).
   지금도 선 렌더러가 탄 구간을 지우므로 **연출 없이도 기능은 이미 동작한다**
-- 화면 없이 `CProtoTest.Test_Fuse`가 `Get_TrailIndex` · `Burn_TrailCell` · `IS_TRAIL_BURNING` 세 원시
-  동작을 검증한다. 발화·소화 타이밍(`Ignite_Fuse`/`Tick_Fuse`)은 `CStage_Manager` 쪽이라 GNAW의
-  침식 타이머(2-6)처럼 그리드 원시 동작만 단위 테스트하고 호출 타이밍은 실기기에서 확인할 것
+- 화면 없이 `CProtoTest.Test_Fuse`가 `Try_Find_TrailTouch` · `Set_Burn` · `IS_TRAIL_BURNING` 세 원시
+  동작을 검증한다(260923_다각형 전환으로 `Get_TrailIndex`/`Burn_TrailCell`에서 이름·값이 바뀌었다 —
+  칸 인덱스 대신 선 위의 길이(`float`, arc)로 잰다). 발화·소화 타이밍(`Ignite_Fuse`/`Tick_Fuse`)은
+  `CStage_Manager` 쪽이라 GNAW의 침식 타이머(2-6)처럼 그리드 원시 동작만 단위 테스트하고 호출 타이밍은
+  실기기에서 확인할 것
 
 ### 2-15. 투사체 — Project_GYM BulletLogic 이식 (260917)
 GYM의 탄 구조(이동 ScriptableObject + 특성 ScriptableObject + 모양별 하위 클래스 + 피격 효과)를 옮겼다.
