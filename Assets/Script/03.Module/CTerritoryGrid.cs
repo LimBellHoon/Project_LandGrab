@@ -720,6 +720,15 @@ namespace Client
             PathsD pStrip = Clipper.InflatePaths(pLine, TRAIL_STRIP_HALF, JoinType.Miter, EndType.Butt, 2.0, CLIP_PRECISION);
             PathsD pWall  = Clipper.Union(m_pOwned, pStrip, FillRule.NonZero, CLIP_PRECISION);
 
+            // 260923_올가미 규칙 — 내가 두른 안쪽을 먹는다. 넓이는 보지 않는다.
+            double dBeforeLasso = m_dOwnedArea;
+            if (Try_Capture_Lasso(pWall) == true)
+            {
+                Clear_Trail();
+                double dLassoGain = m_dOwnedArea - dBeforeLasso;
+                return dLassoGain < MIN_CAPTURE_AREA ? 0 : Mathf.RoundToInt((float)dLassoGain);
+            }
+
             PolyTreeD cTree = new PolyTreeD();
             Clipper.BooleanOp(ClipType.Difference, m_pPlayable, pWall, cTree, FillRule.NonZero, CLIP_PRECISION);
 
@@ -746,6 +755,103 @@ namespace Client
 
             double dGain = m_dOwnedArea - dBefore;
             return dGain < MIN_CAPTURE_AREA ? 0 : Mathf.RoundToInt((float)dGain);
+        }
+
+        /// <summary>
+        /// 260923_**내가 두른 안쪽**을 점령한다. 선이 나간 자리(A)와 돌아온 자리(B)를 내 땅 경계를 따라
+        /// 이으면 닫힌 고리가 되고, 그 안쪽이 곧 플레이어가 "두른 곳"이다 — 넓이로 고르지 않는다.
+        ///
+        /// 예전에는 빈 땅 조각 중 **가장 넓은 것을 남기고 나머지를 먹었다**(= 작은 쪽을 먹는다). 그런데
+        /// 두른 쪽이 남은 땅보다 넓어지면 정반대로 뒤집혀, 크게 휘두를수록 엉뚱한 곳이 점령됐다.
+        /// 웨이브 목표가 60~70%면 후반에 반드시 걸리는 조건이라 기대감을 깨뜨렸다.
+        ///
+        /// 이을 수 없는 모양(신발로 선이 끊겼거나 양 끝이 다른 섬)에서는 false를 돌려 예전 규칙으로 간다.
+        /// </summary>
+        private bool Try_Capture_Lasso(PathsD pWall)
+        {
+            if (m_lstTrailPiece.Count != 1)
+                return false;       // 어디로든 신발로 선이 끊겼다 — 고리를 만들 수 없다
+
+            List<Vector2> lstTrail = m_lstTrailPiece[0];
+            if (lstTrail.Count < 2)
+                return false;
+
+            Vector2 vFrom = lstTrail[0];
+            Vector2 vTo   = lstTrail[lstTrail.Count - 1];
+
+            if (Try_Find_BoundaryLocation(vFrom, out Vector2 _, out int iRingFrom, out int iSegFrom, out float fTFrom) == false
+             || Try_Find_BoundaryLocation(vTo, out Vector2 _, out int iRingTo, out int iSegTo, out float fTTo) == false
+             || iRingFrom != iRingTo)
+                return false;       // 양 끝이 다른 섬에 붙었다
+
+            // 두 갈래 중 짧은 쪽으로 잇는다 — 먼 길로 돌면 상관없는 빈 땅까지 고리 안에 들어온다
+            Vector2[] arrRing = m_lstRing[iRingFrom];
+            float fBack    = Collect_ArcForward(arrRing, iSegTo, fTTo, vTo, iSegFrom, fTFrom, vFrom, s_lstArcBack);
+            float fForward = Collect_ArcForward(arrRing, iSegFrom, fTFrom, vFrom, iSegTo, fTTo, vTo, s_lstArcForward);
+
+            if (fBack >= float.MaxValue && fForward >= float.MaxValue)
+                return false;
+
+            PathD pLoop = new PathD(lstTrail.Count + 8);
+            for (int i = 0; i < lstTrail.Count; ++i)
+                pLoop.Add(new PointD(lstTrail[i].x, lstTrail[i].y));
+
+            if (fBack <= fForward)
+            {
+                for (int i = 0; i < s_lstArcBack.Count; ++i)
+                    pLoop.Add(new PointD(s_lstArcBack[i].x, s_lstArcBack[i].y));
+            }
+            else
+            {
+                for (int i = s_lstArcForward.Count - 1; i >= 0; --i)
+                    pLoop.Add(new PointD(s_lstArcForward[i].x, s_lstArcForward[i].y));
+            }
+
+            if (pLoop.Count < 3)
+                return false;
+
+            PathsD pInside = Clipper.Intersect(m_pPlayable, new PathsD { pLoop }, FillRule.NonZero, CLIP_PRECISION);
+            Set_Owned(Clipper.Union(pWall, pInside, FillRule.NonZero, CLIP_PRECISION));
+            return true;
+        }
+
+        private static readonly List<Vector2> s_lstArcBack    = new List<Vector2>();
+        private static readonly List<Vector2> s_lstArcForward = new List<Vector2>();
+
+        /// <summary>
+        /// 고리 위 한 자리에서 다른 자리까지 **번호가 커지는 쪽으로** 걸으며 지나친 꼭짓점을 모은다.
+        /// 돌아온 길이를 반환한다(못 닿으면 MaxValue).
+        /// </summary>
+        private static float Collect_ArcForward(Vector2[] arrRing, int iFromSeg, float fFromT, Vector2 vFrom,
+                                                int iToSeg, float fToT, Vector2 vTo, List<Vector2> lstOut)
+        {
+            lstOut.Clear();
+
+            int iCount = arrRing.Length;
+            if (iCount < 3 || iFromSeg < 0 || iToSeg < 0 || iFromSeg >= iCount || iToSeg >= iCount)
+                return float.MaxValue;
+
+            // 같은 변에서 앞쪽에 있으면 곧장 간다
+            if (iFromSeg == iToSeg && fToT >= fFromT)
+                return Vector2.Distance(vFrom, vTo);
+
+            float   fLength = 0f;
+            Vector2 vPrev   = vFrom;
+            int     iSeg    = iFromSeg;
+
+            for (int i = 0; i <= iCount; ++i)
+            {
+                Vector2 vVertex = arrRing[(iSeg + 1) % iCount];
+                fLength += Vector2.Distance(vPrev, vVertex);
+                lstOut.Add(vVertex);
+                vPrev = vVertex;
+
+                iSeg = (iSeg + 1) % iCount;
+                if (iSeg == iToSeg)
+                    return fLength + Vector2.Distance(vPrev, vTo);
+            }
+
+            return float.MaxValue;
         }
 
         private static readonly List<PathsD> s_lstComponent     = new List<PathsD>();

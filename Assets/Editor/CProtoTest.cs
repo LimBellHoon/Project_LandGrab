@@ -35,6 +35,7 @@ namespace Client
             Test_InitialBorder();
             Test_CaptureWithoutEnemy();
             Test_CaptureDiagonal();
+            Test_CaptureLasso();
             Test_ClearTrail();
             Test_StepOnOwnTrailIsDeadly();
             Test_MoveRules();
@@ -144,6 +145,36 @@ namespace Client
             Check("바깥 영역은 미점령 유지", cGrid.Is_EmptyPoint(new Vector2(15f, 15f)));
             Check("선 바로 바깥은 그대로 빈 땅(선 두께만큼만 먹는다)", cGrid.Is_EmptyPoint(new Vector2(10.6f, 3f)));
             Check("칸 사본도 같이 바뀐다", cGrid.Get_Cell(6, 2) == CELL_STATE.OWNED && cGrid.Get_Cell(15, 15) == CELL_STATE.EMPTY);
+        }
+
+        // 260923_올가미 규칙(2-3) — 넓이가 아니라 **내가 두른 안쪽**을 먹는다.
+        // 예전(가장 넓은 조각만 남기기)에는 두른 쪽이 남은 땅보다 넓어지면 정반대가 점령됐다.
+        private static void Test_CaptureLasso()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(20, 20, 1f, Vector2.zero, 0, null, 2);   // 20x20 · 가운데 작은 섬 [8,11]
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2(9.5f, 8f), 1f);
+
+            // 섬을 크게 한 바퀴 둘러 돌아온다 — 두른 안쪽(226칸)이 바깥 테두리(151칸)보다 넓다
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 6);
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 8);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 16);
+            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 16);
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 16);
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7);
+            int iCaptured = Walk(cGrid, cMove, MOVE_DIR.UP, 7);
+
+            Check("올가미 — 두른 안쪽을 먹는다(바깥 151칸이 아니다)", iCaptured > 200);
+            Check("올가미 — 두른 안쪽 왼쪽", cGrid.Is_OwnedPoint(new Vector2(5f, 10f)));
+            Check("올가미 — 두른 안쪽 위", cGrid.Is_OwnedPoint(new Vector2(9.5f, 15f)));
+            Check("올가미 — 두른 바깥 구석은 빈 땅", cGrid.Is_EmptyPoint(new Vector2(0.5f, 0.5f)));
+            Check("올가미 — 두른 바깥 오른쪽은 빈 땅", cGrid.Is_EmptyPoint(new Vector2(19f, 10f)));
+
+            // 작게 두르는 평소 경우도 그대로다 — 두른 쪽이 작을 때는 예전 규칙과 같은 답이 나온다
+            CTerritoryGrid cSmall = Make_Grid();
+            Check("올가미 — 작게 두르면 예전과 같다", Walk_ClosedLoop(cSmall, out CMoveHandler _), 35);
         }
 
         // 260923_사선으로 그으면 사선 모양 그대로 먹는다 — 칸 시절에는 계단이 됐다(2-3)
