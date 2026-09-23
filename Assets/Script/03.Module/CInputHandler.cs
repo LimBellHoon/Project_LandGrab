@@ -38,7 +38,13 @@ namespace Client
 
         public void Tick()
         {
+            // 260923_E · J는 에디터 · PC 테스트용 키보드 단축키다. 모바일 빌드는 화면 스킬 버튼이
+            // CStage_Manager.Request_Skill을 직접 부르므로(2-11) 이 값을 보지 않는다 — 빌드에는 아예 넣지 않는다.
+#if UNITY_EDITOR
             SKILL_PRESSED = Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.J);
+#else
+            SKILL_PRESSED = false;
+#endif
             m_cJoystick.Tick();
 
             // 조이스틱을 잡고 있는 동안에는 키보드를 보지 않는다.
@@ -66,8 +72,11 @@ namespace Client
             m_cJoystick.Clear();
         }
 
+        // 260923_WASD/방향키는 에디터 · PC 테스트용이다(2-6-1, "에디터에서는 키보드로"). 모바일 빌드에는
+        // 물리 키보드가 없어 원래도 아무 일이 없었지만, 스페이스바와 같은 결로 아예 빌드에서 빼 둔다.
         private MOVE_DIR Read_Dir()
         {
+#if UNITY_EDITOR
             // 260920_8방향 캐릭터는 두 축을 같이 누르면 대각선이다. 4방향 캐릭터는 이 분기를 타지 않는다.
             if (m_eMoveStyle == MOVE_STYLE.EIGHT_WAY)
             {
@@ -90,10 +99,12 @@ namespace Client
             if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))  return MOVE_DIR.DOWN;
             if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))  return MOVE_DIR.LEFT;
             if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) return MOVE_DIR.RIGHT;
+#endif
 
             return MOVE_DIR.NONE;
         }
 
+#if UNITY_EDITOR
         private static MOVE_DIR Read_Diagonal()
         {
             bool bUp    = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow);
@@ -120,5 +131,6 @@ namespace Client
                 default:             return false;
             }
         }
+#endif
     }
 }

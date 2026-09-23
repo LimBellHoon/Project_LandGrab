@@ -101,6 +101,17 @@ namespace Client
         // 260912_카드로 얹은 몬스터 감속. 판이 끝날 때까지 유지되므로 타이머가 없다.
         private float                       m_fEnemyCardSlow = 1f;
 
+        // 260923_사냥형 카드(HUNT_*, Docs/Design_Card_Pool.md 1장) 중 몬스터 쪽 수치. 플레이어 쪽 수치는
+        // CPlayer가 들고 있다(THORN_DAMAGE 등) — 여기 있는 것은 '몸 충돌 이후'가 아니라 '몬스터를 직접
+        // 건드리는' 효과라 스테이지가 들고 있어야 한다(1-1, 그리드는 칸만 알고 스테이지가 몬스터를 본다).
+        private float                       m_fLootCardBonus;      // 노획 본능 — 필드 아이템 드롭 확률 가산
+        private float                       m_fExecuteCardRadius;  // 처형자 — 가둬 잡기 스플래시 반경(칸). 0이면 없음
+        private const int                   EXECUTE_SPLASH_DAMAGE = 1;
+        private const float                 HUNT_MARK_SLOW_RATIO  = 0.5f;   // 사냥감 표식 — 감속 배율(고정값)
+        // 같은 출처(이 인스턴스)로 다시 걸면 CImpactHandler가 새로 걸지 않고 긴 쪽으로 늘린다 — fTime만 카드가 갱신한다.
+        private readonly CImpactInfo        m_cHuntMarkImpact = new CImpactInfo { eType = IMPACT_TYPE.SLOW, fValue = HUNT_MARK_SLOW_RATIO };
+        private readonly List<Vector2>      m_lstExecuteKillPos = new List<Vector2>();
+
         // 260923_3지선다 트리거 — 다시 점유율 기준이다(2-21 조각 게이지를 되돌림). 점유율이
         // s_arrCardThreshold의 지점을 하나 더 넘을 때마다 하나씩 연다. 웨이브가 넘어가 점유율이
         // 0으로 돌아가면 이 값도 같이 리셋된다.
@@ -328,6 +339,9 @@ namespace Client
             m_fEnemySlowScale = 1f;     // 260912_다음 판에 감속이 남아 있지 않게
             m_fEnemySlowTimer = 0f;
             m_fEnemyCardSlow  = 1f;
+            m_fLootCardBonus  = 0f;
+            m_fExecuteCardRadius = 0f;
+            m_cHuntMarkImpact.fTime = 0f;
             m_iRatioStep      = 0;
             m_cPickQueue.Clear();
             OnCardReady       = null;
@@ -827,6 +841,40 @@ namespace Client
                     Apply_EnemySpeed();
                     return true;
 
+                // 260923_사냥형 8종(Docs/Design_Card_Pool.md 1장). fValue 뜻은 CardInfo.csv 머리 주석 참고.
+                case CARD_TYPE.HUNT_THORN:
+                    m_cPlayer.Add_ThornDamage(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    return true;
+
+                case CARD_TYPE.HUNT_KNOCKBACK:
+                    m_cPlayer.Add_KnockbackBonus(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.HUNT_STONESKIN:
+                    m_cPlayer.Add_BodyDamageReduction(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.HUNT_TAUNT:
+                    m_cPlayer.Add_TauntBonus(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    return true;
+
+                case CARD_TYPE.HUNT_MARK:
+                    // 여러 장을 먹으면 더 긴 지속시간으로 갱신한다(CImpactHandler의 '갱신' 규칙과 같은 결).
+                    m_cHuntMarkImpact.fTime = Mathf.Max(m_cHuntMarkImpact.fTime, cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.HUNT_LOOT:
+                    m_fLootCardBonus += cInfo.fValue;
+                    return true;
+
+                case CARD_TYPE.HUNT_EXECUTE:
+                    m_fExecuteCardRadius = Mathf.Max(m_fExecuteCardRadius, cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.HUNT_FEAST:
+                    m_cPlayer.Add_FeastHeal(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    return true;
+
                 default:
                     return false;
             }
@@ -859,6 +907,35 @@ namespace Client
             m_fEnemySlowTimer = Mathf.Max(m_fEnemySlowTimer, fDuration);
 
             Apply_EnemySpeed();
+        }
+
+        // 260923_ISkillHost — 쾌속 돌진(RUSH)이 길 위 몬스터까지 거리를 묻는다.
+        // 몸 판정과 같은 반경(HIT_RANGE)을 쓴다 — 새 충돌 반경을 만들지 않는다.
+        public float Get_RushDistance(Vector2 vFromWorld, Vector2 vDirWorld, float fMaxDistWorld)
+        {
+            float fBest = fMaxDistWorld;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                float   fRadius   = cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE;
+                Vector2 vToEnemy  = cEnemy.POS - vFromWorld;
+                float   fAlong    = Vector2.Dot(vToEnemy, vDirWorld);
+                if (fAlong < 0f || fAlong > fBest)
+                    continue;
+
+                float fPerpSq = vToEnemy.sqrMagnitude - fAlong * fAlong;
+                if (fPerpSq > fRadius * fRadius)
+                    continue;
+
+                float fEnter = fAlong - Mathf.Sqrt(Mathf.Max(0f, fRadius * fRadius - fPerpSq));
+                fBest = Mathf.Max(0f, Mathf.Min(fBest, fEnter));
+            }
+
+            return fBest;
         }
 
         // 260912_감속은 두 갈래다 — 스킬(한동안)과 카드(판 내내). 곱해서 넣는다.
@@ -1248,7 +1325,11 @@ namespace Client
             {
                 m_cStyle.Clear_Near();      // 260922_맞았으면 아슬아슬이 아니다
                 // 260924_몸에 부딪힌 것은 선이 끊긴 것이 아니므로 회피가 그대로 듣는다(bLineCut=false).
-                m_cPlayer.Damage(cHitEnemy != null ? cHitEnemy.ATTACK : 1, false);
+                // 260923_돌가죽(HUNT_STONESKIN)이 있으면 배율만큼 줄어든다.
+                int iBodyDamage = cHitEnemy != null
+                    ? Mathf.Max(1, Mathf.RoundToInt(cHitEnemy.ATTACK * m_cPlayer.BODY_DAMAGE_SCALE))
+                    : 1;
+                m_cPlayer.Damage(iBodyDamage, false);
 
                 // 260923_몸에 부딪힌 몬스터는 튕겨난다 — 피해가 보호막 · 회피로 막혀도 충돌 자체는 일어난 것이라 넉백은 그대로 건다.
                 if (cHitEnemy != null)
@@ -1257,8 +1338,29 @@ namespace Client
                     if (vAway.sqrMagnitude < 0.0001f)
                         vAway = Vector2.up;
 
-                    cHitEnemy.Push(vAway.normalized, PLAYER_HIT_KNOCKBACK_CELL * m_cGrid.CELL_SIZE, PLAYER_HIT_KNOCKBACK_DURATION);
+                    // 260923_거센 팔뚝(HUNT_KNOCKBACK) — 카드가 없으면 배율이 1이라 그대로다.
+                    cHitEnemy.Push(vAway.normalized,
+                        PLAYER_HIT_KNOCKBACK_CELL * m_cPlayer.KNOCKBACK_SCALE * m_cGrid.CELL_SIZE,
+                        PLAYER_HIT_KNOCKBACK_DURATION);
+
+                    // 260923_가시 갑옷(HUNT_THORN) — 반격 피해. 만찬(HUNT_FEAST)은 이 피해가 실제로
+                    // 들어갔을 때만 회복한다(가시 갑옷 없이는 발동하지 않는 조합 전제, Design_Card_Pool.md 1장).
+                    if (m_cPlayer.THORN_DAMAGE > 0)
+                    {
+                        cHitEnemy.Damage(m_cPlayer.THORN_DAMAGE);
+                        if (m_cPlayer.FEAST_HEAL > 0)
+                            m_cPlayer.Add_Life(m_cPlayer.FEAST_HEAL);
+                    }
+
+                    // 260923_사냥감 표식(HUNT_MARK) — 넉백당한 몬스터가 잠깐 감속한다.
+                    if (m_cHuntMarkImpact.fTime > 0f)
+                        cHitEnemy.IMPACT.Apply(m_cHuntMarkImpact, cHitEnemy, vPlayerPos, m_cGrid.CELL_SIZE, this, PROJECTILE_SIDE.PLAYER_SHOT);
                 }
+
+                // 260923_도발(HUNT_TAUNT) — 몸 충돌마다 분노 게이지를 추가로 올린다(회전탄 · 몽둥이가
+                // 쓰는 것과 같은 훅). 카드가 없으면 TAUNT_EXTRA_HIT이 0이라 그대로 아무 일도 없다.
+                for (int i = 0; i < m_cPlayer.TAUNT_EXTRA_HIT; ++i)
+                    m_cPlayer.On_MonsterHit();
             }
 
             Tick_Fuse(fDeltaTime);
@@ -1321,6 +1423,7 @@ namespace Client
         private int Kill_EnemiesInOwned()
         {
             int iKilled = 0;
+            m_lstExecuteKillPos.Clear();
 
             for (int i = 0; i < m_lstEnemy.Count; ++i)
             {
@@ -1331,8 +1434,29 @@ namespace Client
                 if (m_cGrid.Is_OwnedPoint(m_cGrid.World_ToGrid(cEnemy.POS)) == false)
                     continue;
 
+                if (m_fExecuteCardRadius > 0f)
+                    m_lstExecuteKillPos.Add(cEnemy.POS);
+
                 cEnemy.Damage(cEnemy.HP);
                 ++iKilled;
+            }
+
+            // 260923_처형자(HUNT_EXECUTE) — 가둬 죽인 자리 반경 안 생존 몬스터에게도 고정 피해를 준다.
+            if (m_fExecuteCardRadius > 0f && m_lstExecuteKillPos.Count > 0)
+            {
+                float fRadiusWorld = m_fExecuteCardRadius * m_cGrid.CELL_SIZE;
+                for (int i = 0; i < m_lstExecuteKillPos.Count; ++i)
+                {
+                    for (int j = 0; j < m_lstEnemy.Count; ++j)
+                    {
+                        CEnemy cOther = m_lstEnemy[j];
+                        if (cOther == null || cOther.IS_ALIVE == false)
+                            continue;
+
+                        if (Vector2.Distance(cOther.POS, m_lstExecuteKillPos[i]) <= fRadiusWorld)
+                            cOther.Damage(EXECUTE_SPLASH_DAMAGE);
+                    }
+                }
             }
 
             // 가두는 것도 '때린 것'이다 — 분노 게이지가 오른다(회전탄 · 몽둥이와 같은 자리).
@@ -1884,7 +2008,9 @@ namespace Client
             if (m_cMapInfo == null || m_cMapInfo.fFieldItemDropRate <= 0f)
                 return;
 
-            if (UnityEngine.Random.value > m_cMapInfo.fFieldItemDropRate)
+            // 260923_노획 본능(HUNT_LOOT) — 맵이 드롭을 아예 안 주는 경우(위에서 걸러짐)까지 만들어 내지는
+            // 않는다. 이미 나오는 드롭의 확률만 올린다.
+            if (UnityEngine.Random.value > m_cMapInfo.fFieldItemDropRate + m_fLootCardBonus)
                 return;
 
             Spawn_FieldItem(m_cGrid.World_ToCell(vWorldPos));

@@ -28,6 +28,7 @@ namespace Client
                 case SKILL_TYPE.DASH:   return new CSkillEffect_Dash();
                 case SKILL_TYPE.SLOW:   return new CSkillEffect_Slow();
                 case SKILL_TYPE.SEAL:   return new CSkillEffect_Seal();
+                case SKILL_TYPE.RUSH:   return new CSkillEffect_Rush();
                 default:                return null;
             }
         }
@@ -109,6 +110,23 @@ namespace Client
         public override bool Try_Apply(float fValue, float fDuration)
         {
             return m_cOwner.Seal();
+        }
+    }
+
+    /// <summary>
+    /// 260923_쾌속 돌진. 지금 향한 방향으로 최대 fValue칸까지 한 번에 간다 — 점멸(WARP)과 같은 길
+    /// (CPlayer.Warp → CMoveHandler.Warp → Step_To)을 그대로 타므로, 맵 끝에서 서는 것도 내 점령지에
+    /// 닿아 점령이 정리되는 것도 전부 그 경로가 이미 하는 일이다. 이 효과가 새로 하는 일은 딱 하나 —
+    /// 몬스터에 닿기 전에 멈추도록 CPlayer.Rush가 거리를 미리 줄이는 것뿐이다.
+    /// </summary>
+    public class CSkillEffect_Rush : CSkillEffect
+    {
+        public override bool Try_Apply(float fValue, float fDuration)
+        {
+            if (fValue <= 0f)
+                return false;
+
+            return m_cOwner.Rush(fValue);
         }
     }
 }

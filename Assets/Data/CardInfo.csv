@@ -2,6 +2,10 @@
 ;== 카드 테이블 ==	점령률을 넘길 때마다 셋 중 하나를 고른다. 고른 판에서만 유지된다
 ;eType : Client_Enum.CARD_TYPE 이름과 철자가 같아야 한다
 ;fValue : SHIELD/HEAL은 개수, SPEED/EVASION은 더할 비율, SLOW는 몬스터에게 곱할 배율
+;fValue(사냥형, 260923 Docs/Design_Card_Pool.md 1장) : HUNT_THORN/HUNT_FEAST=고정 피해·회복량 /
+;  HUNT_KNOCKBACK=넉백 거리에 더할 배율 / HUNT_STONESKIN=몸 충돌 피해에 곱할 배율(곱해서 누적) /
+;  HUNT_TAUNT=몸 충돌마다 추가로 올릴 분노 틱 수 / HUNT_MARK=감속 지속시간(초, 배율은 고정 0.5) /
+;  HUNT_LOOT=드롭 확률에 더할 값 / HUNT_EXECUTE=스플래시 반경(칸)
 ;iWeight : 뽑힐 가중치. 클수록 자주 나온다. 0이면 안 나온다
 ;eTheme : 카드 색 테마(2-10-1) — COMBAT 파랑 / MOVE 주황. 각성은 보라색이라 여기 안 적는다 (260920)
 ;---	type	이름	설명	수치	가중치	테마	메모
@@ -10,3 +14,12 @@
 3	SPEED	가속	이동 속도가 15% 빨라진다	0.15	10	MOVE	누적된다
 4	EVASION	회피	피격을 흘릴 확률이 오른다	0.08	10	MOVE	누적된다
 5	SLOW	둔화	몬스터가 20% 느려진다	0.8	10	COMBAT	곱해서 누적
+;== 사냥형 (260923, Docs/Design_Card_Pool.md 1장) ==	몸으로 부딪히는 것을 공격 기회로 바꾼다
+6	HUNT_THORN	가시 갑옷	몸으로 부딪힌 몬스터에게 고정 피해를 준다	1	10	COMBAT	누적된다
+7	HUNT_KNOCKBACK	거센 팔뚝	몸 충돌 넉백 거리가 늘어난다	0.4	9	COMBAT	누적된다
+8	HUNT_STONESKIN	돌가죽	몸 충돌로 받는 피해가 줄어든다	0.85	9	COMBAT	곱해서 누적
+9	HUNT_TAUNT	도발	몸 충돌마다 분노 게이지가 더 오른다	1	8	COMBAT	분노조절못해가 있어야 의미 있다
+10	HUNT_MARK	사냥감 표식	넉백당한 몬스터가 잠깐 느려진다	2.5	6	COMBAT	갱신된다
+11	HUNT_LOOT	노획 본능	몬스터 처치 시 필드 아이템 확률이 오른다	0.1	6	COMBAT	누적된다
+12	HUNT_EXECUTE	처형자	가둬 잡기로 죽은 자리 주변도 피해를 입는다	2	5	COMBAT	갱신된다
+13	HUNT_FEAST	만찬	가시 갑옷으로 피해를 줄 때마다 회복한다	1	3	COMBAT	가시 갑옷과 조합 전제

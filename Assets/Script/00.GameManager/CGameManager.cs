@@ -157,8 +157,13 @@ namespace Client
                 return;
 
             bool bTap = Input.GetMouseButtonDown(0)
-                     || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
-                     || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return);
+                     || (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began);
+
+            // 260923_스페이스 · 엔터는 에디터 · PC 테스트용이다. 마우스 클릭은 에디터에서 터치를 대신하므로
+            // 그대로 두고, 키보드만 빌드에서 뺀다.
+#if UNITY_EDITOR
+            bTap = bTap || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return);
+#endif
 
             if (bTap == true)
                 m_cStageManager.Confirm_StartSelect();

@@ -68,6 +68,14 @@ namespace Client
         private float           m_fSkillSpeedTimer;
         // 260912_카드로 얹은 속도. 판이 끝날 때까지 유지되므로 타이머가 없다.
         private float           m_fCardSpeedScale = 1f;
+
+        // 260923_사냥형 카드(HUNT_*, Docs/Design_Card_Pool.md 1장) — 전부 판이 끝날 때까지 누적된다.
+        // 몬스터를 직접 만지는 것은 CStage_Manager라, 여기서는 수치만 들고 있다가 그쪽이 읽어 간다.
+        private float           m_fBodyDamageScale   = 1f;   // 돌가죽 — 몸 충돌 피해 배율(곱해서 누적)
+        private float           m_fKnockbackCardScale = 1f;  // 거센 팔뚝 — 넉백 거리 배율(더해서 누적)
+        private int             m_iThornDamage;              // 가시 갑옷 — 몸 충돌한 몬스터에게 주는 고정 피해
+        private int             m_iFeastHeal;                // 만찬 — 가시 갑옷으로 피해를 줄 때마다 회복(0이면 없음)
+        private int             m_iTauntExtraHit;             // 도발 — 몸 충돌마다 On_MonsterHit을 추가로 부르는 횟수
         // 260917_번쩍임에서 돌아올 원래 몸 색. 풀에서 재사용돼도 처음 한 번만 읽는다.
         private Color           m_cBodyColor;
         private bool            m_bBodyColorSaved;
@@ -108,6 +116,17 @@ namespace Client
         public bool             IS_MOVING   => m_cMoveHandler.IS_MOVING;
         /// <summary> 260916_자석 스킬이 걸어 둔 습득 범위(셀). 픽업 쪽이 읽는다. </summary>
         public float            PICKUP_RADIUS => m_fPickupRadius;
+        // 260923_사냥형 카드(HUNT_*) — CStage_Manager가 몸 충돌 처리부에서 읽어 간다(1-1, 몸 충돌은 스테이지가 본다)
+        /// <summary> 돌가죽 — 몸 충돌 피해에 곱할 배율. 1이면 감소 없음 </summary>
+        public float             BODY_DAMAGE_SCALE => m_fBodyDamageScale;
+        /// <summary> 거센 팔뚝 — 넉백 거리에 곱할 배율. 1이면 가산 없음 </summary>
+        public float             KNOCKBACK_SCALE   => m_fKnockbackCardScale;
+        /// <summary> 가시 갑옷 — 몸 충돌한 몬스터에게 줄 고정 피해. 0이면 없음(만찬도 걸리지 않는다) </summary>
+        public int               THORN_DAMAGE      => m_iThornDamage;
+        /// <summary> 만찬 — 가시 갑옷 피해를 줄 때마다 회복할 양. 0이면 없음 </summary>
+        public int               FEAST_HEAL        => m_iFeastHeal;
+        /// <summary> 도발 — 몸 충돌마다 추가로 부를 On_MonsterHit 횟수 </summary>
+        public int               TAUNT_EXTRA_HIT   => m_iTauntExtraHit;
         // 260921_이동 런 스킬이 읽는 상태(2-11-3)
         /// <summary> 260923_지금 긋고 있는 선의 길이(칸). 나선 가속이 본다 </summary>
         public float            TRAIL_LENGTH => m_cGrid != null ? m_cGrid.TRAIL_LENGTH : 0f;
@@ -175,6 +194,11 @@ namespace Client
             m_bWasDrawing      = false;
             m_ePrevDir         = MOVE_DIR.NONE;
             m_fCardSpeedScale  = 1f;
+            m_fBodyDamageScale = 1f;
+            m_fKnockbackCardScale = 1f;
+            m_iThornDamage     = 0;
+            m_iFeastHeal       = 0;
+            m_iTauntExtraHit   = 0;
             m_cImpact.Clear();
 
             // 260916_런 스킬은 판마다 완전히 초기화된다(뱀서라이크 — 스테이지를 나가면 사라진다).
@@ -342,6 +366,53 @@ namespace Client
                 return;
 
             m_fEvasion = Mathf.Clamp01(m_fEvasion + fRatio);
+        }
+
+        // 260923_사냥형 카드(HUNT_*, Docs/Design_Card_Pool.md 1장). SLOW 카드(곱해서 누적)와
+        // SPEED/EVASION 카드(더해서 누적)의 패턴을 그대로 따른다 — 새 누적 방식을 만들지 않는다.
+        /// <summary> 돌가죽 — 몸 충돌 피해 배율을 곱해서 줄인다. </summary>
+        public void Add_BodyDamageReduction(float fScale)
+        {
+            if (fScale <= 0f)
+                return;
+
+            m_fBodyDamageScale = Mathf.Clamp(m_fBodyDamageScale * fScale, 0.1f, 1f);
+        }
+
+        /// <summary> 거센 팔뚝 — 넉백 거리 배율을 더한다. </summary>
+        public void Add_KnockbackBonus(float fRatio)
+        {
+            if (fRatio <= 0f)
+                return;
+
+            m_fKnockbackCardScale += fRatio;
+        }
+
+        /// <summary> 가시 갑옷 — 몸 충돌한 몬스터에게 줄 고정 피해를 더한다. </summary>
+        public void Add_ThornDamage(int iAmount)
+        {
+            if (iAmount <= 0)
+                return;
+
+            m_iThornDamage += iAmount;
+        }
+
+        /// <summary> 만찬 — 가시 갑옷 피해를 줄 때마다 회복할 양을 더한다. </summary>
+        public void Add_FeastHeal(int iAmount)
+        {
+            if (iAmount <= 0)
+                return;
+
+            m_iFeastHeal += iAmount;
+        }
+
+        /// <summary> 도발 — 몸 충돌마다 추가로 부를 On_MonsterHit 횟수를 더한다. </summary>
+        public void Add_TauntBonus(int iCount)
+        {
+            if (iCount <= 0)
+                return;
+
+            m_iTauntExtraHit += iCount;
         }
 
         /// <summary> 잠깐 무적. 이미 더 길게 걸려 있으면 줄이지 않는다. </summary>
@@ -702,6 +773,35 @@ namespace Client
             Handle_Step(eResult, iCapturedCount);
             transform.position = m_cMoveHandler.WORLD_POS;
             return true;
+        }
+
+        // 260923_쾌속 돌진 — 점멸과 같은 길(Warp → Step_To)을 타므로 맵 끝 · 내 점령지에서 서는 것은
+        // 그 경로가 이미 한다(2-3). 여기서 새로 하는 일은 몬스터에 닿기 전에 멈추도록 거리를 줄이는 것뿐이다 —
+        // 몬스터는 CPlayer가 모르는 대상이라 스테이지(ISkillHost)에 거리를 물어본다.
+        public bool Rush(float fMaxCellDist)
+        {
+            MOVE_DIR eDir = Get_WarpDir();
+            if (eDir == MOVE_DIR.NONE || fMaxCellDist <= 0f || m_cGrid == null)
+                return false;
+
+            float fMaxWorldDist = fMaxCellDist * m_cGrid.CELL_SIZE;
+            if (m_cSkillHost != null)
+            {
+                Vector2 vDirWorld = CTerritoryGrid.Dir_ToVector(eDir).normalized;
+                fMaxWorldDist = m_cSkillHost.Get_RushDistance(POS, vDirWorld, fMaxWorldDist);
+            }
+
+            float fCellDist = fMaxWorldDist / m_cGrid.CELL_SIZE;
+            if (fCellDist <= 0f)
+                return false;
+
+            Vector2 vBefore = m_cMoveHandler.POS;
+            STEP_RESULT eResult = m_cMoveHandler.Warp(eDir, fCellDist, out int iCapturedCount);
+            bool bMoved = (m_cMoveHandler.POS - vBefore).sqrMagnitude > 1e-6f;
+
+            Handle_Step(eResult, iCapturedCount);
+            transform.position = m_cMoveHandler.WORLD_POS;
+            return bMoved;
         }
 
 

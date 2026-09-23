@@ -97,9 +97,12 @@ namespace Client
         private const string UI_CARD_VIEWER              = "Prefab_UI_CardViewer";
 
         // 260912_카드 아이콘. CARD_TYPE 이름을 그대로 쓴다 — 표에 종류를 더하면 여기에만 추가하면 된다.
+        // 260923_사냥형 8종(Docs/Design_Card_Pool.md 1장) 추가 — enum 순서(CARD_TYPE.NONE 다음부터) 그대로.
         private static readonly string[] ARR_CARD_ICON =
         {
             "Tex_Card_SHIELD", "Tex_Card_HEAL", "Tex_Card_SPEED", "Tex_Card_EVASION", "Tex_Card_SLOW",
+            "Tex_Card_HUNT_THORN", "Tex_Card_HUNT_KNOCKBACK", "Tex_Card_HUNT_STONESKIN", "Tex_Card_HUNT_TAUNT",
+            "Tex_Card_HUNT_MARK", "Tex_Card_HUNT_LOOT", "Tex_Card_HUNT_EXECUTE", "Tex_Card_HUNT_FEAST",
         };
         private const string TEX_CARD_GLOW = "Tex_CardGlow";
         // 260918_장비 부위 아이콘. EQUIP_SLOT 순서(NONE 빼고) — 가방의 B 슬롯과 장비 칸이 같이 쓴다.
@@ -119,7 +122,8 @@ namespace Client
             // 260921_이동 스킬 넷(2-11-3)
             "Tex_RunSkill_SPIRAL_RUSH", "Tex_RunSkill_GHOST_STEP", "Tex_RunSkill_AFTERIMAGE", "Tex_RunSkill_DECOY",
         };
-        private const int RUN_SKILL_ICON_KIND_START = 5;    // Is_IconInk에서 카드 다섯 모양 다음부터
+        // 260923_카드 아이콘이 5종 → 13종(사냥형 8종 추가)으로 늘어 Is_IconInk의 카드 모양 다음 자리도 같이 밀렸다.
+        private const int RUN_SKILL_ICON_KIND_START = 13;   // Is_IconInk에서 카드 열세 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -762,6 +766,15 @@ namespace Client
                 new Color(1.00f, 0.85f, 0.35f),     // SPEED   — 노란 화살
                 new Color(0.80f, 0.60f, 1.00f),     // EVASION — 보라 잔상
                 new Color(1.00f, 0.55f, 0.55f),     // SLOW    — 붉은 모래시계
+                // 260923_사냥형 8종(Docs/Design_Card_Pool.md 1장)
+                new Color(1.00f, 0.45f, 0.35f),     // HUNT_THORN     — 가시
+                new Color(0.95f, 0.60f, 0.25f),     // HUNT_KNOCKBACK — 팔뚝
+                new Color(0.55f, 0.55f, 0.60f),     // HUNT_STONESKIN — 돌비늘
+                new Color(1.00f, 0.30f, 0.30f),     // HUNT_TAUNT     — 느낌표
+                new Color(0.90f, 0.75f, 0.20f),     // HUNT_MARK      — 과녁
+                new Color(1.00f, 0.85f, 0.40f),     // HUNT_LOOT      — 동전
+                new Color(0.75f, 0.20f, 0.20f),     // HUNT_EXECUTE   — 교차 X
+                new Color(1.00f, 0.65f, 0.70f),     // HUNT_FEAST     — 그릇
             };
             // 260917_런 스킬 아이콘은 흰색 — 분류 색을 런타임에 곱해 칠한다.
             Color cInk = iKind < arrColor.Length ? arrColor[Mathf.Max(0, iKind)] : Color.white;
@@ -813,6 +826,38 @@ namespace Client
                         return fAbsU < 0.5f;
 
                     return fAbsU < Mathf.Abs(fV) * 0.68f + 0.05f;
+
+                // 260923_사냥형 8종(Docs/Design_Card_Pool.md 1장)
+                case 5:     // 가시 갑옷 — 위로 솟은 가시
+                    return fAbsU < 0.5f - Mathf.Max(0f, fV) * 0.55f && fV > -0.75f && fV < 0.7f;
+
+                case 6:     // 거센 팔뚝 — 두꺼운 오른쪽 화살
+                    return (fAbsU < 0.65f && Mathf.Abs(fV) < 0.22f) || Is_Chevron(fU - 0.05f, fV * 1.3f);
+
+                case 7:     // 돌가죽 — 마름모 비늘
+                    return fAbsU * 0.87f + Mathf.Abs(fV) * 0.5f < 0.62f && fAbsU < 0.62f;
+
+                case 8:     // 도발 — 느낌표
+                    return (fAbsU < 0.18f && fV < 0.55f && fV > -0.15f)
+                        || (fAbsU < 0.18f && fV < -0.35f && fV > -0.62f);
+
+                case 9:     // 사냥감 표식 — 과녁
+                {
+                    float fDist = Mathf.Sqrt(fU * fU + fV * fV);
+                    return (fDist < 0.68f && fDist > 0.46f) || fDist < 0.16f;
+                }
+
+                case 10:    // 노획 본능 — 동전
+                {
+                    float fDist = Mathf.Sqrt(fU * fU + fV * fV);
+                    return fDist < 0.62f && fDist > 0.1f;
+                }
+
+                case 11:    // 처형자 — 교차하는 X
+                    return Mathf.Abs(fAbsU - Mathf.Abs(fV)) < 0.16f && fAbsU < 0.66f;
+
+                case 12:    // 만찬 — 그릇(마름모)
+                    return fAbsU + Mathf.Abs(fV) < 0.62f;
 
                 default:
                     if (iKind >= EQUIP_ICON_KIND_START)

@@ -1,7 +1,10 @@
 # 카드 30종 초안 — 사냥형 / 회피형 / 생존형 / 도화선 계열 (260923)
 
-> **상태: 기획 초안. 구현 없음.** `CardInfo.csv`는 지금 5종(SHIELD·HEAL·SPEED·EVASION·SLOW)뿐이다.
-> 이 문서는 그 위에 30종을 새로 얹는 설계안이다 — `Docs/Design_RunSkill_Awaken.md`가 `AwakenInfo.csv`를
+> **260923_1장(사냥형 8종) 구현됨.** `CardInfo.csv`·`Client_Enum.cs`(`CARD_TYPE`)·`CStage_Manager`·
+> `CPlayer`·`CProtoSetup`(아이콘)까지 초안 그대로 반영했다 — CLAUDE.md 2-10-1 참고. 회피형·생존형·
+> 도화선 계열(2~4장)은 아직 초안 상태다.
+>
+> **상태(1장 제외): 기획 초안. 구현 없음.** `Docs/Design_RunSkill_Awaken.md`가 `AwakenInfo.csv`를
 > 만들기 전에 먼저 기획을 정리해 둔 것과 같은 자리. CSV/enum에 실제로 반영하는 것은 이 문서가 확정된 다음
 > 단계다(4장 "구현 시 필요한 것" 참고).
 
@@ -39,7 +42,13 @@
 
 ---
 
-## 1. 사냥형 (COMBAT · 파랑) — 8종
+## 1. 사냥형 (COMBAT · 파랑) — 8종 [260923_구현됨]
+
+`eType` 열은 아래 제안 그대로 `CARD_TYPE`에 들어갔다. 초안과 실제 구현이 갈린 곳 하나 —
+**`HUNT_TAUNT`의 `fValue`는 "배율"이 아니라 "몸 충돌마다 추가로 부를 `On_MonsterHit` 횟수"(정수)다.**
+분노 게이지 자체가 `CRunSkillEffect_Rage`의 내부 상수라 카드에서 배율로 끼어들 자리가 없었고,
+이미 있는 "몬스터를 때릴 때" 훅(`On_MonsterHit`)을 몸 충돌에서도 그대로 재사용하는 쪽이 새 상태를
+만드는 것보다 1-1 원칙에 맞았다 — CSV의 `fValue=1`은 "1회 추가"라는 뜻이다.
 
 **몸으로 부딪히는 것을 방어가 아니라 공격 기회로 바꾼다.** 2-14(HP 풀 + 넉백)와 2-23의 "가둬 잡기"가
 이미 갖고 있는 전투 지점(`CEnemy.Damage`, `Push`, `Kill_EnemiesInOwned`)에 얹는다 — 새 무기를 만들지

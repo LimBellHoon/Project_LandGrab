@@ -42,6 +42,14 @@ namespace Client
         /// <param name="fScale"> 원래 속도에 곱할 값. 1이면 감속 없음 </param>
         /// <param name="fDuration"> 초 </param>
         void Slow_Enemies(float fScale, float fDuration);
+
+        // 260923_쾌속 돌진(RUSH) — 몬스터는 CPlayer/CMoveHandler가 모르는 대상이라 스테이지에 거리를 묻는다.
+        // 맵 끝 · 내 점령지에서 서는 것은 기존 Warp(Step_To) 경로가 이미 하므로 여기서는 몬스터까지만 본다.
+        /// <param name="vFromWorld"> 출발점(월드) </param>
+        /// <param name="vDirWorld"> 정규화된 방향(월드) </param>
+        /// <param name="fMaxDistWorld"> 스킬 수치가 정한 최대 거리(월드) </param>
+        /// <returns> 길 위에 몬스터가 없으면 fMaxDistWorld 그대로. 있으면 처음 닿는 지점까지의 거리 </returns>
+        float Get_RushDistance(Vector2 vFromWorld, Vector2 vDirWorld, float fMaxDistWorld);
     }
 
     // 260916_런 전용 스킬(2-11-1)이 플레이어 밖(맵 위)에 무언가를 놓아야 할 때 쓰는 창구.
