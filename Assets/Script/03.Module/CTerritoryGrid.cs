@@ -33,6 +33,9 @@ namespace Client
         private const double TRAIL_STRIP_HALF  = 0.01;      // 점령할 때 선을 이만큼 두께로 부풀려 빈 땅을 가른다
         private const float  TRAIL_END_BITE    = 0.05f;     // 선 양 끝을 점령지 안쪽으로 이만큼 늘린다 — 끝이 딱 맞닿으면 틈으로 샌다
         private const float  ENTRY_PROBE       = 0.005f;    // 경계를 넘은 직후 이만큼 들어간 점이 점령지 안이어야 '들어갔다'로 본다
+        // 260923_이보다 좁게 닫힌 것은 점령으로 치지 않는다(칸). 8방향에서 나가자마자 살짝 되돌아오면
+        // 넓이가 0에 가까운 도형이 닫히는데, 그때마다 점령 연출 · CHAIN 자막이 떠 화면이 도배됐다.
+        private const float  MIN_CAPTURE_AREA  = 1f;
         private const float  MERGE_COS         = 0.9999f;   // 같은 방향으로 이어지는 선은 점을 늘리지 않고 끝점만 옮긴다
         private const int    ERODE_CIRCLE_STEP = 20;
 
@@ -625,8 +628,9 @@ namespace Client
                     return STEP_RESULT.SAFE;
                 }
 
+                // 260923_넓이가 없다시피 한 도형은 점령이 아니다 — 선만 사라지고 그 자리에 선다(불에 쫓겨 돌아온 것과 같은 결)
                 iCapturedCount = Capture();
-                return STEP_RESULT.CAPTURE;
+                return iCapturedCount > 0 ? STEP_RESULT.CAPTURE : STEP_RESULT.SAFE;
             }
 
             Extend_Trail(vTo);
@@ -740,7 +744,8 @@ namespace Client
             Clear_Trail();
             Set_Owned(pNewOwned);
 
-            return Mathf.Max(0, Mathf.RoundToInt((float)(m_dOwnedArea - dBefore)));
+            double dGain = m_dOwnedArea - dBefore;
+            return dGain < MIN_CAPTURE_AREA ? 0 : Mathf.RoundToInt((float)dGain);
         }
 
         private static readonly List<PathsD> s_lstComponent     = new List<PathsD>();

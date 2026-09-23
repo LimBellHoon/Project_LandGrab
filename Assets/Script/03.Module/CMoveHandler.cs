@@ -18,7 +18,9 @@ namespace Client
         private const float EXIT_PROBE     = 0.12f;    // 나갈지 볼 때 누른 방향으로 이만큼 앞의 점을 본다(칸)
         private const float EXIT_MARGIN    = 0.03f;    // 그 점이 경계에서 이만큼은 떨어진 바깥이어야 '나간다'
         private const float SLIDE_MIN_DOT  = 0.25f;    // 변을 타려면 누른 방향이 변 방향과 이만큼은 맞아야 한다(약 75도)
-        private const float REVERSE_DOT    = -0.5f;    // 선을 긋는 중 이보다 뒤를 향한 입력은 무시하고 선다 — 자기 선을 밟는 즉사를 막는다
+        // 260923_선을 긋는 중 '되돌아가는' 입력만 막는다. 예전 -0.5(120도)는 8방향의 135도 꺾기까지 막아
+        // 셀레스티안이 나갔다가 비스듬히 돌아오지 못했다 — 135도는 자기 선에서 옆으로 벌어지므로 밟지 않는다.
+        private const float REVERSE_DOT    = -0.9f;    // 거의 정반대(154도 이상)만 무시하고 선다
         private const float VERTEX_SNAP    = 0.1f;     // 꼭짓점에서 이만큼 안이면 꼭짓점에 선 것으로 본다(칸) — 모서리 코앞에서 꺾을 때 걸리지 않게
         private const int   MAX_SLIDE_STEP = 64;       // 한 프레임에 넘길 꼭짓점 수 상한(곡선은 꼭짓점이 촘촘하다)
         private const int   CLAMP_ITERATION = 12;
@@ -36,6 +38,9 @@ namespace Client
         private Vector2         m_vHeading = Vector2.up;    // 선을 긋는 중 나아가는 방향
         private bool            m_bMoving;
         private MOVE_STYLE      m_eMoveStyle = MOVE_STYLE.FOUR_WAY;
+
+        // 260923_경계를 따라 돌던 방향(+1 / -1). 누른 방향이 변과 직각이라 탈 수 없을 때 이 방향으로 계속 간다
+        private int             m_iFollowSign;
 
         // 경계 위 자리 — 몇 번째 고리의 몇 번째 변, 변 위 어디(0~1). 점령지가 바뀌면 다시 잡는다
         private int             m_iRing = -1;
@@ -96,6 +101,7 @@ namespace Client
             m_bMoving      = false;
             m_iRing        = -1;
             m_iRingVersion = -1;
+            m_iFollowSign  = 0;
             Reset_Spiral();
         }
 
@@ -203,6 +209,12 @@ namespace Client
 
                 int iWant = fDot >= SLIDE_MIN_DOT ? 1 : fDot <= -SLIDE_MIN_DOT ? -1 : 0;
 
+                // 260923_누른 방향이 변과 직각이라 탈 수 없으면 **돌던 방향으로 계속 간다**(260902_선분 자동 추적).
+                // 예전 칸 시절처럼 "아래를 누르고 있으면 좌우 경계도 선을 따라 알아서 간다"가 이 한 줄이다.
+                // 따라가다 그 방향으로 나갈 수 있게 되면 위 Can_Exit에서 저절로 나간다.
+                if (iWant == 0 && iSign == 0 && m_iFollowSign != 0 && Can_Exit(vInput) == false)
+                    iWant = m_iFollowSign;
+
                 // 누른 방향이 이 변과 너무 어긋나거나, 꼭짓점을 넘은 뒤 되돌아가야 한다면 선다
                 if (iWant == 0 || (iSign != 0 && iWant != iSign))
                     break;
@@ -217,8 +229,9 @@ namespace Client
 
                 if (fMove > 0f)
                 {
-                    m_bMoving = true;
-                    m_eCurDir = CTerritoryGrid.Vector_ToDir4(vSegDir * iSign);
+                    m_bMoving     = true;
+                    m_eCurDir     = CTerritoryGrid.Vector_ToDir4(vSegDir * iSign);
+                    m_iFollowSign = iSign;      // 다음에 직각 입력이 들어와도 이 방향으로 이어 간다
                 }
 
                 // 변 끝에 닿았으면 다음 변으로 넘어간다
@@ -310,6 +323,7 @@ namespace Client
         {
             m_cGrid.Begin_Trail(m_vPos);
             m_vHeading      = CTerritoryGrid.Dir_ToVector(eDir);
+            m_iFollowSign   = 0;
             m_iRing         = -1;
             m_fSpiralAngle  = 0f;
             m_bSpiralClosing = false;
@@ -376,20 +390,26 @@ namespace Client
 
             Vector2 vTo = m_vPos + m_vHeading * fDistance;
 
-            // 260916_어디로든 신발 — 좌우 끝을 넘으면 거기서 선을 끊고 반대편에서 이어 긋는다
-            if (m_bEdgeWrap == true && (vTo.x < 0f || vTo.x >= m_cGrid.WIDTH) && Mathf.Abs(m_vHeading.x) > 1e-5f)
+            // 260916_어디로든 신발 — 맵 끝을 넘으면 거기서 선을 끊고 반대편에서 이어 긋는다
+            // 260923_좌우만 이었는데 위아래도 잇는다. 두 축을 같이 넘으면 먼저 닿는 쪽부터
+            if (m_bEdgeWrap == true)
             {
-                float fEdgeX  = vTo.x < 0f ? 0f : m_cGrid.WIDTH - 1e-3f;
-                float fToEdge = (fEdgeX - m_vPos.x) / m_vHeading.x;
-                Vector2 vEdge = m_vPos + m_vHeading * fToEdge;
+                int iAxis = Find_WrapAxis(vTo, out float fToEdge, out float fEdge);
+                if (iAxis >= 0)
+                {
+                    Vector2 vEdge = m_vPos + m_vHeading * fToEdge;
 
-                STEP_RESULT eResult = Step(vEdge, out iCapturedCount);
-                if (eResult != STEP_RESULT.DRAW || Vector2.Distance(m_vPos, vEdge) > 1e-3f)
-                    return eResult;
+                    STEP_RESULT eResult = Step(vEdge, out iCapturedCount);
+                    if (eResult != STEP_RESULT.DRAW || Vector2.Distance(m_vPos, vEdge) > 1e-3f)
+                        return eResult;
 
-                m_vPos = new Vector2(vTo.x < 0f ? m_cGrid.WIDTH - 1e-3f : 1e-3f, m_vPos.y);
-                m_cGrid.Break_Trail(m_vPos);
-                vTo = m_vPos + m_vHeading * Mathf.Max(0f, fDistance - fToEdge);
+                    float fSize = iAxis == 0 ? m_cGrid.WIDTH : m_cGrid.HEIGHT;
+                    float fOpposite = fEdge <= 0f ? fSize - 1e-3f : 1e-3f;
+
+                    m_vPos = iAxis == 0 ? new Vector2(fOpposite, m_vPos.y) : new Vector2(m_vPos.x, fOpposite);
+                    m_cGrid.Break_Trail(m_vPos);
+                    vTo = m_vPos + m_vHeading * Mathf.Max(0f, fDistance - fToEdge);
+                }
             }
 
             // 맵 끝 · 잘린 칸 앞에서는 선다. 비스듬히 부딪혔으면 벽을 따라 한 축만 간다
@@ -405,6 +425,36 @@ namespace Client
                 return STEP_RESULT.DRAW;
 
             return Step(vClamped, out iCapturedCount);
+        }
+
+        // 260923_이번 걸음에 맵 끝을 넘는 축을 찾는다(먼저 닿는 쪽). 0=가로 1=세로, 없으면 -1
+        private int Find_WrapAxis(Vector2 vTo, out float fToEdge, out float fEdge)
+        {
+            fToEdge = float.MaxValue;
+            fEdge   = 0f;
+            int iAxis = -1;
+
+            for (int i = 0; i < 2; ++i)
+            {
+                float fHead = i == 0 ? m_vHeading.x : m_vHeading.y;
+                float fNow  = i == 0 ? m_vPos.x : m_vPos.y;
+                float fNext = i == 0 ? vTo.x : vTo.y;
+                float fSize = i == 0 ? m_cGrid.WIDTH : m_cGrid.HEIGHT;
+
+                if (Mathf.Abs(fHead) < 1e-5f || (fNext >= 0f && fNext < fSize))
+                    continue;
+
+                float fLine = fNext < 0f ? 0f : fSize - 1e-3f;
+                float fDist = (fLine - fNow) / fHead;
+                if (fDist >= fToEdge)
+                    continue;
+
+                fToEdge = fDist;
+                fEdge   = fLine;
+                iAxis   = i;
+            }
+
+            return iAxis;
         }
 
         // 한 걸음을 규칙에 넘긴다 — 판정은 전부 CTerritoryGrid.Step_To에 있다(2-3)

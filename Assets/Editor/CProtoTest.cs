@@ -39,6 +39,10 @@ namespace Client
             Test_StepOnOwnTrailIsDeadly();
             Test_MoveRules();
             Test_BoundaryOnlyMove();
+            Test_FollowBoundary();
+            Test_TinyCaptureIsNotCapture();
+            Test_EdgeWrapBothAxis();
+            Test_TrailMesh();
             Test_LineFollow();
             Test_EnemyTable();
             Test_Enemy();
@@ -256,6 +260,143 @@ namespace Client
             cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
             Check("빈 땅 쪽으로 누르면 선을 긋는다", cGrid.IS_DRAWING && Near(cMove.POS, new Vector2(18f, 2f)));
         }
+        // 260923_경계선 따라가기 — 누른 방향이 변과 직각이면 돌던 방향으로 계속 간다(260902_선분 자동 추적의 다각형판)
+        private static void Test_FollowBoundary()
+        {
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(40, 40, 1f, Vector2.zero, 0, null, 5);   // 섬 [15,26] x [15,26]
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2(20.5f, 26f), 9f);      // 섬 위쪽 경계 — 아래는 점령지 내부다
+
+            // 아직 아무 데도 안 가 본 상태에서 안쪽(아래)을 누르면 선다 — 따라갈 방향이 없다
+            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.2f, out int _, out Vector2 _, out Vector2 _);
+            Check("따라가기 — 돌던 방향이 없으면 안쪽 입력에 선다", Near(cMove.POS, new Vector2(20.5f, 26f)));
+
+            // 오른쪽으로 경계를 타다가
+            Run_Move(cGrid, cMove, MOVE_DIR.RIGHT, 0.2f, out int _, out Vector2 _, out Vector2 _);
+            Check("따라가기 — 경계를 따라 오른쪽으로 갔다", cMove.POS.x > 21f && Mathf.Abs(cMove.POS.y - 26f) < 0.01f);
+
+            // 아래(안쪽)를 눌러도 멈추지 않고 가던 방향으로 계속 간다
+            Vector2 vBefore = cMove.POS;
+            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.3f, out int _, out Vector2 _, out Vector2 _);
+            Check("따라가기 — 안쪽을 눌러도 선을 따라 계속 간다", cMove.POS.x > vBefore.x + 1f);
+            Check("따라가기 — 선 위에 그대로 있다", cGrid.Distance_ToBoundary(cMove.POS) < 0.01f && cGrid.IS_DRAWING == false);
+
+            // 모서리를 돌아 오른쪽 변을 타고 내려가다가, 아래 경계에 닿으면 누르던 아래로 나간다
+            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 4f, out int _, out Vector2 _, out Vector2 _);
+            Check("따라가기 — 모서리를 돌아 내려간다", cMove.POS.y < 26f);
+            Check("따라가기 — 나갈 수 있게 되면 그 방향으로 나간다", cGrid.IS_DRAWING == true && cMove.POS.y < 15f);
+        }
+
+        // 260923_넓이가 없다시피 한 도형은 점령이 아니다 — 8방향에서 CHAIN 자막이 도배되던 원인
+        private static void Test_TinyCaptureIsNotCapture()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            int iOwnedBefore = Count_Owned(cGrid);
+
+            // 테두리에서 한 걸음 나갔다가 곧바로 되돌아온다 — 감싼 넓이가 0이다
+            cGrid.Begin_Trail(new Vector2(10.5f, 1f));
+            cGrid.Step_To(new Vector2(10.5f, 1f), new Vector2(10.5f, 1.3f), out Vector2 _, out int _);
+
+            STEP_RESULT eResult = cGrid.Step_To(new Vector2(10.5f, 1.3f), new Vector2(10.6f, 0.9f),
+                                                out Vector2 _, out int iCaptured);
+
+            Check("0칸 점령 — 점령으로 치지 않는다(SAFE)", eResult == STEP_RESULT.SAFE);
+            Check("0칸 점령 — 넓이 0", iCaptured, 0);
+            Check("0칸 점령 — 선은 사라진다", cGrid.IS_DRAWING == false);
+            Check("0칸 점령 — 점령 칸이 늘지 않는다", Count_Owned(cGrid) <= iOwnedBefore + 1);
+
+            // 제대로 감싼 도형은 그대로 점령된다
+            CTerritoryGrid cBig = Make_Grid();
+            Check("제대로 감싼 도형은 점령된다", Walk_ClosedLoop(cBig, out CMoveHandler _), 35);
+        }
+
+        // 260923_어디로든 신발 — 좌우뿐 아니라 위아래 끝도 이어야 한다
+        private static void Test_EdgeWrapBothAxis()
+        {
+            foreach (bool bVertical in new[] { false, true })
+            {
+                CTerritoryGrid cGrid = new CTerritoryGrid();
+                cGrid.Initialize(20, 20, 1f, Vector2.zero, 0, null, 3);   // 섬 [7,14]
+
+                CMoveHandler cMove = new CMoveHandler();
+                Vector2 vStart = bVertical ? new Vector2(10.5f, 7f) : new Vector2(7f, 10.5f);
+                cMove.Initialize(cGrid, vStart, 10f);
+                cMove.Set_EdgeWrap(true);
+
+                MOVE_DIR eDir = bVertical ? MOVE_DIR.DOWN : MOVE_DIR.LEFT;
+                // 7칸 가면 맵 끝 → 반대편(19.999)에서 3칸 더 간다
+                Run_Move(cGrid, cMove, eDir, 1f, out int _, out Vector2 _, out Vector2 _);
+
+                string strAxis = bVertical ? "위아래" : "좌우";
+                Check($"신발 — {strAxis} 끝을 넘으면 반대편에서 이어 긋는다",
+                      bVertical ? cMove.POS.y > 16f : cMove.POS.x > 16f);
+                Check($"신발 — {strAxis}로 넘어가도 선은 이어진다", cGrid.IS_DRAWING == true);
+                Check($"신발 — {strAxis} 선이 두 조각으로 나뉜다", cGrid.TRAIL_PIECES.Count, 2);
+            }
+
+            // 신발이 없으면 맵 끝에서 선다
+            CTerritoryGrid cWall = new CTerritoryGrid();
+            cWall.Initialize(20, 20, 1f, Vector2.zero, 0, null, 3);
+            CMoveHandler cStop = new CMoveHandler();
+            cStop.Initialize(cWall, new Vector2(10.5f, 7f), 10f);
+            Run_Move(cWall, cStop, MOVE_DIR.DOWN, 1.2f, out int _, out Vector2 _, out Vector2 _);
+            Check("신발이 없으면 맵 끝에서 선다", cStop.POS.y >= 0f && cStop.POS.y < 1f);
+        }
+
+        // 260923_선을 그리는 띠 메시 — 구간이 굵기보다 짧아도 모양이 무너지지 않아야 한다(꺾을 때마다 일그러지던 버그)
+        private static void Test_TrailMesh()
+        {
+            const float fWidth = 0.55f;
+            List<Vector3> lstPoint = new List<Vector3>
+            {
+                new Vector3(0f, 0f, 0f),
+                new Vector3(3f, 0f, 0f),        // 오른쪽으로 길게
+                new Vector3(3f, 0.15f, 0f),     // 위로 막 꺾었다 — 한 프레임치(0.15칸)뿐이다
+            };
+
+            List<Vector3> lstVertex = new List<Vector3>();
+            List<int>     lstIndex  = new List<int>();
+            List<Color>   lstColor  = new List<Color>();
+            CTrailMesh_Utility.Append(lstPoint, fWidth, Color.white, lstVertex, lstIndex, lstColor);
+
+            Check("띠 메시 — 삼각형이 만들어진다", lstIndex.Count >= 6 && lstIndex.Count % 3 == 0);
+            Check("띠 메시 — 색도 점마다 있다", lstColor.Count, lstVertex.Count);
+
+            // 삼각형이 뒤집히거나 납작해지지 않는다 — LineRenderer가 짧은 구간에서 무너지던 지점이다
+            int iFlipped = 0, iDegenerate = 0;
+            float fMaxAway = 0f;
+            for (int i = 0; i + 2 < lstIndex.Count; i += 3)
+            {
+                Vector3 a = lstVertex[lstIndex[i]], b = lstVertex[lstIndex[i + 1]], c = lstVertex[lstIndex[i + 2]];
+                float fCross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+                if (Mathf.Abs(fCross) < 1e-6f) ++iDegenerate;
+                else if (fCross > 0f) ++iFlipped;
+            }
+            foreach (Vector3 v in lstVertex)
+                fMaxAway = Mathf.Max(fMaxAway, Distance_ToPath(lstPoint, v));
+
+            Check("띠 메시 — 납작한 삼각형 없음", iDegenerate, 0);
+            Check("띠 메시 — 뒤집힌 삼각형 없음", iFlipped, 0);
+            Check("띠 메시 — 선에서 반폭보다 멀리 삐져나가지 않는다", fMaxAway <= fWidth * 0.5f + 1e-4f);
+
+            // 짧은 구간(0.15칸)도 제 굵기를 지킨다 — 꺾인 직후 몇 프레임이 바로 이 상태다
+            float fMinX = float.MaxValue, fMaxX = float.MinValue;
+            foreach (Vector3 v in lstVertex)
+            {
+                if (v.y < 0.14f || v.y > 0.16f) continue;   // 꺾여 올라간 구간의 끝(y=0.15)만 본다
+                fMinX = Mathf.Min(fMinX, v.x);
+                fMaxX = Mathf.Max(fMaxX, v.x);
+            }
+            Check("띠 메시 — 짧은 구간도 굵기를 지킨다", Mathf.Abs((fMaxX - fMinX) - fWidth) < 1e-3f);
+
+            // 점이 모자라면 아무것도 안 만든다
+            lstVertex.Clear(); lstIndex.Clear(); lstColor.Clear();
+            CTrailMesh_Utility.Append(new List<Vector3> { Vector3.zero }, fWidth, Color.white, lstVertex, lstIndex, lstColor);
+            Check("띠 메시 — 점 하나면 아무것도 안 만든다", lstIndex.Count, 0);
+        }
+
         // 260923_점령한 모양의 모서리를 따라 돈다 — 볼록한 모서리에서 계속 누르면 밖으로 나간다
         private static void Test_LineFollow()
         {
@@ -3963,6 +4104,18 @@ namespace Client
                     return eResult;
             }
             return eResult;
+        }
+
+        /// <summary> 260923_점 하나가 폴리라인에서 얼마나 떨어져 있나 — 띠가 선 밖으로 삐져나갔는지 본다 </summary>
+        private static float Distance_ToPath(List<Vector3> lstPoint, Vector3 v)
+        {
+            float fBest = float.MaxValue;
+            for (int i = 0; i + 1 < lstPoint.Count; ++i)
+            {
+                Vector2 vOn = CPolygon_Utility.Closest_OnSegment(lstPoint[i], lstPoint[i + 1], v, out float _);
+                fBest = Mathf.Min(fBest, Vector2.Distance(vOn, v));
+            }
+            return fBest;
         }
 
         private static bool Near(Vector2 a, Vector2 b, float fEpsilon = 0.01f) => Vector2.Distance(a, b) <= fEpsilon;

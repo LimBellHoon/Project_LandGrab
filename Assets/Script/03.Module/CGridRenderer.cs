@@ -17,7 +17,7 @@ namespace Client
     /// 그래서 1웨이브의 가림막이 곧 '마스크'다 (MapInfo.csv의 strLayerTex 참고).
     ///
     /// 260923_땅이 다각형이 되면서 가림막도 **다각형 모양 그대로** 뚫는다 — 가장자리는 픽셀을 나눠 재어 부드럽게 옅어진다.
-    /// 긋는 중인 선은 가림막에 찍지 않고 선(LineRenderer)으로 따로 그린다 — 사선 · 곡선이 계단 없이 보인다.
+    /// 긋는 중인 선은 가림막에 찍지 않고 띠 메시(CTrailMesh_Utility)로 따로 그린다 — 사선 · 곡선이 계단 없이 보인다.
     ///
     /// 260912_사본은 원본과 같은 해상도로 만든다.
     /// 한 장이 이번 웨이브에는 보상(reveal)이었다가 다음 웨이브에는 가림막(cover)이 되므로,
@@ -54,11 +54,16 @@ namespace Client
         private float[]     m_arrRowCoverage;   // 260923_한 줄의 픽셀마다 점령지가 덮은 비율(0~1)
         private readonly List<float> m_lstCross = new List<float>();
 
-        // 260923_선 — 조각마다 · 탄 구간을 뺀 토막마다 하나씩 쓴다. 모자라면 늘리고 남으면 끈다
+        // 260923_선은 직접 만든 띠 메시로 그린다(CTrailMesh_Utility) — 왜 LineRenderer가 아닌지는 그 파일에 적어 두었다
         private GameObject              m_goTrailRoot;
-        private readonly List<LineRenderer> m_lstLine = new List<LineRenderer>();
+        private MeshFilter              m_cTrailFilter;
+        private Mesh                    m_cTrailMesh;
+        private Material                m_cTrailMaterial;
+        private Texture2D               m_texTrail;
         private readonly List<Vector3>  m_lstLinePoint = new List<Vector3>();
-        private int                     m_iLineUsed;
+        private readonly List<Vector3>  m_lstVertex    = new List<Vector3>();
+        private readonly List<int>      m_lstIndex     = new List<int>();
+        private readonly List<Color>    m_lstColor     = new List<Color>();
 
         private int m_iTexWidth;
         private int m_iTexHeight;
@@ -86,8 +91,28 @@ namespace Client
             Build_Mask(cGrid.WIDTH * PIXEL_PER_CELL, cGrid.HEIGHT * PIXEL_PER_CELL);
             Fill_CoverFallback();
 
-            m_goTrailRoot = new GameObject("TrailLines");
+            m_goTrailRoot = new GameObject("TrailMesh");
             m_goTrailRoot.transform.SetParent(srCover.transform.parent, false);
+
+            m_cTrailMesh = new Mesh { name = "Trail" };
+            m_cTrailMesh.MarkDynamic();
+            m_cTrailFilter = m_goTrailRoot.AddComponent<MeshFilter>();
+            m_cTrailFilter.sharedMesh = m_cTrailMesh;
+
+            // 가림막과 같은 재질을 쓰되 **그림이 비치지 않게 흰 1x1로 갈아 끼운다** — 스프라이트 재질을
+            // 그대로 쓰면 선에 맵 그림이 늘어나 붙어 꺾을 때마다 무늬가 일그러져 보인다.
+            m_texTrail = new Texture2D(1, 1);
+            m_texTrail.SetPixel(0, 0, Color.white);
+            m_texTrail.Apply(false);
+
+            m_cTrailMaterial = new Material(srCover.sharedMaterial) { mainTexture = m_texTrail };
+
+            MeshRenderer cRenderer = m_goTrailRoot.AddComponent<MeshRenderer>();
+            cRenderer.sharedMaterial   = m_cTrailMaterial;
+            cRenderer.sortingLayerID   = srCover.sortingLayerID;
+            cRenderer.sortingOrder     = srCover.sortingOrder + TRAIL_SORT_OFFSET;
+            cRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            cRenderer.receiveShadows   = false;
 
             Refresh_All();
             return true;
@@ -102,8 +127,18 @@ namespace Client
 
             if (m_goTrailRoot != null)
                 Object.Destroy(m_goTrailRoot);
-            m_goTrailRoot = null;
-            m_lstLine.Clear();
+            if (m_cTrailMesh != null)
+                Object.Destroy(m_cTrailMesh);
+            if (m_cTrailMaterial != null)
+                Object.Destroy(m_cTrailMaterial);
+            if (m_texTrail != null)
+                Object.Destroy(m_texTrail);
+
+            m_goTrailRoot    = null;
+            m_cTrailFilter   = null;
+            m_cTrailMesh     = null;
+            m_cTrailMaterial = null;
+            m_texTrail       = null;
 
             m_cGrid     = null;
             m_srCover   = null;
@@ -407,7 +442,12 @@ namespace Client
         // 260923_긋는 중인 선. 도화선이 탄 구간은 빼고, 불 머리는 주황으로 그린다
         private void Refresh_Trail()
         {
-            m_iLineUsed = 0;
+            if (m_cTrailMesh == null)
+                return;
+
+            m_lstVertex.Clear();
+            m_lstIndex.Clear();
+            m_lstColor.Clear();
 
             if (m_cGrid.IS_DRAWING == true)
             {
@@ -438,11 +478,14 @@ namespace Client
                 }
             }
 
-            for (int i = m_iLineUsed; i < m_lstLine.Count; ++i)
-            {
-                if (m_lstLine[i].enabled == true)
-                    m_lstLine[i].enabled = false;
-            }
+            m_cTrailMesh.Clear();
+            if (m_lstIndex.Count == 0)
+                return;
+
+            m_cTrailMesh.SetVertices(m_lstVertex);
+            m_cTrailMesh.SetColors(m_lstColor);
+            m_cTrailMesh.SetTriangles(m_lstIndex, 0);
+            m_cTrailMesh.RecalculateBounds();
         }
 
         // 폴리라인에서 길이 [fFrom, fTo] 구간만 선 하나로 그린다
@@ -475,42 +518,10 @@ namespace Client
             if (m_lstLinePoint.Count < 2)
                 return;
 
-            LineRenderer cLine = Get_Line();
-            cLine.startColor    = cColor;
-            cLine.endColor      = cColor;
-            cLine.positionCount = m_lstLinePoint.Count;
-            for (int i = 0; i < m_lstLinePoint.Count; ++i)
-                cLine.SetPosition(i, m_lstLinePoint[i]);
+            CTrailMesh_Utility.Append(m_lstLinePoint, TRAIL_WIDTH_CELL * m_cGrid.CELL_SIZE, cColor,
+                                      m_lstVertex, m_lstIndex, m_lstColor);
         }
 
-        private LineRenderer Get_Line()
-        {
-            if (m_iLineUsed < m_lstLine.Count)
-            {
-                LineRenderer cReuse = m_lstLine[m_iLineUsed++];
-                cReuse.enabled = true;
-                return cReuse;
-            }
-
-            GameObject goLine = new GameObject("Trail_" + m_lstLine.Count);
-            goLine.transform.SetParent(m_goTrailRoot.transform, false);
-
-            LineRenderer cLine = goLine.AddComponent<LineRenderer>();
-            cLine.useWorldSpace     = true;
-            cLine.widthMultiplier   = TRAIL_WIDTH_CELL * m_cGrid.CELL_SIZE;
-            cLine.numCapVertices    = 4;
-            // 260923_모서리를 둥글리지 않는다(0). 둥근 모서리는 반지름이 굵기의 절반이라, 방향을 막 꺾어
-            // 새 구간이 굵기(0.55칸)보다 짧은 동안(9칸/초면 서너 프레임) 모서리 삼각형이 뭉개져 선이
-            // 한순간 일그러져 보였다. 0이면 구간 길이와 상관없이 항상 같은 모양이다(BakeMesh로 확인).
-            cLine.numCornerVertices = 0;
-            cLine.sharedMaterial    = m_srCover.sharedMaterial;      // 스프라이트 재질을 그대로 쓴다 — 셰이더를 따로 찾지 않는다
-            cLine.sortingLayerID    = m_srCover.sortingLayerID;
-            cLine.sortingOrder      = m_srCover.sortingOrder + TRAIL_SORT_OFFSET;
-
-            m_lstLine.Add(cLine);
-            ++m_iLineUsed;
-            return cLine;
-        }
         #endregion 갱신
     }
 }
