@@ -210,12 +210,16 @@ namespace Client
         [Range(0.05f, 1f)]
         [SerializeField] private float m_fTrailWidthCell = 0.3f;
 
+        [Tooltip("선 뒤에 옅은 발광 띠를 한 겹 더 깐다. 끄면 단색 선만 남는다.")]
+        [SerializeField] private bool m_bTrailGlowEnabled = true;
+
         [Tooltip("0이 아니면 포수(PROJECTILE 기믹 몬스터)가 표에 적힌 탄 대신 이 ProjectileInfo ID의 탄을 쏜다.")]
         [Min(0)]
         [SerializeField] private int m_iDevEnemyShotID;
 
         public float PLAYER_SPEED_SCALE => Mathf.Max(0.01f, m_fPlayerSpeedScale);
         public float TRAIL_WIDTH_CELL   => Mathf.Clamp(m_fTrailWidthCell, 0.05f, 1f);
+        public bool  TRAIL_GLOW_ENABLED => m_bTrailGlowEnabled;
         public float UI_RESERVE_TOP     => Mathf.Clamp(m_fUIReserveTop, 0f, 0.4f);
         public float UI_RESERVE_BOTTOM  => Mathf.Clamp(m_fUIReserveBottom, 0f, 0.5f);
         public float CAMERA_MARGIN      => Mathf.Max(0f, m_fCameraMargin);

@@ -30,14 +30,19 @@ namespace Client
         // 원본이 있으면 그 해상도를 그대로 따라가므로 이 값은 쓰이지 않는다.
         private const int PIXEL_PER_CELL = 4;
 
-        private static readonly Color   COLOR_TRAIL     = new Color32(90, 225, 255, 255);   // 그리는 중인 선
+        // 260924_선 색은 시각 정체성이라 여기 상수로 둔다(CGameConfig에는 굵기 · 켬끔만) — CUI_InGame의 플래시 색과 같은 자리
+        private static readonly Color   COLOR_TRAIL      = new Color32(90, 225, 255, 255);  // 플레이어 쪽(머리)
+        private static readonly Color   COLOR_TRAIL_TAIL = new Color32(40, 130, 225, 165);  // 선이 시작된 쪽(꼬리) — 옅게 사라진다
         private static readonly Color   COLOR_FIRE      = new Color32(255, 140, 40, 255);   // 260923_도화선의 불 머리
+        private const float             GLOW_ALPHA      = 0.25f;                            // 260924_발광 띠의 진하기
         private static readonly Color32 COLOR_BLOCK     = new Color32(0, 0, 0, 255);        // 맵 밖
 
         // 260923_가림막을 다각형으로 뚫을 때 한 픽셀 줄을 몇 번 나눠 재는가 — 가장자리가 계단 없이 옅어진다
         private const int   COVERAGE_SUBROW   = 4;
         private const float TRAIL_WIDTH_DEFAULT = 0.3f;    // 260924_선 굵기 기본값(칸). GameConfig로 덮어쓴다
         private const float FIRE_LENGTH_CELL  = 0.8f;      // 불 머리 길이(칸)
+        private const float GLOW_WIDTH_SCALE  = 2.4f;      // 260924_발광 띠는 본 선의 몇 배 굵기인가
+        private const string RESOURCE_TRAIL_MATERIAL = "Mat_Trail";   // 260924_있으면 이 재질(=셰이더)로 선을 그린다
         private const int   TRAIL_SORT_OFFSET = 1;         // 가림막보다 한 칸 위에 그린다
         private static readonly Color32 COLOR_FALLBACK  = new Color32(8, 10, 20, 235);      // 가림막을 못 읽었을 때
 
@@ -64,7 +69,10 @@ namespace Client
         private readonly List<Vector3>  m_lstVertex    = new List<Vector3>();
         private readonly List<int>      m_lstIndex     = new List<int>();
         private readonly List<Color>    m_lstColor     = new List<Color>();
+        private readonly List<Vector2>  m_lstUV        = new List<Vector2>();
         private float                   m_fTrailWidthCell = TRAIL_WIDTH_DEFAULT;
+        private bool                    m_bTrailGlow      = true;
+        private bool                    m_bOwnMaterial;
 
         private int m_iTexWidth;
         private int m_iTexHeight;
@@ -100,13 +108,27 @@ namespace Client
             m_cTrailFilter = m_goTrailRoot.AddComponent<MeshFilter>();
             m_cTrailFilter.sharedMesh = m_cTrailMesh;
 
-            // 가림막과 같은 재질을 쓰되 **그림이 비치지 않게 흰 1x1로 갈아 끼운다** — 스프라이트 재질을
-            // 그대로 쓰면 선에 맵 그림이 늘어나 붙어 꺾을 때마다 무늬가 일그러져 보인다.
-            m_texTrail = new Texture2D(1, 1);
-            m_texTrail.SetPixel(0, 0, Color.white);
-            m_texTrail.Apply(false);
+            // 260924_`Resources/Mat_Trail.mat`이 있으면 **그 재질(= 셰이더)로 선을 그린다.** 선에 스타일을
+            // 입히려면 유니티에서 그 이름으로 재질을 하나 만들면 된다 — 메시가 꼭짓점 색과 UV를 같이 넘기므로
+            // (CTrailMesh_Utility) 셰이더에서 그라디언트 · 흐르는 무늬 · 발광을 마음대로 쓸 수 있다.
+            // u = 지나온 거리(굵기 한 칸이 1), v = 띠를 가로지르는 0~1.
+            Material cCustom = Resources.Load<Material>(RESOURCE_TRAIL_MATERIAL);
+            if (cCustom != null)
+            {
+                m_cTrailMaterial = cCustom;
+                m_bOwnMaterial   = false;
+            }
+            else
+            {
+                // 없으면 가림막과 같은 재질을 쓰되 **그림이 비치지 않게 흰 1x1로 갈아 끼운다** —
+                // 스프라이트 재질을 그대로 쓰면 선에 맵 그림이 늘어나 붙는다.
+                m_texTrail = new Texture2D(1, 1);
+                m_texTrail.SetPixel(0, 0, Color.white);
+                m_texTrail.Apply(false);
 
-            m_cTrailMaterial = new Material(srCover.sharedMaterial) { mainTexture = m_texTrail };
+                m_cTrailMaterial = new Material(srCover.sharedMaterial) { mainTexture = m_texTrail };
+                m_bOwnMaterial   = true;
+            }
 
             MeshRenderer cRenderer = m_goTrailRoot.AddComponent<MeshRenderer>();
             cRenderer.sharedMaterial   = m_cTrailMaterial;
@@ -130,8 +152,8 @@ namespace Client
                 Object.Destroy(m_goTrailRoot);
             if (m_cTrailMesh != null)
                 Object.Destroy(m_cTrailMesh);
-            if (m_cTrailMaterial != null)
-                Object.Destroy(m_cTrailMaterial);
+            if (m_cTrailMaterial != null && m_bOwnMaterial == true)
+                Object.Destroy(m_cTrailMaterial);       // Resources에서 가져온 재질은 우리 것이 아니다
             if (m_texTrail != null)
                 Object.Destroy(m_texTrail);
 
@@ -140,6 +162,7 @@ namespace Client
             m_cTrailMesh     = null;
             m_cTrailMaterial = null;
             m_texTrail       = null;
+            m_bOwnMaterial   = false;
 
             m_cGrid     = null;
             m_srCover   = null;
@@ -353,10 +376,11 @@ namespace Client
         #endregion 웨이브 이미지
 
         #region 갱신
-        /// <summary> 260924_긋는 중인 선의 굵기(칸). 보이기만 하는 값이라 점령 판정과는 무관하다(2-3). </summary>
-        public void Set_TrailWidth(float fWidthCell)
+        /// <summary> 260924_긋는 중인 선의 굵기(칸)와 발광. 보이기만 하는 값이라 점령 판정과는 무관하다(2-3). </summary>
+        public void Set_TrailStyle(float fWidthCell, bool bGlow)
         {
             m_fTrailWidthCell = Mathf.Clamp(fWidthCell, 0.05f, 1f);
+            m_bTrailGlow      = bGlow;
         }
 
         /// <summary> 점령지가 바뀌었을 때만 가림막을 다시 뚫는다. 선은 매 프레임 다시 그린다(점 몇 개뿐이다). </summary>
@@ -447,6 +471,7 @@ namespace Client
         }
 
         // 260923_긋는 중인 선. 도화선이 탄 구간은 빼고, 불 머리는 주황으로 그린다
+        // 260924_발광 띠를 먼저 깔고 그 위에 본 선을 얹는다 — 한 메시 안에서는 넣은 순서대로 그려진다
         private void Refresh_Trail()
         {
             if (m_cTrailMesh == null)
@@ -455,34 +480,14 @@ namespace Client
             m_lstVertex.Clear();
             m_lstIndex.Clear();
             m_lstColor.Clear();
+            m_lstUV.Clear();
 
             if (m_cGrid.IS_DRAWING == true)
             {
-                float fBurnFrom = m_cGrid.BURN_FROM;
-                float fBurnTo   = m_cGrid.BURN_TO;
-                bool  bBurning  = fBurnFrom >= 0f;
-                float fOffset   = 0f;
+                if (m_bTrailGlow == true)
+                    Build_Trail(true);
 
-                IReadOnlyList<List<Vector2>> lstPiece = m_cGrid.TRAIL_PIECES;
-                for (int p = 0; p < lstPiece.Count; ++p)
-                {
-                    float fLength = CPolygon_Utility.Get_Length(lstPiece[p]);
-
-                    if (bBurning == false)
-                    {
-                        Draw_Part(lstPiece[p], 0f, fLength, COLOR_TRAIL);
-                    }
-                    else
-                    {
-                        // 이 조각에서 탄 구간 [fBurnFrom, fBurnTo]를 뺀 앞 · 뒤만 그린다
-                        Draw_Part(lstPiece[p], 0f, Mathf.Min(fLength, fBurnFrom - fOffset), COLOR_TRAIL);
-                        Draw_Part(lstPiece[p], Mathf.Max(0f, fBurnTo - fOffset), fLength, COLOR_TRAIL);
-                        Draw_Part(lstPiece[p], Mathf.Max(0f, fBurnTo - fOffset - FIRE_LENGTH_CELL),
-                                  Mathf.Min(fLength, fBurnTo - fOffset), COLOR_FIRE);
-                    }
-
-                    fOffset += fLength;
-                }
+                Build_Trail(false);
             }
 
             m_cTrailMesh.Clear();
@@ -491,12 +496,43 @@ namespace Client
 
             m_cTrailMesh.SetVertices(m_lstVertex);
             m_cTrailMesh.SetColors(m_lstColor);
+            m_cTrailMesh.SetUVs(0, m_lstUV);
             m_cTrailMesh.SetTriangles(m_lstIndex, 0);
             m_cTrailMesh.RecalculateBounds();
         }
 
-        // 폴리라인에서 길이 [fFrom, fTo] 구간만 선 하나로 그린다
-        private void Draw_Part(List<Vector2> lstLine, float fFrom, float fTo, Color cColor)
+        // 선 한 겹을 만든다(발광 겹 / 본 겹). 조각마다 탄 구간을 빼고 남은 토막만 그린다
+        private void Build_Trail(bool bGlow)
+        {
+            float fBurnFrom = m_cGrid.BURN_FROM;
+            float fBurnTo   = m_cGrid.BURN_TO;
+            bool  bBurning  = fBurnFrom >= 0f;
+            float fOffset   = 0f;
+
+            IReadOnlyList<List<Vector2>> lstPiece = m_cGrid.TRAIL_PIECES;
+            for (int p = 0; p < lstPiece.Count; ++p)
+            {
+                float fLength = CPolygon_Utility.Get_Length(lstPiece[p]);
+
+                if (bBurning == false)
+                {
+                    Draw_Part(lstPiece[p], 0f, fLength, fOffset, COLOR_TRAIL, bGlow);
+                }
+                else
+                {
+                    // 이 조각에서 탄 구간 [fBurnFrom, fBurnTo]를 뺀 앞 · 뒤만 그린다
+                    Draw_Part(lstPiece[p], 0f, Mathf.Min(fLength, fBurnFrom - fOffset), fOffset, COLOR_TRAIL, bGlow);
+                    Draw_Part(lstPiece[p], Mathf.Max(0f, fBurnTo - fOffset), fLength, fOffset, COLOR_TRAIL, bGlow);
+                    Draw_Part(lstPiece[p], Mathf.Max(0f, fBurnTo - fOffset - FIRE_LENGTH_CELL),
+                              Mathf.Min(fLength, fBurnTo - fOffset), fOffset, COLOR_FIRE, bGlow);
+                }
+
+                fOffset += fLength;
+            }
+        }
+
+        /// <summary> 폴리라인에서 길이 [fFrom, fTo] 구간만 띠로 만든다. fPieceArc는 이 조각이 선 전체에서 시작하는 자리 </summary>
+        private void Draw_Part(List<Vector2> lstLine, float fFrom, float fTo, float fPieceArc, Color cColor, bool bGlow)
         {
             if (fTo - fFrom < 1e-3f || lstLine.Count < 2)
                 return;
@@ -525,9 +561,33 @@ namespace Client
             if (m_lstLinePoint.Count < 2)
                 return;
 
-            CTrailMesh_Utility.Append(m_lstLinePoint, m_fTrailWidthCell * m_cGrid.CELL_SIZE, cColor,
-                                      m_lstVertex, m_lstIndex, m_lstColor);
+            float fWidth = m_fTrailWidthCell * m_cGrid.CELL_SIZE * (bGlow ? GLOW_WIDTH_SCALE : 1f);
+            float fTotal = Mathf.Max(1e-4f, m_cGrid.TRAIL_LENGTH);
+
+            // 선 전체에서 이 토막이 차지하는 구간 — 꼬리에서 머리로 색이 하나로 이어져 흐른다
+            bool  bTrail = cColor == COLOR_TRAIL;
+            Color cHead  = bGlow ? Get_Glow(cColor) : cColor;
+            Color cTail  = bTrail ? COLOR_TRAIL_TAIL : cColor;
+            if (bGlow == true)
+                cTail = Get_Glow(cTail);
+
+            CTrailMesh_Utility.CTrailStyle cStyle = new CTrailMesh_Utility.CTrailStyle
+            {
+                fWidth      = fWidth,
+                cTail       = cTail,
+                cHead       = cHead,
+                fArcFrom    = Mathf.Clamp01((fPieceArc + fFrom) / fTotal),
+                fArcTo      = Mathf.Clamp01((fPieceArc + fTo) / fTotal),
+                fUVPerWorld = 1f / Mathf.Max(1e-4f, fWidth),
+            };
+
+            CTrailMesh_Utility.Append(m_lstLinePoint, cStyle, m_lstVertex, m_lstIndex, m_lstColor, m_lstUV);
         }
+
+        // 발광 띠의 색 — 본 색을 밝게 띄우고 아주 옅게 깐다
+        private static Color Get_Glow(Color cBase)
+            => new Color(Mathf.Min(1f, cBase.r + 0.25f), Mathf.Min(1f, cBase.g + 0.25f), Mathf.Min(1f, cBase.b + 0.25f),
+                         cBase.a * GLOW_ALPHA);
 
         #endregion 갱신
     }

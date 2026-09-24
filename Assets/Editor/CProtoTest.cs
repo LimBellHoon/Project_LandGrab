@@ -388,6 +388,7 @@ namespace Client
         }
 
         // 260923_선을 그리는 띠 메시 — 구간이 굵기보다 짧아도 모양이 무너지지 않아야 한다(꺾을 때마다 일그러지던 버그)
+        // 260924_스타일(그라디언트 · UV)도 같이 검증한다 — 셰이더가 이 둘을 읽어 무늬를 그린다
         private static void Test_TrailMesh()
         {
             const float fWidth = 0.55f;
@@ -401,10 +402,22 @@ namespace Client
             List<Vector3> lstVertex = new List<Vector3>();
             List<int>     lstIndex  = new List<int>();
             List<Color>   lstColor  = new List<Color>();
-            CTrailMesh_Utility.Append(lstPoint, fWidth, Color.white, lstVertex, lstIndex, lstColor);
+            List<Vector2> lstUV     = new List<Vector2>();
+
+            CTrailMesh_Utility.CTrailStyle cStyle = new CTrailMesh_Utility.CTrailStyle
+            {
+                fWidth      = fWidth,
+                cTail       = new Color(0f, 0f, 1f, 0.5f),
+                cHead       = new Color(1f, 1f, 1f, 1f),
+                fArcFrom    = 0f,
+                fArcTo      = 1f,
+                fUVPerWorld = 1f / fWidth,
+            };
+            CTrailMesh_Utility.Append(lstPoint, cStyle, lstVertex, lstIndex, lstColor, lstUV);
 
             Check("띠 메시 — 삼각형이 만들어진다", lstIndex.Count >= 6 && lstIndex.Count % 3 == 0);
             Check("띠 메시 — 색도 점마다 있다", lstColor.Count, lstVertex.Count);
+            Check("띠 메시 — UV도 점마다 있다", lstUV.Count, lstVertex.Count);
 
             // 삼각형이 뒤집히거나 납작해지지 않는다 — LineRenderer가 짧은 구간에서 무너지던 지점이다
             int iFlipped = 0, iDegenerate = 0;
@@ -433,9 +446,33 @@ namespace Client
             }
             Check("띠 메시 — 짧은 구간도 굵기를 지킨다", Mathf.Abs((fMaxX - fMinX) - fWidth) < 1e-3f);
 
+            // 260924_꼬리 → 머리로 색이 흐른다
+            Color cAtTail = Color.white, cAtHead = Color.white;
+            float fBestTail = float.MaxValue, fBestHead = float.MaxValue;
+            for (int i = 0; i < lstVertex.Count; ++i)
+            {
+                float fTailDist = Vector3.Distance(lstVertex[i], lstPoint[0]);
+                float fHeadDist = Vector3.Distance(lstVertex[i], lstPoint[lstPoint.Count - 1]);
+                if (fTailDist < fBestTail) { fBestTail = fTailDist; cAtTail = lstColor[i]; }
+                if (fHeadDist < fBestHead) { fBestHead = fHeadDist; cAtHead = lstColor[i]; }
+            }
+            Check("띠 메시 — 꼬리는 꼬리색", cAtTail.b > cAtTail.r && cAtTail.a < 0.9f);
+            Check("띠 메시 — 머리는 머리색", cAtHead.r > 0.9f && cAtHead.a > 0.9f);
+
+            // 260924_UV — u는 지나온 거리(굵기 한 칸이 1), v는 띠를 가로지르는 0~1
+            float fMaxU = 0f;
+            bool bSideOK = true;
+            foreach (Vector2 v in lstUV)
+            {
+                fMaxU = Mathf.Max(fMaxU, v.x);
+                if (v.y < -1e-4f || v.y > 1f + 1e-4f) bSideOK = false;
+            }
+            Check("띠 메시 — u가 선 길이만큼 늘어난다", Mathf.Abs(fMaxU - 3.15f / fWidth) < 0.01f);
+            Check("띠 메시 — v는 0~1", bSideOK);
+
             // 점이 모자라면 아무것도 안 만든다
-            lstVertex.Clear(); lstIndex.Clear(); lstColor.Clear();
-            CTrailMesh_Utility.Append(new List<Vector3> { Vector3.zero }, fWidth, Color.white, lstVertex, lstIndex, lstColor);
+            lstVertex.Clear(); lstIndex.Clear(); lstColor.Clear(); lstUV.Clear();
+            CTrailMesh_Utility.Append(new List<Vector3> { Vector3.zero }, cStyle, lstVertex, lstIndex, lstColor, lstUV);
             Check("띠 메시 — 점 하나면 아무것도 안 만든다", lstIndex.Count, 0);
         }
 
