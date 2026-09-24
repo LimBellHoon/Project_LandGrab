@@ -278,18 +278,17 @@ namespace Client
             cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
             Check("경계를 따라 왼쪽으로", Near(cMove.POS, new Vector2(9.5f, 1f)));
 
-            // 안쪽 모서리까지 가면 선다 — 다음 변(위로 가는 오른쪽 테두리)이 누른 방향과 직각이라서
+            // 260924_모서리에 닿아도 서지 않고 **옆 변을 타고 돌아** 계속 간다 — 예전엔 여기서 멈춰
+            // "점령지에서 자꾸 막힌다"가 됐다. 누르고 있는 동안 선을 따라가는 것이 이 게임의 조작감이다
             for (int i = 0; i < 20; ++i)
                 cMove.Tick(1f, MOVE_DIR.RIGHT, out int _);
-            Check("모서리에서 선다", Near(cMove.POS, new Vector2(19f, 1f)));
-
-            // 모서리에서 위를 누르면 옆 변을 타고 올라간다
-            cMove.Tick(1f, MOVE_DIR.UP, out int _);
-            Check("모서리에서 옆 변으로 갈아탄다", Near(cMove.POS, new Vector2(19f, 2f)) && cGrid.IS_DRAWING == false);
+            Check("모서리를 돌아 옆 변으로 이어 간다",
+                  Mathf.Abs(cMove.POS.x - 19f) < 0.05f && cMove.POS.y > 2f && cGrid.IS_DRAWING == false);
 
             // 바깥(빈 땅) 쪽으로 누르면 그 자리에서 선을 긋기 시작한다
+            Vector2 vCorner = cMove.POS;
             cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
-            Check("빈 땅 쪽으로 누르면 선을 긋는다", cGrid.IS_DRAWING && Near(cMove.POS, new Vector2(18f, 2f)));
+            Check("빈 땅 쪽으로 누르면 선을 긋는다", cGrid.IS_DRAWING && cMove.POS.x < vCorner.x - 0.5f);
         }
         // 260923_경계선 따라가기 — 누른 방향이 변과 직각이면 돌던 방향으로 계속 간다(260902_선분 자동 추적의 다각형판)
         private static void Test_FollowBoundary()
@@ -313,6 +312,18 @@ namespace Client
             Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.3f, out int _, out Vector2 _, out Vector2 _);
             Check("따라가기 — 안쪽을 눌러도 선을 따라 계속 간다", cMove.POS.x > vBefore.x + 1f);
             Check("따라가기 — 선 위에 그대로 있다", cGrid.Distance_ToBoundary(cMove.POS) < 0.01f && cGrid.IS_DRAWING == false);
+
+            // 260924_변 한가운데서 안쪽을 누르면(양쪽이 똑같으면) 그 자리에 선다 — 벽을 미는 셈이다
+            CMoveHandler cMid = new CMoveHandler();
+            cMid.Initialize(cGrid, new Vector2(20.5f, 26f), 9f);
+            Run_Move(cGrid, cMid, MOVE_DIR.DOWN, 0.3f, out int _, out Vector2 _, out Vector2 _);
+            Check("따라가기 — 곧은 변 한가운데서 안쪽을 누르면 선다", Near(cMid.POS, new Vector2(20.5f, 26f)));
+
+            // 260924_한쪽이 누른 방향으로 꺾이면 그 쪽으로 돈다 — 점령 직후 안쪽을 눌러도 막히지 않는 이유다
+            CMoveHandler cSide = new CMoveHandler();
+            cSide.Initialize(cGrid, new Vector2(24f, 15f), 9f);     // 섬 아래 변, 오른쪽 모서리에 가깝다
+            Run_Move(cGrid, cSide, MOVE_DIR.UP, 0.5f, out int _, out Vector2 _, out Vector2 _);
+            Check("따라가기 — 누른 방향으로 꺾이는 쪽으로 돈다", cSide.POS.x > 25f && cGrid.IS_DRAWING == false);
 
             // 모서리를 돌아 오른쪽 변을 타고 내려가다가, 아래 경계에 닿으면 누르던 아래로 나간다
             Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 4f, out int _, out Vector2 _, out Vector2 _);

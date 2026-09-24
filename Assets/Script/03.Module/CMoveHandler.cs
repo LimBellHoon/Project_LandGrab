@@ -22,6 +22,9 @@ namespace Client
         // 셀레스티안이 나갔다가 비스듬히 돌아오지 못했다 — 135도는 자기 선에서 옆으로 벌어지므로 밟지 않는다.
         private const float REVERSE_DOT    = -0.9f;    // 거의 정반대(154도 이상)만 무시하고 선다
         private const float VERTEX_SNAP    = 0.1f;     // 꼭짓점에서 이만큼 안이면 꼭짓점에 선 것으로 본다(칸) — 모서리 코앞에서 꺾을 때 걸리지 않게
+        // 260924_변과 거의 직각이어도 아주 조금은 기울어 있으면 그 쪽으로 따라간다(사선 경계에서 걸리지 않게)
+        private const float FOLLOW_MIN_DOT   = 0.02f;
+        private const float FOLLOW_LOOKAHEAD = 6f;     // 어느 쪽으로 돌지 정할 때 경계를 앞뒤로 이만큼 내다본다(칸)
         private const int   MAX_SLIDE_STEP = 64;       // 한 프레임에 넘길 꼭짓점 수 상한(곡선은 꼭짓점이 촘촘하다)
         private const int   CLAMP_ITERATION = 12;
 
@@ -209,11 +212,22 @@ namespace Client
 
                 int iWant = fDot >= SLIDE_MIN_DOT ? 1 : fDot <= -SLIDE_MIN_DOT ? -1 : 0;
 
-                // 260923_누른 방향이 변과 직각이라 탈 수 없으면 **돌던 방향으로 계속 간다**(260902_선분 자동 추적).
-                // 예전 칸 시절처럼 "아래를 누르고 있으면 좌우 경계도 선을 따라 알아서 간다"가 이 한 줄이다.
-                // 따라가다 그 방향으로 나갈 수 있게 되면 위 Can_Exit에서 저절로 나간다.
-                if (iWant == 0 && iSign == 0 && m_iFollowSign != 0 && Can_Exit(vInput) == false)
-                    iWant = m_iFollowSign;
+                // 260923_누른 방향이 변과 직각이라 탈 수 없으면 **경계를 따라 돈다**(260902_선분 자동 추적).
+                // "아래를 누르고 있으면 좌우 경계도 선을 따라 알아서 간다"가 이것이다.
+                // 260924_돌던 방향이 있으면 그대로 잇고(그래야 덜컥거리지 않는다), 없으면 **누른 방향으로
+                // 나갈 수 있는 자리가 더 가까운 쪽**으로 돈다 — 점령 직후에는 돌던 방향이 없어서,
+                // 안쪽을 누르면 네 번에 한 번꼴로 그 자리에 서 버렸다.
+                if (iWant == 0)
+                {
+                    if (iSign != 0)
+                        iWant = iSign;                          // 260924_따라가던 중이면 모서리를 돌아 계속 간다
+                    else if (Mathf.Abs(fDot) > FOLLOW_MIN_DOT)
+                        iWant = fDot > 0f ? 1 : -1;             // 조금이라도 기운 쪽
+                    else if (m_iFollowSign != 0)
+                        iWant = m_iFollowSign;
+                    else
+                        iWant = Find_FollowSign(vInput, vSegDir);
+                }
 
                 // 누른 방향이 이 변과 너무 어긋나거나, 꼭짓점을 넘은 뒤 되돌아가야 한다면 선다
                 if (iWant == 0 || (iSign != 0 && iWant != iSign))
@@ -288,12 +302,77 @@ namespace Client
         }
 
         // 누른 방향으로 조금 앞이 '확실히' 빈 땅인가 — 변을 따라 누른 것은 경계 위라 나가지 않는다
-        private bool Can_Exit(Vector2 vInput)
+        private bool Can_Exit(Vector2 vInput) => Can_Exit(m_vPos, vInput);
+
+        private bool Can_Exit(Vector2 vAt, Vector2 vInput)
         {
-            Vector2 vProbe = m_vPos + vInput * EXIT_PROBE;
+            Vector2 vProbe = vAt + vInput * EXIT_PROBE;
             return m_cGrid.Is_PlayablePoint(vProbe) == true
                 && m_cGrid.Is_OwnedPoint(vProbe) == false
                 && m_cGrid.Distance_ToBoundary(vProbe) > EXIT_MARGIN;
+        }
+
+        /// <summary>
+        /// 260924_따라갈 방향이 아직 없을 때(점령 직후 등) 어느 쪽으로 돌지 정한다.
+        ///
+        /// ① 마지막으로 나아가던 방향이 변에 걸쳐 있으면 그대로 잇는다(예전 칸 시절의 선분 자동 추적과 같다).
+        /// ② 그마저 직각이면 — 점령하고 막 돌아온 직후가 늘 이렇다 — **경계를 앞뒤로 조금 내다보고
+        ///    누른 방향에 더 가까워지는 쪽**으로 돈다. 아래 경계에서 위를 누르면 위로 꺾이는 쪽으로 돌아가는 식이다.
+        /// ③ 양쪽이 똑같으면(곧은 변 한가운데서 벽을 미는 격) 0 — 그 자리에 선다.
+        ///
+        /// '누른 방향으로 나갈 수 있는 가장 가까운 자리'를 찾아가는 안도 만들어 봤지만, 테두리 위에서 안쪽을
+        /// 누르면 맵을 스물몇 칸이나 돌아 반대편까지 달려가 버려서 버렸다 — 따라가기는 **가던 길을 잇는 것**이지
+        /// 길을 찾아 주는 것이 아니다. 그래서 내다보는 거리를 FOLLOW_LOOKAHEAD로 짧게 묶어 둔다.
+        /// </summary>
+        private int Find_FollowSign(Vector2 vInput, Vector2 vSegDir)
+        {
+            Vector2 vLast = m_vHeading.sqrMagnitude > 1e-8f ? m_vHeading : CTerritoryGrid.Dir_ToVector(m_eCurDir);
+            float fLastDot = Vector2.Dot(vLast, vSegDir);
+            if (Mathf.Abs(fLastDot) > FOLLOW_MIN_DOT)
+                return fLastDot > 0f ? 1 : -1;
+
+            float fForward = Measure_Progress(vInput, 1);
+            float fBack    = Measure_Progress(vInput, -1);
+            if (Mathf.Abs(fForward - fBack) < 1e-3f)
+                return 0;
+
+            return fForward > fBack ? 1 : -1;
+        }
+
+        // 경계를 iSign 쪽으로 FOLLOW_LOOKAHEAD만큼 따라갔을 때 누른 방향으로 얼마나 나아가는가
+        private float Measure_Progress(Vector2 vInput, int iSign)
+        {
+            Vector2[] arrRing = m_cGrid.RINGS[m_iRing];
+            int   iCount = arrRing.Length;
+            int   iSeg   = m_iSeg;
+            float fT     = m_fT;
+            float fLeft  = FOLLOW_LOOKAHEAD;
+            Vector2 vAt  = m_vPos;
+
+            for (int iStep = 0; iStep < MAX_SLIDE_STEP && fLeft > 0f; ++iStep)
+            {
+                Vector2 a = arrRing[iSeg];
+                Vector2 b = arrRing[(iSeg + 1) % iCount];
+                float fLen = Vector2.Distance(a, b);
+
+                if (fLen > 1e-6f)
+                {
+                    float fAvail = iSign > 0 ? (1f - fT) * fLen : fT * fLen;
+                    float fMove  = Mathf.Min(fLeft, fAvail);
+
+                    fT    = Mathf.Clamp01(fT + iSign * fMove / fLen);
+                    fLeft -= fMove;
+                    vAt    = Vector2.Lerp(a, b, fT);
+
+                    if (fLeft <= 1e-6f)
+                        break;
+                }
+
+                iSeg = (iSeg + (iSign > 0 ? 1 : iCount - 1)) % iCount;
+                fT   = iSign > 0 ? 0f : 1f;
+            }
+
+            return Vector2.Dot(vAt - m_vPos, vInput);
         }
 
         private bool Is_Interior(Vector2 vPoint)
