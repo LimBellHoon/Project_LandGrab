@@ -36,7 +36,7 @@ namespace Client
 
         // 260923_가림막을 다각형으로 뚫을 때 한 픽셀 줄을 몇 번 나눠 재는가 — 가장자리가 계단 없이 옅어진다
         private const int   COVERAGE_SUBROW   = 4;
-        private const float TRAIL_WIDTH_CELL  = 0.55f;     // 선 굵기(칸)
+        private const float TRAIL_WIDTH_DEFAULT = 0.3f;    // 260924_선 굵기 기본값(칸). GameConfig로 덮어쓴다
         private const float FIRE_LENGTH_CELL  = 0.8f;      // 불 머리 길이(칸)
         private const int   TRAIL_SORT_OFFSET = 1;         // 가림막보다 한 칸 위에 그린다
         private static readonly Color32 COLOR_FALLBACK  = new Color32(8, 10, 20, 235);      // 가림막을 못 읽었을 때
@@ -64,6 +64,7 @@ namespace Client
         private readonly List<Vector3>  m_lstVertex    = new List<Vector3>();
         private readonly List<int>      m_lstIndex     = new List<int>();
         private readonly List<Color>    m_lstColor     = new List<Color>();
+        private float                   m_fTrailWidthCell = TRAIL_WIDTH_DEFAULT;
 
         private int m_iTexWidth;
         private int m_iTexHeight;
@@ -352,6 +353,12 @@ namespace Client
         #endregion 웨이브 이미지
 
         #region 갱신
+        /// <summary> 260924_긋는 중인 선의 굵기(칸). 보이기만 하는 값이라 점령 판정과는 무관하다(2-3). </summary>
+        public void Set_TrailWidth(float fWidthCell)
+        {
+            m_fTrailWidthCell = Mathf.Clamp(fWidthCell, 0.05f, 1f);
+        }
+
         /// <summary> 점령지가 바뀌었을 때만 가림막을 다시 뚫는다. 선은 매 프레임 다시 그린다(점 몇 개뿐이다). </summary>
         public void Tick()
         {
@@ -518,7 +525,7 @@ namespace Client
             if (m_lstLinePoint.Count < 2)
                 return;
 
-            CTrailMesh_Utility.Append(m_lstLinePoint, TRAIL_WIDTH_CELL * m_cGrid.CELL_SIZE, cColor,
+            CTrailMesh_Utility.Append(m_lstLinePoint, m_fTrailWidthCell * m_cGrid.CELL_SIZE, cColor,
                                       m_lstVertex, m_lstIndex, m_lstColor);
         }
 

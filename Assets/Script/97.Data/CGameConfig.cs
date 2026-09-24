@@ -204,11 +204,18 @@ namespace Client
         [Range(0.05f, 5f)]
         [SerializeField] private float m_fDevAutoFireCool = 0.8f;
 
+        // 260924_긋는 중인 선의 굵기(칸). 보이는 값일 뿐이라 점령 판정과는 무관하다 —
+        // 점령은 선을 0.01칸짜리 아주 가는 띠로 부풀려 계산한다(2-3).
+        [Tooltip("긋는 중인 선의 굵기(칸). 보이기만 하는 값이라 점령 판정과는 상관없다.")]
+        [Range(0.05f, 1f)]
+        [SerializeField] private float m_fTrailWidthCell = 0.3f;
+
         [Tooltip("0이 아니면 포수(PROJECTILE 기믹 몬스터)가 표에 적힌 탄 대신 이 ProjectileInfo ID의 탄을 쏜다.")]
         [Min(0)]
         [SerializeField] private int m_iDevEnemyShotID;
 
         public float PLAYER_SPEED_SCALE => Mathf.Max(0.01f, m_fPlayerSpeedScale);
+        public float TRAIL_WIDTH_CELL   => Mathf.Clamp(m_fTrailWidthCell, 0.05f, 1f);
         public float UI_RESERVE_TOP     => Mathf.Clamp(m_fUIReserveTop, 0f, 0.4f);
         public float UI_RESERVE_BOTTOM  => Mathf.Clamp(m_fUIReserveBottom, 0f, 0.5f);
         public float CAMERA_MARGIN      => Mathf.Max(0f, m_fCameraMargin);

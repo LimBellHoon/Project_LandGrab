@@ -870,6 +870,9 @@ namespace Client
             // 260920_맵 위 아이템 표 + 개발용 스위치
             m_cStageManager.Set_FieldItemTable(m_cFieldItemTable, m_cConfig.FIELD_ITEM_ENABLED);
 
+            // 260924_선 굵기(보이는 값)
+            m_cStageManager.Set_TrailWidth(m_cConfig.TRAIL_WIDTH_CELL);
+
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
             // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.
             CTerritoryGrid cGrid = m_cStageManager.GRID;

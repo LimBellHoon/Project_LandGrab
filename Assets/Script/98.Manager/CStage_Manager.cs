@@ -1926,6 +1926,9 @@ namespace Client
         #endregion 분신 (260921)
 
         #region 필드 아이템 (260920)
+        /// <summary> 260924_긋는 중인 선의 굵기(칸) — CGameManager가 GameConfig 값을 흘려보낸다 </summary>
+        public void Set_TrailWidth(float fWidthCell) => m_cGridRenderer.Set_TrailWidth(fWidthCell);
+
         public void Set_FieldItemTable(CCSVData_FieldItemInfo cTable, bool bEnabled)
         {
             m_cFieldItemTable   = cTable;
