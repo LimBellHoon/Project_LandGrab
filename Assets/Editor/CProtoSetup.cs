@@ -155,12 +155,35 @@ namespace Client
 
             Delete_LegacyUIPrefabs();
             Create_Sprites();
+            Create_TrailMaterial();
             Create_Prefabs();
             Setup_Addressables();
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[CProtoSetup] 에셋 셋업 완료 (스프라이트 / 프리팹 / Addressable)");
+        }
+
+        // 260924_긋는 중인 선을 그릴 재질. `Resources/Mat_Trail.mat`이 있으면 CGridRenderer가 그것으로 그린다(2-3-1).
+        // **이미 있으면 건드리지 않는다** — 인스펙터에서 손으로 맞춰 둔 값이 Setup을 돌릴 때마다 날아가면 안 된다.
+        private const string PATH_TRAIL_SHADER   = "Assets/Shader/Shd_Trail_Neon.shader";
+        private const string PATH_TRAIL_MATERIAL = "Assets/Resources/Mat_Trail.mat";
+
+        private static void Create_TrailMaterial()
+        {
+            if (AssetDatabase.LoadAssetAtPath<Material>(PATH_TRAIL_MATERIAL) != null)
+                return;
+
+            Shader cShader = AssetDatabase.LoadAssetAtPath<Shader>(PATH_TRAIL_SHADER);
+            if (cShader == null)
+            {
+                Debug.LogWarning($"[CProtoSetup] 선 셰이더를 찾지 못했습니다 — {PATH_TRAIL_SHADER}. 선은 흰 단색으로 그려집니다.");
+                return;
+            }
+
+            Ensure_Folder("Assets/Resources");
+            AssetDatabase.CreateAsset(new Material(cShader), PATH_TRAIL_MATERIAL);
+            Debug.Log($"[CProtoSetup] 선 재질을 만들었습니다 — {PATH_TRAIL_MATERIAL}");
         }
 
         // 260904_UI 프리팹 이름을 Engine 규칙("Prefab_" + T)에 맞추면서 옛 이름의 산출물이 남는다.
