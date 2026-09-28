@@ -67,10 +67,15 @@ namespace Client
         public int              iFireCount      { get; set; }
         public float            fFireAngle      { get; set; }
         public float            fFireInterval   { get; set; }
-        // 260918_몬스터별 체력/공격력(EnemyInfo.csv). 0 이하로 두면 CEnemy가 기존 고정값으로 대체한다.
+        // 260918_몬스터별 체력(EnemyInfo.csv). 260928_그로기 도입 뒤로는 CEnemy가 죽는 데 쓰지 않는다
+        // (더 이상 죽지 않는다, Docs/Design_Roguelite_Rewrite.md 4장) — 남겨 둔 CSV 값이지만 지금은 안 읽는다.
         public int              iHp             { get; set; }
-        // 260923_다시 HP 풀이라 필요해진 몬스터별 공격력(2-14).
+        // 260923_몸 · 선 접촉 시 플레이어 HP에서 깎는 양(2-14). 몬스터가 받는 피해와는 다른 값이다.
         public int              iAttack         { get; set; }
+        // 260928_그로기 총량 · 기절 시간(EnemyInfo.csv, Docs/Design_Roguelite_Rewrite.md 4장).
+        // 0 이하로 두면 CEnemy가 기존 고정값으로 대체한다.
+        public int              iGroggyMax      { get; set; }
+        public float            fStunDuration   { get; set; }
 
         public override void OnReturn()
         {

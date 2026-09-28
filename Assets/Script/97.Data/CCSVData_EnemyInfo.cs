@@ -33,10 +33,15 @@ namespace Client
         public float            fFireAngle;         // SPREAD 부채꼴 전체 각도 / SPIN 한 번에 돌아가는 각도 (도)
         public float            fFireInterval;      // BURST 연발 간격 (초)
 
-        // 260918_몬스터별 체력. 예전엔 CEnemy.DEFAULT_HP(3) 고정값을 전 몬스터가 같이 썼다 — 종류별 난이도를 못 줬다.
+        // 260918_몬스터별 체력. 260928_그로기 도입 뒤로는 CEnemy가 죽는 데 쓰지 않는다 — CSV에는 남아 있지만
+        // 지금은 읽어서 버려 두는 값이다(iGroggyMax가 그 자리를 대신한다).
         public int              iHp;
-        // 260923_다시 HP 풀이라(2-14) 몬스터별 공격력이 다시 필요하다 — 몸 · 선 접촉 시 이만큼 깎는다.
+        // 260923_몸 · 선 접촉 시 플레이어 HP에서 깎는 양(2-14). 몬스터가 받는 피해와는 다른 값이다.
         public int              iAttack;
+        // 260928_그로기 총량 · 기절 시간(Docs/Design_Roguelite_Rewrite.md 4장). CEnemy는 더 이상 죽지 않고
+        // 대신 그로기가 이 값까지 차면 기절한다.
+        public int              iGroggyMax;
+        public float            fStunDuration;
     }
 
     /// <summary>
@@ -93,6 +98,8 @@ namespace Client
                 fFireInterval   = CCSV_Utility.To_Float(arrField, 16, 0.12f),
                 iHp             = CCSV_Utility.To_Int(arrField, 17, 3),
                 iAttack         = CCSV_Utility.To_Int(arrField, 18, 1),
+                iGroggyMax      = CCSV_Utility.To_Int(arrField, 19, 3),
+                fStunDuration   = CCSV_Utility.To_Float(arrField, 20, 1.5f),
             };
 
             if (cInfo.iEnemyID <= 0)

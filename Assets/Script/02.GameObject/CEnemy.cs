@@ -55,14 +55,26 @@ namespace Client
         // Tick의 HAS_TREE 검사에서 그냥 건너뛴다(CEnemyBehaviorTree_Utility 참고).
         private CBehaviorTreeHandler m_cBehaviorTree;
 
-        // 260916_런 스킬(회전탄/몽둥이)이 몬스터를 죽일 수 있어야 해서 처음 생긴 HP.
-        // 260918_EnemyInfo.csv의 iHp로 몬스터별 값을 받는다. 이 상수는 표에 값이 없는
-        // 행(0 이하)이나 CProtoTest처럼 손으로 만든 Desc를 위한 기본값으로만 남았다.
-        private const int       DEFAULT_HP     = 3;
-        private int             m_iHp;
         // 260923_다시 HP 풀이라(2-14) 몬스터별 공격력이 다시 필요하다 — EnemyInfo.csv의 iAttack.
+        // 260928_이건 "몬스터가 플레이어를 때리는" 쪽 수치라 그로기 도입과 무관하게 그대로 남았다.
         private const int       DEFAULT_ATTACK = 1;
         private int             m_iAttack;
+
+        // 260928_그로기 & 기절(Docs/Design_Roguelite_Rewrite.md 4장) — CEnemy는 더 이상 전투로 죽지 않는다.
+        // Damage()가 HP를 깎는 대신 그로기 게이지를 채우고, 가득 차면 기절한다(CImpactHandler.STUN을 그대로 쓴다).
+        // 점령으로 가두는 것은 그로기와 무관하게 즉시 죽는다(2-3, 260928_사용자 확인으로 유지) — 그 경로는 Kill().
+        private const float     DEFAULT_GROGGY_MAX    = 3f;
+        private const float     DEFAULT_STUN_DURATION = 1.5f;
+        private const float     GROGGY_DECAY_PER_SEC  = 0.02f;   // 그로기 총량의 2% — 안 맞으면 스스로 식는다
+        private const float     RESISTANCE_PER_STUN    = 0.25f;  // 기절마다 다음 요구량 +25%(판당 누적)
+        private const float     RESISTANCE_PER_STUN_HARD = 1f;   // 기절 상한을 넘으면 +100%로 가팔라진다
+        private const int       STUN_SOFT_CAP          = 5;      // 이 횟수를 넘으면 내성이 더 가파르게 는다
+        private float           m_fGroggyMax;
+        private float           m_fGroggy;
+        private float           m_fStunDuration;
+        private float           m_fResistance;      // 이번 판 동안 쌓인 내성 — Initialize에서만 리셋된다(웨이브 전환에서는 유지)
+        private int             m_iStunCount;
+        private static readonly object s_keyGroggyStun = new object();   // CImpactHandler 딕셔너리 키 — 그로기발 기절 전용
 
         /// <summary> 260912_EnemyInfo.csv의 ID. 웨이브가 넘어갈 때 종류별 수를 셀 때 쓴다. </summary>
         public int              ENEMY_ID        => m_iEnemyID;
@@ -72,16 +84,21 @@ namespace Client
         public Vector2          POS             => m_cMoveHandler.POS;
         /// <summary> 플레이어와의 충돌 반경(셀). 월드 거리로 쓰려면 CELL_SIZE를 곱한다. </summary>
         public float            HIT_RANGE       => m_fHitRange;
-        /// <summary> Engine이 bCollect가 선 오브젝트를 알아서 풀로 돌려준다(CProjectile 설명 참고). </summary>
+        /// <summary> Engine이 bCollect가 선 오브젝트를 알아서 풀로 돌려준다(CProjectile 설명 참고).
+        /// 260928_이제 점령으로 가둬 죽였을 때(Kill())만 켜진다 — 전투로는 더 이상 죽지 않는다. </summary>
         public bool             IS_DEAD         => bCollect;
         /// <summary> 260923_플레이어와 몸 · 선이 닿았을 때 깎을 HP(EnemyInfo.iAttack). CStage_Manager.Tick_Enemy가 읽는다. </summary>
         public int              ATTACK          => m_iAttack;
+        /// <summary> 260928_지금 기절해 있는가(그로기가 가득 찼다). CImpactHandler.IS_STUNNED를 그대로 읽는다. </summary>
+        public bool              IS_STUNNED      => m_cImpact.IS_STUNNED;
 
         #region IImpactTarget
         // 260917_탄 판정 반경은 플레이어 충돌 반경과 같은 값을 쓴다 — 몸 크기가 하나라서.
         public float            HIT_RADIUS      => m_cGrid != null ? m_fHitRange * m_cGrid.CELL_SIZE : 0f;
         public bool             IS_ALIVE        => bCollect == false && m_cGrid != null;
-        public int              HP              => m_iHp;
+        /// <summary> 260928_그로기 도입 뒤로는 "남은 HP"가 아니라 "기절까지 남은 그로기"를 돌려준다 —
+        /// HIGHEST_HP 조준(레이저 등, 2-11-2)이 여전히 "가장 안 죽어가는(=버티는) 적"을 노리게 하려는 것이다. </summary>
+        public int              HP              => Mathf.CeilToInt(Mathf.Max(0f, Effective_GroggyMax() - m_fGroggy));
         public CImpactHandler   IMPACT          => m_cImpact;
 
         public void Take_Damage(int iAmount) => Damage(iAmount);
@@ -118,8 +135,12 @@ namespace Client
             m_eGimmick      = cDesc.eGimmick;
             m_fHitRange     = cDesc.fHitRange;
             m_fGimmickRange = cDesc.fGimmickRange;
-            m_iHp           = cDesc.iHp > 0 ? cDesc.iHp : DEFAULT_HP;
             m_iAttack       = cDesc.iAttack > 0 ? cDesc.iAttack : DEFAULT_ATTACK;
+            m_fGroggyMax    = cDesc.iGroggyMax > 0 ? cDesc.iGroggyMax : DEFAULT_GROGGY_MAX;
+            m_fStunDuration = cDesc.fStunDuration > 0f ? cDesc.fStunDuration : DEFAULT_STUN_DURATION;
+            m_fGroggy       = 0f;
+            m_fResistance   = 0f;      // 새로 스폰된(=풀에서 막 꺼낸) 몬스터라 내성도 처음부터 — 웨이브 전환만으로는 안 불린다
+            m_iStunCount    = 0;
             m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
             m_bWhiteShown   = false;
             bCollect        = false;   // 풀에서 재사용되므로 지난 판의 죽음이 남지 않게 내려 둔다
@@ -149,10 +170,9 @@ namespace Client
             if (m_cGrid == null || bCollect == true)
                 return;
 
-            // 260917_탄 효과. 도트로 죽었으면 여기서 끝난다.
+            // 260917_탄 효과(도트 포함) — 도트도 이제 HP가 아니라 그로기를 채운다.
             Damage(m_cImpact.Tick(fDeltaTime));
-            if (bCollect == true)
-                return;
+            Tick_Groggy(fDeltaTime);
 
             // 260918_트리가 있으면 이번 프레임 배회/추적을 여기서 확정한다 — 아래 Apply_Speed/이동
             // 핸들러가 그 결과(m_bChase)를 쓴다. Set_MoveState를 부르는 쪽은 CEnemyBehaviorTree_Utility.
@@ -211,18 +231,41 @@ namespace Client
         /// <summary> 기믹이 무언가를 소환할 창구를 꽂아 준다. 스테이지가 몬스터를 만든 직후 부른다. </summary>
         public void Set_GimmickHost(IGimmickHost cHost) => m_cGimmick?.Set_Host(cHost);
 
-        // 260916_런 스킬(회전탄/몽둥이)이 때릴 때 부른다. HP가 0이 되면 bCollect가 서서
-        // Engine이 다음 사이클에 알아서 풀로 돌려준다(Projectile/Web/Soul과 같은 자리) —
-        // 여기서 직접 Collect_Object를 부르면 두 번 반납하게 된다.
-        /// <summary> iAmount만큼 HP를 줄인다. 이미 죽었으면 무시한다. </summary>
+        // 260928_그로기(Docs/Design_Roguelite_Rewrite.md 4장) — 전투로는 더 이상 죽지 않는다. 회전탄 · 몽둥이 ·
+        // 플레이어 투사체가 여기로 들어오던 자리 그대로이고, 이제 HP 대신 그로기 게이지를 채운다.
+        /// <summary> iAmount만큼 그로기를 채운다. 가득 차면 기절한다. 이미 기절한 동안 · 죽은 뒤에는 무시한다
+        /// (기절 중에 더 채우면 맞을 때마다 기절이 갱신돼 사실상 풀리지 않는다 — 내성이 쌓이는 의미도 없어진다). </summary>
         public void Damage(int iAmount)
         {
-            if (iAmount <= 0 || bCollect == true)
+            if (iAmount <= 0 || bCollect == true || m_cImpact.IS_STUNNED == true)
                 return;
 
-            m_iHp = Mathf.Max(0, m_iHp - iAmount);
-            if (m_iHp <= 0)
-                bCollect = true;
+            m_fGroggy += iAmount;
+            if (m_fGroggy < Effective_GroggyMax())
+                return;
+
+            m_fGroggy = 0f;
+            m_cImpact.Set_Stun(s_keyGroggyStun, m_fStunDuration);
+            ++m_iStunCount;
+            m_fResistance += m_iStunCount > STUN_SOFT_CAP ? RESISTANCE_PER_STUN_HARD : RESISTANCE_PER_STUN;
+        }
+
+        /// <summary> 260920_점령으로 가둬 죽일 때만 부른다(2-3) — 그로기 · 기절과 무관하게 무조건 죽는다.
+        /// 전투(Damage)와 경로를 완전히 나눠서, 그로기가 가둬 죽이기의 판정에 영향을 주지 않는다. </summary>
+        public void Kill()
+        {
+            bCollect = true;
+        }
+
+        private float Effective_GroggyMax() => m_fGroggyMax * (1f + m_fResistance);
+
+        // 안 맞으면 스스로 식는다 — 자연 감소(초당 -2%, Docs/Design_Roguelite_Rewrite.md 4장).
+        private void Tick_Groggy(float fDeltaTime)
+        {
+            if (m_fGroggy <= 0f)
+                return;
+
+            m_fGroggy = Mathf.Max(0f, m_fGroggy - m_fGroggyMax * GROGGY_DECAY_PER_SEC * fDeltaTime);
         }
 
         /// <summary> 몽둥이 등 넉백 효과가 부른다. 잠깐 배회/추적을 멈추고 방향으로 밀려난다. </summary>

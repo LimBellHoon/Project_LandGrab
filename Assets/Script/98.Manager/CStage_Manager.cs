@@ -1228,6 +1228,8 @@ namespace Client
                 fFireInterval   = cInfo.fFireInterval,
                 iHp             = cInfo.iHp,
                 iAttack         = cInfo.iAttack,
+                iGroggyMax      = cInfo.iGroggyMax,
+                fStunDuration   = cInfo.fStunDuration,
             };
 
             GameObject goEnemy = CGameInstance.Instance.Reuse_Object(cEnemyDesc);
@@ -1489,8 +1491,9 @@ namespace Client
 
         /// <summary>
         /// 260920_점령한 땅 안에 갇힌 몬스터를 죽인다(2-3).
-        /// 죽이는 길은 기존과 같다 — HP를 모두 깎아 bCollect가 서면 Tick_Enemy가 목록에서 걷어내고,
-        /// 그 자리에 조각 · 아이템이 떨어진다(2-20, 2-21). 새 회수 경로를 만들지 않는다.
+        /// 260928_그로기 도입 뒤로는 Damage()가 더 이상 죽이지 않으므로(4장) 전용 경로 Kill()을 쓴다 —
+        /// 가둬 죽이기는 그로기 · 기절과 무관하게 항상 즉시 죽는다(사용자 확인, 260923_결정 유지).
+        /// bCollect가 서면 Tick_Enemy가 목록에서 걷어내고, 그 자리에 조각 · 아이템이 떨어진다(2-20, 2-21).
         /// </summary>
         /// <returns> 이번에 죽인 마리 수 </returns>
         private int Kill_EnemiesInOwned()
@@ -1510,7 +1513,7 @@ namespace Client
                 if (m_fExecuteCardRadius > 0f)
                     m_lstExecuteKillPos.Add(cEnemy.POS);
 
-                cEnemy.Damage(cEnemy.HP);
+                cEnemy.Kill();
                 ++iKilled;
             }
 

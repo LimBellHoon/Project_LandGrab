@@ -507,7 +507,8 @@ namespace Client
             Check("판정 반경은 0보다 크다", fRadius1 > 0f);
         }
 
-        // 260916_런 스킬로 몬스터를 죽이는 최소 골격 — HP/사망(bCollect)
+        // 260928_그로기 & 기절(Docs/Design_Roguelite_Rewrite.md 4장) — CEnemy는 더 이상 전투로 죽지 않는다.
+        // Damage()가 HP를 깎는 대신 그로기를 채우고, 가득 차면 기절한다. 가둬 죽이기(Kill)만 무조건 죽인다.
         private static void Test_EnemyCombat()
         {
             CTerritoryGrid cGrid = Make_Grid();
@@ -526,46 +527,90 @@ namespace Client
                 fChaseSpeed     = 1f,
                 fTurnRate       = 1f,
                 fHitRange       = 0.5f,
+                iGroggyMax      = 3,
+                fStunDuration   = 2f,
             });
 
-            Check("생성 직후에는 안 죽었다", cEnemy.IS_DEAD == false);
-            // 260918_Desc에 iHp를 안 주면(0) CEnemy의 기존 고정값(체력3)으로 대체된다.
+            Check("생성 직후에는 기절도 죽음도 아니다", cEnemy.IS_STUNNED == false && cEnemy.IS_DEAD == false);
 
             cEnemy.Damage(1);
             cEnemy.Damage(1);
-            Check("HP가 남아 있으면 안 죽는다", cEnemy.IS_DEAD == false);
+            Check("그로기가 덜 찼으면 아직 안 기절한다", cEnemy.IS_STUNNED == false);
+            Check("맞아도 전투로는 죽지 않는다", cEnemy.IS_DEAD == false);
 
             cEnemy.Damage(1);
-            Check("HP가 다 떨어지면 죽는다(bCollect)", cEnemy.IS_DEAD == true);
+            Check("그로기가 다 차면 기절한다", cEnemy.IS_STUNNED == true);
+            Check("기절해도 죽지는 않는다", cEnemy.IS_DEAD == false);
 
-            cEnemy.Damage(1);
-            Check("죽은 뒤에는 다시 피해를 받지 않는다", cEnemy.IS_DEAD == true);
+            int iHpAfterStun = cEnemy.HP;
+            cEnemy.Damage(999);
+            Check("기절 중에는 더 때려도 그로기가 안 쌓인다(내성 남용 방지)", cEnemy.HP, iHpAfterStun);
+
+            cEnemy.Kill();
+            Check("가둬 죽이기는 그로기와 무관하게 무조건 죽인다", cEnemy.IS_DEAD == true);
 
             Object.DestroyImmediate(goEnemy);
 
-            // 260918_EnemyInfo.csv에서 온 iHp가 그대로 적용되는지 — 종류별 난이도의 기반이다.
-            GameObject goCustom = new GameObject("Test_CombatEnemy_Custom");
-            CEnemy cCustom = goCustom.AddComponent<CEnemy>();
-            cCustom.Initialize(new CEnemyDesc
+            // 260928_기절마다 다음 요구량이 25%씩 늘어난다(판당 누적) — 첫 기절 뒤에는 같은 방식으로는 안 찬다.
+            GameObject goResist = new GameObject("Test_CombatEnemy_Resist");
+            CEnemy cResist = goResist.AddComponent<CEnemy>();
+            cResist.Initialize(new CEnemyDesc
             {
                 eObjectType     = Engine.OBJECT_TYPE.ENEMY,
                 strPrefabName   = "Prefab_Enemy",
                 cGrid           = cGrid,
                 vStartCell      = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
                 vStartDir       = Vector2.right,
-                iEnemyID        = 998,
+                iEnemyID        = 997,
                 eGimmick        = ENEMY_GIMMICK.NONE,
                 fSpeed          = 1f,
                 fChaseSpeed     = 1f,
                 fTurnRate       = 1f,
                 fHitRange       = 0.5f,
-                iHp             = 1,
+                iGroggyMax      = 3,
+                fStunDuration   = 0.01f,   // 금방 풀리게 아주 짧게 잡는다
             });
 
-            cCustom.Damage(1);
-            Check("iHp를 1로 지정하면 한 대에 죽는다", cCustom.IS_DEAD == true);
+            cResist.Damage(3);
+            Check("첫 기절", cResist.IS_STUNNED == true);
+            cResist.Tick(1f);   // 기절 시간(0.01초)보다 훨씬 길게 흘려보내 풀어 준다
+            Check("기절 시간이 지나면 풀린다", cResist.IS_STUNNED == false);
 
-            Object.DestroyImmediate(goCustom);
+            cResist.Damage(3);
+            Check("내성이 붙어 같은 3방으로는 다시 안 찬다(3 → 3×1.25=3.75 필요)", cResist.IS_STUNNED == false);
+            cResist.Damage(1);
+            Check("내성 반영한 만큼(3.75) 채우면 다시 기절한다", cResist.IS_STUNNED == true);
+
+            Object.DestroyImmediate(goResist);
+
+            // 260928_안 맞으면 스스로 식는다(자연 감소, 초당 -2%) — 부분적으로 채운 그로기가 시간이 지나면 사라진다.
+            GameObject goDecay = new GameObject("Test_CombatEnemy_Decay");
+            CEnemy cDecay = goDecay.AddComponent<CEnemy>();
+            cDecay.Initialize(new CEnemyDesc
+            {
+                eObjectType     = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName   = "Prefab_Enemy",
+                cGrid           = cGrid,
+                vStartCell      = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir       = Vector2.right,
+                iEnemyID        = 996,
+                eGimmick        = ENEMY_GIMMICK.NONE,
+                fSpeed          = 1f,
+                fChaseSpeed     = 1f,
+                fTurnRate       = 1f,
+                fHitRange       = 0.5f,
+                iGroggyMax      = 3,
+                fStunDuration   = 1.5f,
+            });
+
+            cDecay.Damage(2);   // 3 중 2를 채운다
+            Check("식기 전엔 남은 그로기(HP)가 1", cDecay.HP, 1);
+            cDecay.Tick(60f);   // 60초 × 2%/초 = 총량의 120% — 충분히 다 식는다
+            Check("한참 지나면 그로기가 다시 0으로 식는다(HP가 총량과 같아진다)", cDecay.HP, 3);
+            cDecay.Damage(2);
+            Check("식은 뒤엔 다시 2방으론 안 찬다", cDecay.IS_STUNNED == false);
+
+            Object.DestroyImmediate(goDecay);
         }
 
         // 260918_비헤이비어 트리 첫 연결 — PROJECTILE(포수류)만 사거리를 기준으로 쫓을지 버틸지 정하는지 본다.
@@ -659,6 +704,9 @@ namespace Client
             Check("분열체가 배회자보다 단단하다(소환주기가 있어 오래 버텨야 함)",
                   cSplitter.iHp >= cWanderer.iHp);
             Check("공격력이 0보다 크다", cWanderer.iAttack > 0);
+            // 260928_그로기 & 기절(Docs/Design_Roguelite_Rewrite.md 4장) — iHp는 더 이상 안 쓰지만 값은 남아 있다.
+            Check("그로기 총량이 0보다 크다", cWanderer.iGroggyMax > 0);
+            Check("기절 시간이 0보다 크다", cWanderer.fStunDuration > 0f);
             Check("표에 없는 ID는 null", cTable.Get_Info(99999) == null);
         }
 
