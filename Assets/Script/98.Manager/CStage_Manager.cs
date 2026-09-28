@@ -875,6 +875,36 @@ namespace Client
                     m_cPlayer.Add_FeastHeal(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
                     return true;
 
+                // 260928_회피형 7종(Docs/Design_Card_Pool.md 2장). 전부 CPlayer가 들고 있다 —
+                // 몬스터를 직접 건드리지 않으므로 사냥형과 달리 스테이지 쪽 수치가 없다.
+                case CARD_TYPE.DODGE_INVINCIBLE_UP:
+                    m_cPlayer.Add_InvincibleBonus(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.DODGE_BOUNDARY_SPEED:
+                    m_cPlayer.Add_BoundarySpeed(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.DODGE_NEARMISS:
+                    m_cPlayer.Add_NearMissDodge(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.DODGE_PANIC_SPEED:
+                    m_cPlayer.Add_PanicSpeed(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.DODGE_TURN_GRACE:
+                    m_cPlayer.Add_TurnGrace(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.DODGE_LUCKY_CHAIN:
+                    m_cPlayer.Add_LuckyChain(cInfo.fValue);
+                    return true;
+
+                case CARD_TYPE.DODGE_FREE_HIT:
+                    m_cPlayer.Add_FreeHit(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    return true;
+
                 default:
                     return false;
             }
@@ -1314,7 +1344,11 @@ namespace Client
                               || m_cGrid.Try_Find_TrailTouch(vEnemyGrid, fNear, out float _) == true;
 
                     if (m_cStyle.Report_Near(cEnemy.GetInstanceID(), bNear) == true)
+                    {
                         OnStylish?.Invoke(STYLE_ACTION.NEAR_MISS, 1);
+                        // 260928_아슬아슬한 본능(DODGE_NEARMISS) — 카드가 없으면 안에서 조용히 무시된다.
+                        m_cPlayer.On_NearMiss();
+                    }
                 }
             }
 

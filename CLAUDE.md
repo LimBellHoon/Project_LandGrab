@@ -672,6 +672,16 @@ CStage_Manager.Apply_Card       효과를 건다
   건다(같은 인스턴스를 계속 재사용해 "같은 출처면 긴 쪽으로 갱신"이 그대로 적용된다).
   카드 아이콘은 `CProtoSetup.Is_IconInk`에 모양을 8개 더했고, 그 뒤에 오던 런 스킬 아이콘 자리
   (`RUN_SKILL_ICON_KIND_START`)도 5 → 13으로 밀었다 — 로컬에서 `Setup Assets`를 다시 돌려야 아이콘이 나온다
+- 260928_**회피형 7종도 들어갔다**(`Docs/Design_Card_Pool.md` 2장 초안 그대로 반영 — 생존형·도화선 계열은
+  아직 초안 상태). "맞지 않는 것"을 화려하게 만드는 카드들이라 전부 `CPlayer`가 수치를 든다 —
+  사냥형과 달리 몬스터를 직접 건드리지 않으므로 `CStage_Manager` 쪽 수치가 없다(아슬아슬한 본능이
+  스타일 판정 신호를 받는 `On_NearMiss()` 훅 하나만 예외). 시한부 보너스(`DODGE_NEARMISS` ·
+  `DODGE_PANIC_SPEED` · `DODGE_TURN_GRACE` · `DODGE_LUCKY_CHAIN`)는 전부 `CPlayer.Tick_DodgeCards`
+  한곳에서 줄인다 — 각성/런 스킬의 개별 타이머 패턴과 같다. `HUNT_STONESKIN`처럼 "카드가 없으면
+  수치가 기본값이라 조용히 아무 일도 안 한다"는 원칙을 그대로 지켰다. `Damage()`의 판정 순서가
+  하나 늘었다 — **보호막 → 잔영(1회권) → 요행(예약된 확정 회피) → 확률 회피(아슬아슬 보너스 포함) →
+  실제 피해**. 잔영·요행 둘 다 "충돌은 일어났지만 피해만 막는다"는 점에서 보호막과 같은 성격이라
+  그 자리(보호막 바로 다음)에 끼워 넣었다. 아이콘은 `RUN_SKILL_ICON_KIND_START`를 13 → 20으로 다시 밀었다
 
 #### 런 스킬도 같은 자리에 섞여 나온다 (260917)
 3지선다 한 칸은 이제 `CPickOption`이다 — 카드(`CardInfo.csv`)이거나 런 스킬(`RunSkillInfo.csv`, 2-11-1)이다.

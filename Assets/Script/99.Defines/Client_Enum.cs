@@ -162,6 +162,15 @@
         HUNT_LOOT,       // 노획 본능 — 몬스터 처치 시 필드 아이템 확률 가산
         HUNT_EXECUTE,    // 처형자 — 가둬 잡기 반경 안 몬스터에게도 고정 피해
         HUNT_FEAST,      // 만찬 — 가시 갑옷으로 피해를 줄 때마다 소량 회복 (HUNT_THORN과 조합 전제)
+
+        // 260928_회피형 7종(Docs/Design_Card_Pool.md 2장) — 맞지 않는 것 자체를 화려하게 만든다.
+        DODGE_INVINCIBLE_UP,  // 여유로운 몸놀림 — 피격 후 무적시간 연장
+        DODGE_BOUNDARY_SPEED, // 외줄타기 — 경계선을 따라 미끄러질 때 이동속도 증가
+        DODGE_NEARMISS,       // 아슬아슬한 본능 — NEAR MISS 성공 시 짧게 회피 확률 보너스
+        DODGE_PANIC_SPEED,    // 도주 본능 — 피격 직후 짧게 이동속도 증가
+        DODGE_TURN_GRACE,     // 스치는 그림자 — 방향 전환 시 짧은 무적(쿨타임 있음)
+        DODGE_LUCKY_CHAIN,    // 요행 — 회피 성공 시 다음 한 번은 확정 회피
+        DODGE_FREE_HIT,       // 잔영 — 몸 충돌 피해를 다음 1회 완전히 무효화
     }
 
 

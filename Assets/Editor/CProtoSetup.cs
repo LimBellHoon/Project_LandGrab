@@ -98,11 +98,15 @@ namespace Client
 
         // 260912_카드 아이콘. CARD_TYPE 이름을 그대로 쓴다 — 표에 종류를 더하면 여기에만 추가하면 된다.
         // 260923_사냥형 8종(Docs/Design_Card_Pool.md 1장) 추가 — enum 순서(CARD_TYPE.NONE 다음부터) 그대로.
+        // 260928_회피형 7종(Docs/Design_Card_Pool.md 2장) 추가.
         private static readonly string[] ARR_CARD_ICON =
         {
             "Tex_Card_SHIELD", "Tex_Card_HEAL", "Tex_Card_SPEED", "Tex_Card_EVASION", "Tex_Card_SLOW",
             "Tex_Card_HUNT_THORN", "Tex_Card_HUNT_KNOCKBACK", "Tex_Card_HUNT_STONESKIN", "Tex_Card_HUNT_TAUNT",
             "Tex_Card_HUNT_MARK", "Tex_Card_HUNT_LOOT", "Tex_Card_HUNT_EXECUTE", "Tex_Card_HUNT_FEAST",
+            "Tex_Card_DODGE_INVINCIBLE_UP", "Tex_Card_DODGE_BOUNDARY_SPEED", "Tex_Card_DODGE_NEARMISS",
+            "Tex_Card_DODGE_PANIC_SPEED", "Tex_Card_DODGE_TURN_GRACE", "Tex_Card_DODGE_LUCKY_CHAIN",
+            "Tex_Card_DODGE_FREE_HIT",
         };
         private const string TEX_CARD_GLOW = "Tex_CardGlow";
         // 260918_장비 부위 아이콘. EQUIP_SLOT 순서(NONE 빼고) — 가방의 B 슬롯과 장비 칸이 같이 쓴다.
@@ -123,7 +127,8 @@ namespace Client
             "Tex_RunSkill_SPIRAL_RUSH", "Tex_RunSkill_GHOST_STEP", "Tex_RunSkill_AFTERIMAGE", "Tex_RunSkill_DECOY",
         };
         // 260923_카드 아이콘이 5종 → 13종(사냥형 8종 추가)으로 늘어 Is_IconInk의 카드 모양 다음 자리도 같이 밀렸다.
-        private const int RUN_SKILL_ICON_KIND_START = 13;   // Is_IconInk에서 카드 열세 모양 다음부터
+        // 260928_카드 아이콘이 13종 → 20종(회피형 7종 추가)으로 늘어 Is_IconInk의 카드 모양 다음 자리도 같이 밀렸다.
+        private const int RUN_SKILL_ICON_KIND_START = 20;   // Is_IconInk에서 카드 스무 모양 다음부터
         private const string UI_INGAME              = "Prefab_UI_InGame";
         private const string PATH_PREFAB_UI_POPUP   = DIR_PREFAB + "/Prefab_UI_Popup.prefab";
         private const string UI_POPUP               = "Prefab_UI_Popup";
@@ -798,6 +803,14 @@ namespace Client
                 new Color(1.00f, 0.85f, 0.40f),     // HUNT_LOOT      — 동전
                 new Color(0.75f, 0.20f, 0.20f),     // HUNT_EXECUTE   — 교차 X
                 new Color(1.00f, 0.65f, 0.70f),     // HUNT_FEAST     — 그릇
+                // 260928_회피형 7종(Docs/Design_Card_Pool.md 2장)
+                new Color(0.55f, 0.85f, 1.00f),     // DODGE_INVINCIBLE_UP — 무적 방패결
+                new Color(1.00f, 0.75f, 0.30f),     // DODGE_BOUNDARY_SPEED — 외줄
+                new Color(0.95f, 0.95f, 0.50f),     // DODGE_NEARMISS — 스침
+                new Color(0.60f, 1.00f, 0.75f),     // DODGE_PANIC_SPEED — 도주 발자국
+                new Color(0.75f, 0.65f, 1.00f),     // DODGE_TURN_GRACE — 잔상
+                new Color(1.00f, 0.90f, 0.30f),     // DODGE_LUCKY_CHAIN — 행운 클로버
+                new Color(0.85f, 0.85f, 0.90f),     // DODGE_FREE_HIT — 잔영
             };
             // 260917_런 스킬 아이콘은 흰색 — 분류 색을 런타임에 곱해 칠한다.
             Color cInk = iKind < arrColor.Length ? arrColor[Mathf.Max(0, iKind)] : Color.white;
@@ -881,6 +894,45 @@ namespace Client
 
                 case 12:    // 만찬 — 그릇(마름모)
                     return fAbsU + Mathf.Abs(fV) < 0.62f;
+
+                // 260928_회피형 7종(Docs/Design_Card_Pool.md 2장)
+                case 13:    // 여유로운 몸놀림 — 겹친 보호막 고리
+                {
+                    float fDist = Mathf.Sqrt(fU * fU + fV * fV);
+                    return (fDist < 0.72f && fDist > 0.58f) || (fDist < 0.42f && fDist > 0.28f);
+                }
+
+                case 14:    // 외줄타기 — 대각선 줄
+                    return Mathf.Abs(fU - fV) < 0.12f && fAbsU < 0.7f;
+
+                case 15:    // 아슬아슬한 본능 — 스치는 초승달
+                {
+                    float fDist1 = Mathf.Sqrt(fU * fU + fV * fV);
+                    float fDist2 = Mathf.Sqrt((fU - 0.25f) * (fU - 0.25f) + fV * fV);
+                    return fDist1 < 0.65f && fDist2 > 0.55f;
+                }
+
+                case 16:    // 도주 본능 — 엇갈린 발자국 둘
+                    return (Mathf.Abs(fU + 0.28f) < 0.16f && Mathf.Abs(fV - 0.25f) < 0.28f)
+                        || (Mathf.Abs(fU - 0.28f) < 0.16f && Mathf.Abs(fV + 0.25f) < 0.28f);
+
+                case 17:    // 스치는 그림자 — 꺾인 화살
+                    return (fAbsU < 0.14f && fV < 0.1f && fV > -0.7f)
+                        || (fU < 0.14f && fU > -0.6f && Mathf.Abs(fV - 0.1f) < 0.14f);
+
+                case 18:    // 요행 — 네잎클로버(단순화한 원 넷)
+                {
+                    float fLobeH = Mathf.Sqrt((fAbsU - 0.28f) * (fAbsU - 0.28f) + fV * fV);
+                    float fLobeV = Mathf.Sqrt(fU * fU + (Mathf.Abs(fV) - 0.28f) * (Mathf.Abs(fV) - 0.28f));
+                    return fLobeH < 0.3f || fLobeV < 0.3f;
+                }
+
+                case 19:    // 잔영 — 갈라진 방패 조각
+                {
+                    bool bShield = fAbsU < 0.55f && fV < 0.62f && fV > -0.82f + fAbsU * 0.85f;
+                    bool bGap    = Mathf.Abs(fU - fV) < 0.1f;
+                    return bShield == true && bGap == false;
+                }
 
                 default:
                     if (iKind >= EQUIP_ICON_KIND_START)

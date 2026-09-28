@@ -76,6 +76,25 @@ namespace Client
         private int             m_iThornDamage;              // 가시 갑옷 — 몸 충돌한 몬스터에게 주는 고정 피해
         private int             m_iFeastHeal;                // 만찬 — 가시 갑옷으로 피해를 줄 때마다 회복(0이면 없음)
         private int             m_iTauntExtraHit;             // 도발 — 몸 충돌마다 On_MonsterHit을 추가로 부르는 횟수
+
+        // 260928_회피형 카드(DODGE_*, Docs/Design_Card_Pool.md 2장). 확률·시간 가산값 중 일부는
+        // 고정 상수다(NEARMISS_DODGE_BONUS 등) — CSV의 fValue는 "지속시간·쿨타임" 쪽만 조절한다.
+        private const float     NEARMISS_DODGE_BONUS      = 0.15f;  // 아슬아슬한 본능 — 고정 회피 확률 가산
+        private const float     PANIC_SPEED_BONUS         = 0.25f;  // 도주 본능 — 고정 이동속도 가산
+        private const float     TURN_GRACE_INVINCIBLE_TIME = 0.15f; // 스치는 그림자 — 고정 무적시간
+        private float           m_fInvincibleCardBonus;    // 여유로운 몸놀림 — 피격 후 무적시간 가산(누적)
+        private float           m_fBoundarySpeedBonus;     // 외줄타기 — 경계선 위(안 긋는 동안)에서만 곱하는 배율 가산
+        private float           m_fNearMissDodgeDuration;  // 아슬아슬한 본능 — NEAR MISS 성공 시 걸리는 지속시간
+        private float           m_fNearMissDodgeTimer;
+        private float           m_fPanicSpeedDuration;     // 도주 본능 — 피격 직후 가속 지속시간
+        private float           m_fPanicSpeedTimer;
+        private float           m_fTurnGraceCooldown;      // 스치는 그림자 — 쿨타임(짧을수록 좋으니 여러 장이면 가장 짧은 값)
+        private float           m_fTurnGraceTimer;
+        private float           m_fLuckyChainDuration;     // 요행 — 회피 성공 후 확정 회피가 예약되는 시간
+        private bool            m_bLuckyChainArmed;
+        private float           m_fLuckyChainTimer;
+        private int             m_iFreeHitCharge;          // 잔영 — 몸 충돌 피해 무효화 1회권 개수
+
         // 260917_번쩍임에서 돌아올 원래 몸 색. 풀에서 재사용돼도 처음 한 번만 읽는다.
         private Color           m_cBodyColor;
         private bool            m_bBodyColorSaved;
@@ -199,6 +218,18 @@ namespace Client
             m_iThornDamage     = 0;
             m_iFeastHeal       = 0;
             m_iTauntExtraHit   = 0;
+            m_fInvincibleCardBonus   = 0f;
+            m_fBoundarySpeedBonus    = 0f;
+            m_fNearMissDodgeDuration = 0f;
+            m_fNearMissDodgeTimer    = 0f;
+            m_fPanicSpeedDuration    = 0f;
+            m_fPanicSpeedTimer       = 0f;
+            m_fTurnGraceCooldown     = 0f;
+            m_fTurnGraceTimer        = 0f;
+            m_fLuckyChainDuration    = 0f;
+            m_bLuckyChainArmed       = false;
+            m_fLuckyChainTimer       = 0f;
+            m_iFreeHitCharge         = 0;
             m_cImpact.Clear();
 
             // 260916_런 스킬은 판마다 완전히 초기화된다(뱀서라이크 — 스테이지를 나가면 사라진다).
@@ -241,6 +272,7 @@ namespace Client
             m_cSkillHandler.Tick(fDeltaTime);
             Tick_SkillBuffer(fDeltaTime);
             Tick_RunSkill(fDeltaTime);
+            Tick_DodgeCards(fDeltaTime);
 
             // 260917_적탄 효과(기절 · 감속 · 번쩍임).
             // 260918_도트는 플레이어에게 걸지 않는다 — 목숨제라 초마다 목숨이 하나씩 빠지면 맞자마자 끝난다.
@@ -415,6 +447,100 @@ namespace Client
             m_iTauntExtraHit += iCount;
         }
 
+        // 260928_회피형 카드(DODGE_*, Docs/Design_Card_Pool.md 2장).
+        /// <summary> 여유로운 몸놀림 — 피격 후 무적시간 가산을 더한다. </summary>
+        public void Add_InvincibleBonus(float fSeconds)
+        {
+            if (fSeconds <= 0f)
+                return;
+
+            m_fInvincibleCardBonus += fSeconds;
+        }
+
+        /// <summary> 외줄타기 — 경계선 위에서만 곱하는 속도 배율 가산을 더한다. </summary>
+        public void Add_BoundarySpeed(float fRatio)
+        {
+            if (fRatio <= 0f)
+                return;
+
+            m_fBoundarySpeedBonus += fRatio;
+        }
+
+        /// <summary> 아슬아슬한 본능 — NEAR MISS 성공 시 걸릴 지속시간을 늘린다(여러 장이면 가장 긴 값). </summary>
+        public void Add_NearMissDodge(float fDuration)
+        {
+            if (fDuration <= 0f)
+                return;
+
+            m_fNearMissDodgeDuration = Mathf.Max(m_fNearMissDodgeDuration, fDuration);
+        }
+
+        /// <summary> 아슬아슬한 본능 — NEAR MISS 판정 성공 시(2-24) CStage_Manager가 부른다. </summary>
+        public void On_NearMiss()
+        {
+            if (m_fNearMissDodgeDuration > 0f)
+                m_fNearMissDodgeTimer = m_fNearMissDodgeDuration;
+        }
+
+        /// <summary> 도주 본능 — 피격 직후 가속 지속시간을 늘린다(여러 장이면 가장 긴 값). </summary>
+        public void Add_PanicSpeed(float fDuration)
+        {
+            if (fDuration <= 0f)
+                return;
+
+            m_fPanicSpeedDuration = Mathf.Max(m_fPanicSpeedDuration, fDuration);
+        }
+
+        /// <summary> 스치는 그림자 — 방향 전환 무적의 쿨타임을 짧게 한다(여러 장이면 가장 짧은 값). </summary>
+        public void Add_TurnGrace(float fCooldown)
+        {
+            if (fCooldown <= 0f)
+                return;
+
+            m_fTurnGraceCooldown = m_fTurnGraceCooldown <= 0f ? fCooldown : Mathf.Min(m_fTurnGraceCooldown, fCooldown);
+        }
+
+        /// <summary> 요행 — 회피 성공 뒤 확정 회피가 예약되는 시간을 늘린다(여러 장이면 가장 긴 값). </summary>
+        public void Add_LuckyChain(float fDuration)
+        {
+            if (fDuration <= 0f)
+                return;
+
+            m_fLuckyChainDuration = Mathf.Max(m_fLuckyChainDuration, fDuration);
+        }
+
+        /// <summary> 잔영 — 몸 충돌 피해를 무효화할 1회권을 더한다. </summary>
+        public void Add_FreeHit(int iCount)
+        {
+            if (iCount <= 0)
+                return;
+
+            m_iFreeHitCharge += iCount;
+        }
+
+        // 260928_회피형 카드 시한부 타이머 — 한곳에서 줄인다(2-24 아슬아슬 등과 같은 결).
+        private void Tick_DodgeCards(float fDeltaTime)
+        {
+            if (m_fNearMissDodgeTimer > 0f)
+                m_fNearMissDodgeTimer = Mathf.Max(0f, m_fNearMissDodgeTimer - fDeltaTime);
+
+            if (m_fPanicSpeedTimer > 0f)
+                m_fPanicSpeedTimer = Mathf.Max(0f, m_fPanicSpeedTimer - fDeltaTime);
+
+            if (m_fTurnGraceTimer > 0f)
+                m_fTurnGraceTimer = Mathf.Max(0f, m_fTurnGraceTimer - fDeltaTime);
+
+            if (m_fLuckyChainTimer > 0f)
+            {
+                m_fLuckyChainTimer -= fDeltaTime;
+                if (m_fLuckyChainTimer <= 0f)
+                {
+                    m_fLuckyChainTimer = 0f;
+                    m_bLuckyChainArmed = false;
+                }
+            }
+        }
+
         /// <summary> 잠깐 무적. 이미 더 길게 걸려 있으면 줄이지 않는다. </summary>
         public void Add_Invincible(float fSeconds)
         {
@@ -564,9 +690,15 @@ namespace Client
 
         private void Apply_Speed()
         {
+            // 260928_외줄타기(DODGE_BOUNDARY_SPEED) — 선을 긋는 중이 아닐 때(=경계선 위)만 곱한다.
+            float fBoundaryScale = (m_fBoundarySpeedBonus > 0f && m_cGrid.IS_DRAWING == false)
+                ? 1f + m_fBoundarySpeedBonus : 1f;
+            // 260928_도주 본능(DODGE_PANIC_SPEED) — 피격 직후 시한부로만 곱한다.
+            float fPanicScale = m_fPanicSpeedTimer > 0f ? 1f + PANIC_SPEED_BONUS : 1f;
+
             // 260917_탄 감속이 네 번째 갈래다. 스테이지가 넣는 환경 배율(거미줄)에 덮어써지지 않게 따로 곱한다.
             m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale * m_fCardSpeedScale
-                                 * m_fTrailSpeedScale * m_cImpact.SPEED_SCALE;
+                                 * m_fTrailSpeedScale * m_cImpact.SPEED_SCALE * fBoundaryScale * fPanicScale;
         }
 
         // 260921_선 긋기 시작 · 방향 전환을 알린다. 상태를 비교하는 자리를 한곳에 모아 둔다 —
@@ -581,7 +713,16 @@ namespace Client
 
             MOVE_DIR eDir = m_cMoveHandler.CUR_DIR;
             if (eDir != MOVE_DIR.NONE && eDir != m_ePrevDir && m_ePrevDir != MOVE_DIR.NONE)
+            {
                 OnTurn?.Invoke();
+
+                // 260928_스치는 그림자(DODGE_TURN_GRACE) — 쿨이 돌지 않았을 때만 짧은 무적을 준다.
+                if (m_fTurnGraceCooldown > 0f && m_fTurnGraceTimer <= 0f)
+                {
+                    Add_Invincible(TURN_GRACE_INVINCIBLE_TIME);
+                    m_fTurnGraceTimer = m_fTurnGraceCooldown;
+                }
+            }
 
             if (eDir != MOVE_DIR.NONE)
                 m_ePrevDir = eDir;
@@ -647,12 +788,40 @@ namespace Client
             }
 
 
-            // 260905_회피(능력치 강화). 성공하면 짧은 무적을 함께 준다 —
+            // 260928_잔영(DODGE_FREE_HIT) — 몸 충돌 피해를 1회권으로 완전히 무효화한다(선 끊김 제외).
+            // 확률이 아니라 확정 자원이라 회피·요행보다 먼저 쓴다 — 아껴 둔 보호막이 손해로 느껴지는 것과 같은 이유(위 260905 참고).
+            if (bLineCut == false && m_iFreeHitCharge > 0)
+            {
+                --m_iFreeHitCharge;
+                m_fInvincibleTimer = EVADE_GRACE_TIME;
+                OnEvade?.Invoke();
+                return;
+            }
+
+            // 260928_요행(DODGE_LUCKY_CHAIN) — 직전 회피가 예약해 둔 확정 회피.
+            if (bLineCut == false && m_bLuckyChainArmed == true)
+            {
+                m_bLuckyChainArmed = false;
+                m_fLuckyChainTimer = 0f;
+                m_fInvincibleTimer = EVADE_GRACE_TIME;
+                OnEvade?.Invoke();
+                return;
+            }
+
+            // 260905_회피(능력치 강화 + 260928_아슬아슬한 본능의 시한부 보너스). 성공하면 짧은 무적을 함께 준다 —
             // 몬스터와 겹쳐 있는 동안 매 프레임 판정하면 확률이 아무리 높아도 결국 죽는다.
-            if (bLineCut == false && m_fEvasion > 0f && UnityEngine.Random.value < m_fEvasion)
+            float fEvasionNow = m_fEvasion + (m_fNearMissDodgeTimer > 0f ? NEARMISS_DODGE_BONUS : 0f);
+            if (bLineCut == false && fEvasionNow > 0f && UnityEngine.Random.value < fEvasionNow)
             {
                 m_fInvincibleTimer = EVADE_GRACE_TIME;
                 OnEvade?.Invoke();
+
+                // 260928_이번 회피가 성공했으니 요행(DODGE_LUCKY_CHAIN)이 있으면 다음 한 번을 예약한다.
+                if (m_fLuckyChainDuration > 0f)
+                {
+                    m_bLuckyChainArmed = true;
+                    m_fLuckyChainTimer = m_fLuckyChainDuration;
+                }
                 return;
             }
 
@@ -673,7 +842,11 @@ namespace Client
             if (m_cGrid.Distance_ToBoundary(m_vLastSafePos) > SAFE_POS_DRIFT)
                 m_cMoveHandler.Snap_ToBoundary();
             m_cInputHandler.Clear();
-            m_fInvincibleTimer = INVINCIBLE_TIME;
+            // 260928_여유로운 몸놀림(DODGE_INVINCIBLE_UP) — 무적시간에 카드 가산을 더한다.
+            m_fInvincibleTimer = INVINCIBLE_TIME + m_fInvincibleCardBonus;
+            // 260928_도주 본능(DODGE_PANIC_SPEED) — 실제로 맞았을 때만 가속을 건다.
+            if (m_fPanicSpeedDuration > 0f)
+                m_fPanicSpeedTimer = m_fPanicSpeedDuration;
         }
 
         /// <summary>
