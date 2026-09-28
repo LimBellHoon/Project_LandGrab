@@ -134,6 +134,21 @@
         MOVE,           // 이동 — 주황 (속도 · 회피 · 이동 규칙처럼 움직임에 쓰는 것)
     }
 
+    // 260928_카드 시스템 재작성(Docs/Design_Roguelite_Rewrite.md 6장) — 원본 스펙의 4계열.
+    /// <summary>
+    /// **`PICK_THEME`와는 일부러 별개로 둔다.** 설계 문서는 `PICK_THEME`를 4종으로 늘리는 쪽을 제안했지만,
+    /// 옛 카드(`CardInfo.csv`)·런 스킬(`RunSkillInfo.csv`)이 지금도 `PICK_THEME`로 카드 색(2-10-1)을
+    /// 그리고 있다 — 여기서 건드리면 지금 돌아가는 화면이 깨진다. 새 카드 30종이 실제로 채워지고
+    /// (태스크 #22) 옛 카드·런 스킬을 걷어낼 때 `PICK_THEME`와 합칠지 다시 볼 것.
+    /// </summary>
+    public enum CARD_FAMILY
+    {
+        CONTROL = 0,    // 제어 — 몬스터를 억제·방해하는 계열
+        MOBILITY,       // 기동 — 선을 긋고 돌아오는 왕복 자체에 관여하는 계열
+        GUARD,          // 수호 — 생존·보호막·회복 계열
+        FUSE,           // 도화선 — 도화선(2-14-1) 관련 계열
+    }
+
     // 260917_3지선다 한 칸의 종류. 카드와 런 스킬을 한 화면에 섞는다
     public enum PICK_KIND
     {

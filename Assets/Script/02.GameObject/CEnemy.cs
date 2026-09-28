@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System;
+
+using UnityEngine;
 
 using Engine;
 
@@ -91,6 +93,9 @@ namespace Client
         public int              ATTACK          => m_iAttack;
         /// <summary> 260928_지금 기절해 있는가(그로기가 가득 찼다). CImpactHandler.IS_STUNNED를 그대로 읽는다. </summary>
         public bool              IS_STUNNED      => m_cImpact.IS_STUNNED;
+        /// <summary> 260928_그로기가 가득 차 기절에 들어가는 순간(Docs/Design_Roguelite_Rewrite.md 6장 ON_STUN 훅).
+        /// 아직 구독하는 곳은 없다 — 카드 시스템(태스크 #22)이 붙으면 여기를 듣는다. </summary>
+        public event Action      OnStunned;
 
         #region IImpactTarget
         // 260917_탄 판정 반경은 플레이어 충돌 반경과 같은 값을 쓴다 — 몸 크기가 하나라서.
@@ -144,6 +149,7 @@ namespace Client
             m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
             m_bWhiteShown   = false;
             bCollect        = false;   // 풀에서 재사용되므로 지난 판의 죽음이 남지 않게 내려 둔다
+            OnStunned       = null;    // 풀에서 재사용되므로 지난 판의 구독자를 지운다(CPlayer 이벤트와 같은 자리)
 
             m_cGimmick = CEnemyGimmick.Create(cDesc.eGimmick);
             if (m_cGimmick != null && m_cGimmick.Initialize(this, m_cGrid, cDesc) == false)
@@ -248,6 +254,7 @@ namespace Client
             m_cImpact.Set_Stun(s_keyGroggyStun, m_fStunDuration);
             ++m_iStunCount;
             m_fResistance += m_iStunCount > STUN_SOFT_CAP ? RESISTANCE_PER_STUN_HARD : RESISTANCE_PER_STUN;
+            OnStunned?.Invoke();
         }
 
         /// <summary> 260920_점령으로 가둬 죽일 때만 부른다(2-3) — 그로기 · 기절과 무관하게 무조건 죽는다.

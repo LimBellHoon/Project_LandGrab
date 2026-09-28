@@ -1976,8 +1976,35 @@ CGameManager            OnFieldItemUsed → 소리 · 진동
   기절 중 추가 피해 무시, 내성 증가로 다음 기절 문턱이 올라가는 것, 자연 감소까지 전부 검증한다.
   `Test_EnemyTable`은 새 두 열이 표에서 제대로 읽히는지만 본다
 
-**나머지(카드 시스템 프레임·새 카드 30종·굴절 호출 배선·상한/배타/스테이지 테이블)는 아직 코드 미착수**
-— 순서와 각 단계의 구체안은 설계 문서에 있다.
+#### 260928_카드 시스템 프레임 — 런 스킬을 흡수하기로 확정, 구조만 먼저 복제
+`Docs/Design_Roguelite_Rewrite.md` §6대로 진행했다. **런 스킬 시스템(`RunSkillInfo.csv`/`CRunSkillHandler`/
+`CRunSkillEffect`)을 새 카드 시스템에 흡수할지**는 설계 문서 자체가 미확정으로 남겨 뒀던 갈림길이라
+사용자에게 먼저 물었고, "흡수한다"는 답을 받았다.
+
+- **이번엔 구조만 복제했다** — `CCardHandler`(03.Module)가 `CRunSkillHandler`와 거의 같은 모양으로
+  `Dictionary<CARD_TYPE, int>` 레벨을 센다. `CCardEffect`(03.Module)가 `CRunSkillEffect`와 같은 조합
+  구조(1-1)로 `CPlayer`가 여러 개를 동시에 들 수 있게 한다. `CCardEffect.Create(CARD_TYPE)`는 지금
+  아무것도 못 만든다 — 카드가 아직 하나도 없어서다(다음 태스크에서 `CRunSkillEffect.Create`가 자란
+  것과 같은 방식으로 케이스가 하나씩 붙는다)
+- **옛 시스템은 하나도 안 건드렸다.** `RunSkillInfo.csv` · `CRunSkillHandler` · 옛 `CardInfo.csv` ·
+  `CStage_Manager.Apply_Card`(스위치문) · `CPickOption_Utility.Pick`(카드+런 스킬 섞어 뽑기)이 전부
+  그대로 살아 있고 지금도 돌아간다. 새 프레임 둘 다 아직 `CPlayer`에 붙어 있지 않다 — 실제 카드가
+  생겨야(다음 태스크) 어디에 걸지 정해진다. 옛 것을 걷어내는 일도 그때 한 번에 한다
+  (새것이 하나도 없는 채로 옛것부터 지우면 그 사이엔 3지선다 화면이 아예 죽는다)
+- **`CARD_FAMILY`(제어 · 기동 · 수호 · 도화선, 4계열)를 새로 만들었다** — `99.Defines/Client_Enum.cs`.
+  설계 문서 초안은 기존 `PICK_THEME`(전투/이동 2종, 카드 색을 정하는 값)를 4종으로 늘리자고 했지만,
+  옛 카드·런 스킬이 지금도 `PICK_THEME`로 화면 색을 그리고 있어 거기를 만지면 지금 도는 3지선다 UI가
+  깨진다 — 그래서 **일부러 별개 enum으로 새로 뒀다.** 옛 시스템을 걷어낼 때 합칠지 다시 볼 것
+- **이벤트 훅은 `CEnemy.OnStunned` 하나만 추가했다**(§6 훅 표의 `ON_STUN`). 나머지(`ON_REFRACT` ·
+  `ON_FUSE_BURNED_CELL` · `ON_HP_CRITICAL` · `ON_STRAIGHT_TICK` · `ON_RETURN_START`)는 지금 부를 카드가
+  없는 채로 미리 뚫으면 검증되지 않는 추측성 코드가 된다고 보고, 그 훅이 실제로 필요한 카드를 만들
+  다음 태스크로 미뤘다. 표의 나머지 훅 대부분은 이미 있는 이벤트(`OnDrawStart` · `OnCapture` · 아슬아슬
+  판정 등)를 그대로 재사용하므로 새로 만들 것 자체가 원래 몇 개 안 된다
+- `CProtoTest.Test_CardHandler`가 레벨링 규칙(첫 획득 1레벨 · 재선택 시 레벨업 · 만렙 클램프 · 카드별
+  독립 카운트)을, `Test_EnemyCombat`이 `OnStunned`가 기절 순간에 정확히 한 번만 울리는지 검증한다
+
+**나머지(카드 30종 실제 구현 + 옛 시스템 이식/삭제 · 굴절 호출 배선 · 상한/배타/스테이지 테이블)는
+아직 코드 미착수** — 순서와 각 단계의 구체안은 설계 문서에 있다.
 
 ---
 

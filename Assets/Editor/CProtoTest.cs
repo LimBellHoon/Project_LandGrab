@@ -90,6 +90,7 @@ namespace Client
             Test_SkillTable();
             Test_RunSkillTable();
             Test_RunSkill();
+            Test_CardHandler();
             Test_WeaponAndAwaken();
             Test_OrbitAndClub();
             Test_BattleConsumable();
@@ -533,14 +534,20 @@ namespace Client
 
             Check("생성 직후에는 기절도 죽음도 아니다", cEnemy.IS_STUNNED == false && cEnemy.IS_DEAD == false);
 
+            // 260928_ON_STUN 훅(Docs/Design_Roguelite_Rewrite.md 6장) — 카드가 없어도 이벤트 자체는 언제든 검증할 수 있다.
+            int iStunnedFired = 0;
+            cEnemy.OnStunned += () => ++iStunnedFired;
+
             cEnemy.Damage(1);
             cEnemy.Damage(1);
             Check("그로기가 덜 찼으면 아직 안 기절한다", cEnemy.IS_STUNNED == false);
             Check("맞아도 전투로는 죽지 않는다", cEnemy.IS_DEAD == false);
+            Check("아직 OnStunned가 울리지 않았다", iStunnedFired, 0);
 
             cEnemy.Damage(1);
             Check("그로기가 다 차면 기절한다", cEnemy.IS_STUNNED == true);
             Check("기절해도 죽지는 않는다", cEnemy.IS_DEAD == false);
+            Check("OnStunned가 정확히 한 번 울린다", iStunnedFired, 1);
 
             int iHpAfterStun = cEnemy.HP;
             cEnemy.Damage(999);
@@ -2238,6 +2245,35 @@ namespace Client
             Object.DestroyImmediate(goPlayer);
         }
 
+        // 260928_카드 시스템 재작성(Docs/Design_Roguelite_Rewrite.md 6장, 태스크 #21) — 프레임(레벨링)만 검증한다.
+        // 아직 CPlayer에 붙어 있지 않다(카드가 없다, CardInfo.csv·CPlayer도 안 건드렸다) — CCardHandler
+        // 자체의 규칙만 CRunSkillHandler와 같은 방식으로 화면 없이 본다.
+        private static void Test_CardHandler()
+        {
+            CCardHandler cHandler = new CCardHandler();
+
+            Check("처음엔 아무 카드도 없다", cHandler.Has(CARD_TYPE.SHIELD) == false);
+            Check("레벨은 0", cHandler.Get_Level(CARD_TYPE.SHIELD), 0);
+
+            int iLv1 = cHandler.Add_Or_LevelUp(CARD_TYPE.SHIELD, 3);
+            Check("처음 얻으면 1레벨", iLv1, 1);
+            Check("가졌다", cHandler.Has(CARD_TYPE.SHIELD));
+
+            int iLv2 = cHandler.Add_Or_LevelUp(CARD_TYPE.SHIELD, 3);
+            Check("다시 고르면 2레벨", iLv2, 2);
+
+            cHandler.Add_Or_LevelUp(CARD_TYPE.SHIELD, 3);
+            int iLv4 = cHandler.Add_Or_LevelUp(CARD_TYPE.SHIELD, 3);
+            Check("만렙(3)을 넘지 않는다", iLv4, 3);
+
+            cHandler.Add_Or_LevelUp(CARD_TYPE.HEAL, 1);
+            Check("다른 카드는 따로 센다", cHandler.Get_Level(CARD_TYPE.HEAL), 1);
+            Check("먼저 넣은 카드 레벨은 그대로다", cHandler.Get_Level(CARD_TYPE.SHIELD), 3);
+            Check("전체 목록에 둘 다 있다", cHandler.ALL.Count, 2);
+
+            cHandler.Clear();
+            Check("Clear 뒤엔 비었다", cHandler.Has(CARD_TYPE.SHIELD) == false && cHandler.ALL.Count == 0);
+        }
 
         // 260917_투사체 무기(뱀서라이크 자동 발사) · 각성 — 쿨마다 쏘는지, 대상이 없으면 기다리는지, 각성이 무엇을 바꾸는지
         private static void Test_WeaponAndAwaken()

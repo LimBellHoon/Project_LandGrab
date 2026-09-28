@@ -35,7 +35,7 @@ HP 풀(2-14), 올가미 점령 규칙(2-3)을 전부 걷어낸다. 단 아래 �
 | 도화선(2-14-1, `Ignite_Fuse`/`Tick_Fuse`/`Set_Burn`) | 몸이 선에 닿으면 발화, 트레일 끝(플레이어)까지 타들어온다 | **원본 스펙 §2.2로 수치만 갱신**(전파 속도 4.2칸/초, 최소 유예 2.0초, 전파 방향이 "내 땅 쪽부터"). 구조(`CStage_Manager`가 타이밍을 재고 `CTerritoryGrid`가 탄 구간만 표시)는 그대로 재사용 가능 |
 | 캐릭터별 이동 방식(2-22, `MOVE_STYLE.EIGHT_WAY`/`SPIRAL`) | 캐릭터마다 다른 이동 | 원본 스펙은 4방향 고정만 서술한다. **이번 재작성 범위에서는 4방향만 만들고, 8방향·나선형은 보류**로 남긴다(코드를 지우지는 않되 `CInputHandler`/`CMoveHandler`가 이 스타일들을 부르지 않게 된다) — 캐릭터 시스템 자체(스킨·스탯 배율, 2-17)를 없애자는 이야기는 없었으므로 그 부분은 유지 |
 | 로비 장착 스킬(2-11, `SkillInfo.csv`: WARP/SHIELD/DASH/SLOW/SEAL/RUSH) | 스테이지 진입 전 장착하는 액티브 하나 | 원본 스펙은 이 계층을 언급하지 않는다. **당장은 그대로 둔다** — WARP·RUSH 둘 다 "지금 방향으로 N칸"이라 칸 기반 이동으로 돌아가면 오히려 구현이 더 쉬워진다(칸 수만큼 `Get_NextCell`을 반복하면 된다). 단 `CSkillEffect_Shield`의 무적 시간, `CSkillEffect_Slow`의 감속 대상(HP 없는 몬스터에게 감속은 여전히 의미가 있다) 정도만 재검토가 필요하다 |
-| 런 스킬(2-11-1~2-11-3, `RunSkillInfo.csv`) | 판 안 3지선다로 얻는 뱀서라이크형 스킬 | 원본 스펙의 3지선다(§4)는 **오직 카드(K/M/G/F)만** 뽑는다 — 런 스킬과 섞어 뽑는 기존 `CPickOption_Utility.Pick`(2-10-1)이 이제 필요 없다. **런 스킬 자체를 없앨지, 카드 30종과 통합할지는 아직 결정 안 됨** — 겹치는 개념이 많다(월보=원본 스펙에 없음, 회전탄/몽둥이=원본 스펙에 없음, 마비탄=K01 감전 선과 결이 비슷함). §6 끝에 후보로만 적어 둔다 |
+| 런 스킬(2-11-1~2-11-3, `RunSkillInfo.csv`) | 판 안 3지선다로 얻는 뱀서라이크형 스킬 | **260928_사용자 확인 — 새 카드 시스템에 흡수한다.** 프레임(`CCardHandler`/`CCardEffect`)은 태스크 #21에서 만들었다(§6). 실제로 17종 런 스킬 · 20종 옛 카드를 새 구조로 옮기고 옛 표 · 핸들러를 걷어내는 건 태스크 #22 — 그때까지는 `RunSkillInfo.csv`/`CRunSkillHandler`/`CPickOption_Utility.Pick`(카드+런 스킬 섞어 뽑기)이 그대로 살아 있다 |
 | 웨이브/보상 이미지 스택(2-5, `strLayerTex`) | 웨이브를 깰 때마다 가림막이 벗겨져 스킨 그림이 드러난다 | **건드리지 않는다.** 이 리포의 첫 줄 자체가 "뒤에 깔린 보상 이미지를 점령해서 드러내는 것이 핵심 재미"다 — 원본 스펙은 이 개념을 언급하지 않지만 없애자는 요청도 없었다. **원본 스펙의 "스테이지 1~10, 스테이지당 목표 점유율 하나"를 이 리포의 "웨이브"에 그대로 매핑한다** — 스테이지 테이블(§7)의 각 행이 `MapInfo.csv`의 웨이브 한 줄이 된다. 이 가정이 틀렸으면(예: 맵 자체를 스테이지 10개로 늘리는 뜻이었다면) 구현 전에 확인이 필요하다 |
 
 ## 2. 이동 — 칸 중심 스냅 (원본 스펙 §1)
@@ -163,6 +163,35 @@ Calc_TimeStar(fElapsed, fTimeLimit):
 
 ## 6. 카드 시스템 — CardInfo.csv 전량 교체
 
+> **260928_프레임(가족 enum · 레벨링 구조 · 일부 이벤트 훅)만 먼저 만들었다(태스크 #21).**
+> 사용자에게 확인한 결과 — **런 스킬 시스템(`RunSkillInfo.csv`/`CRunSkillHandler`/`CRunSkillEffect`)을
+> 새 카드 시스템에 흡수한다.** 다만 "흡수"는 이번 태스크에서 **구조를 복제해 새로 만드는 것**까지고,
+> 기존 20종 카드 · 17종 런 스킬을 실제로 새 구조로 옮기거나 지우는 일은 **태스크 #22(카드 30종 카탈로그)에서
+> 한다** — 아직 새 카드가 하나도 없는 채로 옛 시스템을 걷어내면 그 사이에는 아무것도 대신할 게 없어
+> 화면이 죽는다. 그래서 지금은 **옛 것 그대로 살아 있고, 새 프레임이 옆에 추가된 상태**다.
+>
+> - `CCardHandler`(03.Module) — `CRunSkillHandler`를 거의 그대로 복제했다. `Dictionary<CARD_TYPE, int>`로
+>   레벨만 센다. 다만 `CRunSkillInfo` 같은 표 클래스를 아직 안 만들었으므로(표가 없다) `Add_Or_LevelUp`이
+>   `CRunSkillInfo` 객체 대신 `(CARD_TYPE eType, int iMaxLevel)` 원시값을 직접 받는다 — 태스크 #22가 실제
+>   표(`CCardInfo`류)를 만들면 그 값만 넘기면 된다
+> - `CCardEffect`(03.Module) — `CRunSkillEffect`와 같은 조합 구조. `Create(CARD_TYPE)`가 지금은 아무것도
+>   못 만든다(케이스가 없다) — 버그가 아니라 "아직 카드가 없다"는 뜻이다. #22에서 카드가 하나씩 늘 때마다
+>   여기 케이스를 채워 나간다(`CRunSkillEffect.Create`가 각 스킬을 추가하며 자란 것과 같은 방식)
+> - **둘 다 아직 `CPlayer`에 안 붙어 있다.** 필드를 만드는 순간 "카드가 없는데 필드만 있는" 상태가 되고,
+>   `CPlayer.Initialize`/`Release` 어디에 걸지도 실제 카드를 봐야 정해지므로 #22로 미뤘다
+> - `CARD_FAMILY`(4계열: 제어 · 기동 · 수호 · 도화선, `99.Defines/Client_Enum.cs`) — **`PICK_THEME`와는
+>   일부러 별개로 뒀다.** 설계 문서 초안은 `PICK_THEME`를 4종으로 늘리자고 제안했지만, 옛 카드 ·
+>   런 스킬이 지금도 `PICK_THEME`로 화면 색을 그리고 있어 거기를 건드리면 지금 동작하는 3지선다 UI가
+>   깨진다. 옛 시스템을 걷어낼 때(#22) 두 enum을 합칠지 다시 볼 것
+> - **이벤트 훅은 이번엔 하나만 추가했다** — `CEnemy.OnStunned`(§4의 그로기 도입 때 이미 만든 코드라
+>   가장 안전하게 붙일 수 있었다). 표의 나머지 훅(`ON_REFRACT` · `ON_FUSE_BURNED_CELL` · `ON_HP_CRITICAL` ·
+>   `ON_STRAIGHT_TICK` · `ON_RETURN_START`)은 **소비할 카드가 없는 채로 미리 뚫어 두면 검증이 안 되는
+>   추측성 코드가 된다**고 판단해 미뤘다 — #22에서 그 훅이 필요한 카드를 만들 때 같이 뚫는다. 나머지
+>   훅은 대부분 이미 있는 이벤트를 그대로 재사용하므로(아래 표) 실제로 새로 만들 것은 저 다섯 개뿐이다
+> - `CProtoTest.Test_CardHandler`가 `CCardHandler`의 레벨링 규칙(첫 획득 1레벨 · 재선택 시 레벨업 ·
+>   만렙 클램프 · 카드별로 독립)을, `Test_EnemyCombat`이 `CEnemy.OnStunned`가 기절 순간에 정확히 한 번
+>   울리는지를 화면 없이 검증한다
+
 `Client_Enum.CARD_TYPE`의 기존 값(`SHIELD`~`DODGE_FREE_HIT`, 이번 세션에 넣은 것 포함)을 전부 지우고
 원본 스펙 §9의 30종으로 새로 채운다. 매핑 원칙:
 
@@ -194,7 +223,7 @@ Calc_TimeStar(fElapsed, fTimeLimit):
 | `ON_FUSE_BURNED_CELL` | `Tick_Fuse`가 매 칸 태울 때 그 칸에 몬스터가 있는지 확인(새 로직, 칸 기반으로 돌아가면 쉬움) |
 | `ON_BODY_HIT` | `CStage_Manager.Tick_Enemy`의 `bHit` 분기(이미 있음) |
 | `ON_NEAR_MISS` | `CStyleTracker`의 `NEAR MISS!`(2-24, 이미 있음) |
-| `ON_STUN` | §4의 `CEnemy` 기절 진입 순간(새 이벤트) |
+| `ON_STUN` | ✅ 260928_`CEnemy.OnStunned`(태스크 #21에서 추가, §4 그로기 도입과 같은 자리) |
 | `ON_HP_CRITICAL` | `CPlayer.OnLifeChanged`에서 `LIFE == 1` 확인(새 조건부 이벤트) |
 | `ON_TIMER` | 카드별 자체 타이머(런 스킬의 `CRunSkillEffect.Tick`과 같은 패턴) |
 | `ON_DIRECTION_CHANGE` | `CPlayer.OnTurn`(2-11-3, 이미 있음) |
@@ -226,8 +255,9 @@ Calc_TimeStar(fElapsed, fTimeLimit):
 4. ✅ 260928_그로기/기절 (§4) — 태스크 #20 완료. "몬스터 1종"은 기존 5종 표(EnemyInfo.csv)에
    열만 추가하는 형태라 새 몬스터를 따로 만들지 않았다 — 원본 스펙이 요구한 건 그로기 체계이지
    몬스터 가짓수가 아니었다고 읽었다
-5. 카드 시스템 프레임 + 이벤트 훅 (§6) — 태스크 #21. **굴절(§3-3)을 실제로 부르는 배선도 여기서 같이 한다**
-   (`CStage_Manager`가 트레일 접촉 시 G08 보유 여부를 보고 도화선 대신 `Try_Insert_Detour`를 시도)
+5. ✅ 260928_카드 시스템 프레임 (§6) — 태스크 #21 완료(`CCardHandler`/`CCardEffect`/`CARD_FAMILY`/
+   `CEnemy.OnStunned`). **실제 카드 이식·굴절(§3-3) 호출 배선·나머지 이벤트 훅은 태스크 #22로 넘어갔다**
+   (`CStage_Manager`가 트레일 접촉 시 G08 보유 여부를 보고 도화선 대신 `Try_Insert_Detour`를 시도하는 것도 여기 포함)
 6. 카드 30종 (§6) — 태스크 #22
 7. ✅ 260928_굴절 원시 동작(`CTerritoryGrid.Try_Insert_Detour`) 완료 — 태스크 #19. 호출 배선은 5번과 같이
 8. 상한·배타 검증, 스테이지 테이블, 연출 (§7) — 태스크 #23
