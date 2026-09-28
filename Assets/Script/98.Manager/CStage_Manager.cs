@@ -48,7 +48,11 @@ namespace Client
         // 불이 붙어 트레일 끝(플레이어)을 향해 타들어온다. 불보다 먼저 안전 지대로 돌아오면 선만 잃고
         // 끝나지만(점령은 안 된다, CTerritoryGrid.Step_To 참고), 따라잡히면 몸에 닿은 것과 같은 값이 깎인다.
         // "선을 긋는 동안은 약하다"는 그대로 두되, 즉사 대신 반응할 시간을 준다.
-        private const float  FUSE_SPEED_CELL_PER_SEC = 3f;   // 초당 몇 칸을 태우는가 — 연출 값이라 CSV로 빼지 않는다
+        // 260928_로그라이트 재작성(Docs/Design_Roguelite_Rewrite.md 3-2) — 원본 스펙 수치로 갱신.
+        // 기본 이동속도(6.0칸/초)의 70%로 잡아, 계속 앞으로 그으면 거리가 벌어지고 멈추거나 감속당하면 좁혀진다.
+        private const float  FUSE_SPEED_CELL_PER_SEC = 4.2f;  // 초당 몇 칸을 태우는가 — 연출 값이라 CSV로 빼지 않는다
+        // 260928_발화 시 플레이어-불 사이 거리를 최소 이만큼 보장한다 — 짧은 선에서 발화 즉시 따라잡히지 않게.
+        private const float  FUSE_MIN_GRACE_SEC      = 2f;
 
         private bool          m_bFuseArmed;       // 지금 도화선이 타고 있는가
         // 260923_선이 칸이 아니라 선분이 되면서 '몇 번째 칸' 대신 '선 시작점부터 잰 길이'로 불의 자리를 든다
@@ -1434,10 +1438,16 @@ namespace Client
         /// <param name="fArc"> 선 시작점부터 잰 발화 자리(칸) </param>
         private void Ignite_Fuse(float fArc, CEnemy cEnemy)
         {
-            m_bFuseArmed             = true;
-            m_fFuseFrom              = fArc;
-            m_fFuseFront             = fArc;
-            m_iFuseDamage            = cEnemy != null ? cEnemy.ATTACK : 1;
+            m_bFuseArmed  = true;
+            m_iFuseDamage = cEnemy != null ? cEnemy.ATTACK : 1;
+
+            // 260928_짧은 선에서 즉시 따라잡히지 않게, 필요하면 발화 지점을 선 끝에서 최소 유예 거리만큼
+            // 물린다(원본 스펙 §2.2) — 몬스터가 닿은 자리(fArc)보다 안전 지대 쪽으로 더 물러날 뿐,
+            // 몬스터가 닿은 자리 자체를 앞으로 당기지는 않는다(Mathf.Min이 fArc를 넘지 않게 막는다).
+            float fMinFront = m_cGrid.TRAIL_LENGTH - FUSE_SPEED_CELL_PER_SEC * FUSE_MIN_GRACE_SEC;
+            m_fFuseFrom  = Mathf.Max(0f, Mathf.Min(fArc, fMinFront));
+            m_fFuseFront = m_fFuseFrom;
+
             m_cGrid.IS_TRAIL_BURNING = true;
             m_cGrid.Set_Burn(m_fFuseFrom, m_fFuseFront);
 

@@ -582,6 +582,122 @@ namespace Client
         public bool IS_TRAIL_BURNING { get; set; }
         #endregion 트레일
 
+        #region 굴절 (원본 스펙 §2.3, G08 카드 전용 — Docs/Design_Roguelite_Rewrite.md 3-3)
+        /// <summary>
+        /// 260928_굴절 — 몬스터가 트레일에 닿았을 때(도화선 발화와 같은 판정, Try_Find_TrailTouch) 발화 대신
+        /// 쓸 수 있는 대안이다. 닿은 트레일 칸(vTouchCell) 하나를 없애고, 그 자리를 vAwayDir 방향으로
+        /// iDepth칸만큼 밀어낸 'ㄷ'자 우회 칸들로 갈아 끼운다 — 다각형 시절이었다면 그 정점을 통째로 옮기고
+        /// 교차 검사를 다시 돌려야 했지만, 칸 배열로 돌아온 지금은 그 칸 앞뒤(A·B)만 그대로 두고
+        /// 가운데 한 칸을 우회로로 바꿔 끼우는 문제로 줄어든다.
+        ///
+        /// 우회로는 A(닿은 칸 바로 앞) → vAwayDir로 iDepth칸 → 선 방향으로 두 칸(A·B 사이 간격만큼) →
+        /// vAwayDir 반대로 iDepth칸 → B(닿은 칸 바로 뒤)로 이어지는 사각 우회다. 그래서 다음 조건을 전부
+        /// 요구한다 — 하나라도 어긋나면 아무것도 바꾸지 않고 false를 돌려준다(호출부가 도화선으로 폴백할 것,
+        /// 스펙의 폴백 규칙 그대로).
+        ///   · vTouchCell이 지금 트레일의 '중간' 칸이어야 한다(맨 처음·맨 끝 칸은 앞 또는 뒤가 없어 우회를
+        ///     다시 이을 수 없다)
+        ///   · 그 앞뒤 두 칸(A, B)이 정확히 한 방향으로 곧게 뻗어 있어야 한다(꺾이는 자리는 지원하지 않는다 —
+        ///     그 경우도 그대로 도화선으로 떨어진다)
+        ///   · vAwayDir은 그 방향과 직각인 상하좌우 단위 벡터여야 한다
+        ///   · 우회로가 지나갈 칸이 전부 맵 안이고 빈 땅(EMPTY)이어야 한다(벽 · 점령지 · 이미 그은 선과 겹치면 안 된다)
+        /// </summary>
+        /// <param name="vTouchCell"> 몬스터가 닿은 트레일 칸(Try_Find_TrailTouch가 돌려준 자리를 Grid_ToCell로 칸으로 바꾼 것) </param>
+        /// <param name="vAwayDir"> 밀어낼 방향(보통 몬스터 반대쪽) — 상하좌우 단위 벡터 하나 </param>
+        /// <param name="iDepth"> 밀어낼 칸 수(1 이상) </param>
+        /// <param name="iInsertedCount"> 성공했을 때 새로 트레일에 들어간 칸 수(참고용 — 트레일 길이가 이만큼 늘었다) </param>
+        public bool Try_Insert_Detour(Vector2Int vTouchCell, Vector2Int vAwayDir, int iDepth, out int iInsertedCount)
+        {
+            iInsertedCount = 0;
+
+            if (iDepth < 1 || Mathf.Abs(vAwayDir.x) + Mathf.Abs(vAwayDir.y) != 1)
+                return false;
+
+            int iAt = m_lstTrailCell.IndexOf(To_Index(vTouchCell.x, vTouchCell.y));
+            if (iAt <= 0 || iAt >= m_lstTrailCell.Count - 1)
+                return false;   // 처음 · 끝 칸이거나 트레일에 없는 칸이다 — 앞뒤를 이을 수 없다
+
+            Vector2Int vA = Index_ToCell(m_lstTrailCell[iAt - 1]);
+            Vector2Int vB = Index_ToCell(m_lstTrailCell[iAt + 1]);
+            Vector2Int vDiff = vB - vA;
+
+            // A-C-B가 곧게 뻗어 있어야 한다 — 정확히 한 축으로 2칸 떨어져 있어야 그 사이(C)가 가운데다
+            if (vDiff.x != 0 && vDiff.y != 0)
+                return false;
+            if (Mathf.Abs(vDiff.x) + Mathf.Abs(vDiff.y) != 2)
+                return false;
+
+            Vector2Int vDir = new Vector2Int(vDiff.x / 2, vDiff.y / 2);
+            if (vDir.x * vAwayDir.x + vDir.y * vAwayDir.y != 0)
+                return false;   // 밀어낼 방향은 선 방향과 직각이어야 한다(옆으로 비켜서는 것이지 앞뒤로 찌르는 게 아니다)
+
+            s_lstDetour.Clear();
+            for (int k = 1; k <= iDepth; ++k)
+                s_lstDetour.Add(vA + vAwayDir * k);
+            s_lstDetour.Add(vA + vAwayDir * iDepth + vDir);
+            s_lstDetour.Add(vB + vAwayDir * iDepth);
+            for (int k = iDepth - 1; k >= 1; --k)
+                s_lstDetour.Add(vB + vAwayDir * k);
+
+            for (int i = 0; i < s_lstDetour.Count; ++i)
+            {
+                Vector2Int vCell = s_lstDetour[i];
+                if (Is_InBounds(vCell.x, vCell.y) == false || Get_Cell(vCell) != CELL_STATE.EMPTY)
+                    return false;
+            }
+
+            // 유효성 확인이 끝났다 — 이제 실제로 갈아 끼운다. C는 트레일에서 빠지므로 다시 빈 땅이 된다.
+            m_arrCell[To_Index(vTouchCell.x, vTouchCell.y)] = CELL_STATE.EMPTY;
+
+            m_lstTrailCell.RemoveAt(iAt);
+            for (int i = 0; i < s_lstDetour.Count; ++i)
+            {
+                Vector2Int vCell = s_lstDetour[i];
+                int iIndex = To_Index(vCell.x, vCell.y);
+                m_arrCell[iIndex] = CELL_STATE.TRAIL;
+                m_lstTrailCell.Insert(iAt + i, iIndex);
+            }
+
+            iInsertedCount   = s_lstDetour.Count;
+            m_fTrailLength   = m_lstTrailCell.Count;
+            Rebuild_TrailPieces();
+            return true;
+        }
+
+        private static readonly List<Vector2Int> s_lstDetour = new List<Vector2Int>();
+
+        private Vector2Int Index_ToCell(int iIndex) => new Vector2Int(iIndex % m_iWidth, iIndex / m_iWidth);
+
+        // 굴절처럼 트레일 칸 배열 가운데를 통째로 갈아 끼운 뒤에는, 매 스텝 붙여 나가던 Add_Trail의
+        // 증분 방식 대신 m_lstTrailCell 전체를 훑어 조각(m_lstTrailPiece)을 처음부터 다시 만든다 —
+        // 드문 호출이라(카드가 있을 때 발화 대신 한 번) 매 프레임 비용을 걱정할 자리가 아니다.
+        // 첫 조각의 맨 앞 점(안전 지대를 나간 자리)은 이미 있던 조각에서 그대로 가져온다 — 그 정보는
+        // 트레일 칸 배열에 없다(그 칸 자체가 트레일이 아니라 내 땅이었으므로).
+        private void Rebuild_TrailPieces()
+        {
+            if (m_lstTrailCell.Count == 0 || m_lstTrailPiece.Count == 0)
+                return;
+
+            Vector2 vEntry = m_lstTrailPiece[0][0];
+            m_lstTrailPiece.Clear();
+
+            Vector2Int vPrevCell = Index_ToCell(m_lstTrailCell[0]);
+            m_lstTrailPiece.Add(new List<Vector2> { vEntry, Cell_ToGrid(vPrevCell) });
+
+            for (int i = 1; i < m_lstTrailCell.Count; ++i)
+            {
+                Vector2Int vCell = Index_ToCell(m_lstTrailCell[i]);
+                bool bAdjacent = Mathf.Abs(vCell.x - vPrevCell.x) + Mathf.Abs(vCell.y - vPrevCell.y) == 1;
+
+                if (bAdjacent == true)
+                    m_lstTrailPiece[m_lstTrailPiece.Count - 1].Add(Cell_ToGrid(vCell));
+                else
+                    m_lstTrailPiece.Add(new List<Vector2> { Cell_ToGrid(vCell) });
+
+                vPrevCell = vCell;
+            }
+        }
+        #endregion 굴절
+
         #region 잠식 — 땅 갉는 자
         /// <summary>
         /// vCenter에서 fRange(칸) 안의 가장 가까운 점령지 가장자리를 동그랗게 도로 빈 땅으로 되돌린다.

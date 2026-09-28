@@ -66,6 +66,7 @@ namespace Client
             Test_MoveSkill();
             Test_Erode();
             Test_Fuse();
+            Test_Refraction();
             Test_TimeStar();
             Test_ContinueWhileDrawing();
             Test_PickRnD();
@@ -1428,6 +1429,54 @@ namespace Client
             Check("도화선 — 점령 칸 수도 그대로다", Count_Owned(cSafe), iOwnedBefore);
             Check("도화선 — 선은 사라진다", cSafe.IS_DRAWING == false);
             Check("도화선 — 도망쳤으니 스스로 꺼진다", cSafe.IS_TRAIL_BURNING == false && cSafe.BURN_FROM < 0f);
+        }
+
+        // 260928_굴절(원본 스펙 §2.3, G08 카드 — Docs/Design_Roguelite_Rewrite.md 3-3). 도화선과 같은
+        // 발화 판정에서 대신 쓸 수 있는 대안이다 — 아직 카드 시스템(태스크 #21/#22)이 없어 호출부는 없고,
+        // CTerritoryGrid 원시 동작만 여기서 검증한다.
+        private static void Test_Refraction()
+        {
+            CTerritoryGrid cGrid = Make_Grid();
+            CMoveHandler cMove = Make_Move(cGrid);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 5);   // 칸(10,1)~(10,5), 길이 5
+            Check("굴절 — 선 길이(굴절 전)", Mathf.RoundToInt(cGrid.TRAIL_LENGTH), 5);
+
+            bool bOk = cGrid.Try_Insert_Detour(new Vector2Int(10, 3), new Vector2Int(1, 0), 2, out int iInserted);
+            Check("굴절 — 가운데 칸을 성공적으로 우회시킨다", bOk);
+            Check("굴절 — 새로 들어간 칸 수는 2*depth+1", iInserted, 5);
+            Check("굴절 — 원래 닿았던 칸은 다시 빈 땅이 된다", cGrid.Get_Cell(new Vector2Int(10, 3)) == CELL_STATE.EMPTY);
+            Check("굴절 — 우회로 꼭짓점이 트레일이 됐다", cGrid.Get_Cell(new Vector2Int(12, 3)) == CELL_STATE.TRAIL);
+            Check("굴절 — 우회로 양옆도 트레일이 됐다",
+                  cGrid.Get_Cell(new Vector2Int(11, 2)) == CELL_STATE.TRAIL && cGrid.Get_Cell(new Vector2Int(11, 4)) == CELL_STATE.TRAIL);
+            Check("굴절 — 선 길이가 늘었다(5 - 1 + 5 = 9)", Mathf.RoundToInt(cGrid.TRAIL_LENGTH), 9);
+
+            // 맨 처음 · 맨 끝 칸은 앞뒤를 이을 수 없어 굴절이 안 된다
+            CTerritoryGrid cEdge = Make_Grid();
+            CMoveHandler cMoveEdge = Make_Move(cEdge);
+            Walk(cEdge, cMoveEdge, MOVE_DIR.UP, 3);   // (10,1)(10,2)(10,3)
+            Check("굴절 — 맨 앞 칸은 굴절할 수 없다",
+                  cEdge.Try_Insert_Detour(new Vector2Int(10, 1), new Vector2Int(1, 0), 1, out int _) == false);
+            Check("굴절 — 맨 끝 칸은 굴절할 수 없다",
+                  cEdge.Try_Insert_Detour(new Vector2Int(10, 3), new Vector2Int(1, 0), 1, out int _) == false);
+            // 밀어낼 방향이 선 방향과 나란하면(직각이 아니면) 거절한다
+            Check("굴절 — 선 방향과 나란한 밀기는 거절한다",
+                  cEdge.Try_Insert_Detour(new Vector2Int(10, 2), new Vector2Int(0, 1), 1, out int _) == false);
+
+            // 꺾인 자리(A-C-B가 일직선이 아님)는 굴절할 수 없다 — 그대로 도화선으로 떨어진다
+            CTerritoryGrid cTurn = Make_Grid();
+            CMoveHandler cMoveTurn = Make_Move(cTurn);
+            Walk(cTurn, cMoveTurn, MOVE_DIR.UP, 2);     // (10,1)(10,2)
+            Walk(cTurn, cMoveTurn, MOVE_DIR.LEFT, 2);   // (9,2)(8,2)
+            Check("굴절 — 꺾인 자리는 굴절할 수 없다(도화선으로 폴백)",
+                  cTurn.Try_Insert_Detour(new Vector2Int(10, 2), new Vector2Int(0, 1), 1, out int _) == false);
+
+            // 우회로 자리에 테두리(점령지)가 걸리면 거절한다 — 깊이를 테두리까지 닿을 만큼 크게 잡는다
+            CTerritoryGrid cWall = Make_Grid();
+            CMoveHandler cMoveWall = Make_Move(cWall);
+            Walk(cWall, cMoveWall, MOVE_DIR.UP, 3);   // (10,1)(10,2)(10,3)
+            Check("굴절 — 우회로가 테두리(점령지)에 걸리면 거절한다",
+                  cWall.Try_Insert_Detour(new Vector2Int(10, 2), new Vector2Int(1, 0), 9, out int _) == false);
+            Check("굴절 실패 뒤에는 트레일이 그대로다", Mathf.RoundToInt(cWall.TRAIL_LENGTH), 3);
         }
 
         // 260928_로그라이트 재작성(Docs/Design_Roguelite_Rewrite.md 5장) — 시간 초과는 더 이상 실패가 아니라
