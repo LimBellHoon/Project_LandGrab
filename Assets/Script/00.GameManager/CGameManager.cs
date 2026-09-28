@@ -592,8 +592,27 @@ namespace Client
                 iCount,
                 m_cAwakenTable,
                 eType => cRunSkill != null && cRunSkill.Is_Awakened(eType),
-                cOption => m_cStageManager.Is_Banished(cOption) == true || (fnExclude != null && fnExclude(cOption) == true),
+                cOption => m_cStageManager.Is_Banished(cOption) == true || Is_CardExcluded(cCard, cOption)
+                        || (fnExclude != null && fnExclude(cOption) == true),
                 eType => cCard != null ? cCard.Get_Level(eType) : 0);
+        }
+
+        // 260928_배타 카드 쌍(태스크 #23, Docs/Design_Roguelite_Rewrite.md §7) — M04_UNBREAKABLE_RUSH와
+        // K08_WHIRL은 둘 다 "귀환"을 덮어쓴다(2-26 §2-3의 안전 귀환 버튼 하나를 두고 다툰다) — 하나를 들고
+        // 있으면 남은 배타 대상은 후보에서 빠진다. CPickOption_Utility.Pick의 fnExclude(2-10-1, 이미 있는
+        // 확장점)에 규칙을 얹는 형태라 Pick 자체는 손대지 않았다.
+        private static bool Is_CardExcluded(CCardHandler cCard, CPickOption cOption)
+        {
+            if (cCard == null || cOption.eKind != PICK_KIND.CARD || cOption.cCard == null)
+                return false;
+
+            CARD_TYPE eType = cOption.cCard.eType;
+            if (eType == CARD_TYPE.M04_UNBREAKABLE_RUSH)
+                return cCard.Has(CARD_TYPE.K08_WHIRL);
+            if (eType == CARD_TYPE.K08_WHIRL)
+                return cCard.Has(CARD_TYPE.M04_UNBREAKABLE_RUSH);
+
+            return false;
         }
 
         // 260921_다시 뽑기 — 세 장을 새로 뽑는다. 횟수가 없으면 null

@@ -23,6 +23,10 @@ namespace Client
         private const int   SELF_TRAIL_DAMAGE = 9999;
         // 260923_보호막이 한 번에 쌓을 수 있는 최대 충전 수.
         private const int   SHIELD_MAX = 3;
+        // 260928_카드 30종 상한(태스크 #23, Docs/Design_Roguelite_Rewrite.md §7) — 최대 HP는 카드(G05/M07대형)로
+        // 아무리 불려도 이 값을 넘지 않는다. SHIELD_MAX와 같은 자리(코드 상수, CSV/GameConfig가 아니다 —
+        // 규칙 숫자가 아니라 밸런스 상한이라 여기 둔다).
+        private const int   MAX_LIFE_CAP = 6;
 
         private readonly CInputHandler m_cInputHandler = new CInputHandler();
         private readonly CMoveHandler  m_cMoveHandler  = new CMoveHandler();
@@ -849,14 +853,22 @@ namespace Client
                 m_iExtinguisherCharge = iMax;
         }
 
-        /// <summary> G05_STURDY/M07_SIZE_SHIFT(대형) — 최대 HP를 늘리고 그만큼 그 자리에서 채워 준다. </summary>
+        /// <summary>
+        /// G05_STURDY/M07_SIZE_SHIFT(대형) — 최대 HP를 늘리고 그만큼 그 자리에서 채워 준다.
+        /// 260928_MAX_LIFE_CAP(6)을 넘지 않는다 — 두 카드를 같이 만렙까지 찍으면(3+4=7) 넘칠 수 있어
+        /// 늘어난 만큼만 실제로 적용한다(요청한 iAmount보다 적게 붙을 수 있다는 뜻).
+        /// </summary>
         public void Add_CardMaxLife(int iAmount)
         {
             if (iAmount <= 0)
                 return;
 
-            m_iMaxLife += iAmount;
-            m_iLife = Mathf.Min(m_iMaxLife, m_iLife + iAmount);
+            int iApplied = Mathf.Min(iAmount, MAX_LIFE_CAP - m_iMaxLife);
+            if (iApplied <= 0)
+                return;
+
+            m_iMaxLife += iApplied;
+            m_iLife = Mathf.Min(m_iMaxLife, m_iLife + iApplied);
             OnLifeChanged?.Invoke(m_iLife);
         }
 

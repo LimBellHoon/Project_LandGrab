@@ -2360,6 +2360,10 @@ namespace Client
             Check("G05 2레벨 — 델타만큼만 더 는다", cPlayer.MAX_LIFE, iMaxLifeBefore + 2);
             Check("카드 레벨도 같이 올랐다", cPlayer.CARD.Get_Level(CARD_TYPE.G05_STURDY), 2);
 
+            // 260928_상한(태스크 #23) — 최대 HP는 카드를 아무리 겹쳐도 MAX_LIFE_CAP(6)을 넘지 않는다
+            cPlayer.Add_CardMaxLife(100);
+            Check("최대 HP 상한 — 아무리 더해도 6을 넘지 않는다", cPlayer.MAX_LIFE, 6);
+
             CCardInfo cF05 = cTable.Get_Info(48);
             Check("F05 있다", cF05 != null && cF05.eType == CARD_TYPE.F05_FUSE_BOMB);
             cPlayer.Add_Card(cF05);   // 1레벨 — 충전 1
