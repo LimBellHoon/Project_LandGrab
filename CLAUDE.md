@@ -118,6 +118,14 @@ Assets/Data/                EnemyInfo.csv, MapInfo.csv  ← 기획 데이터
 ```
 
 ### 2-3. 핵심 — 영토 표현
+> 260928_**다시 칸 기반으로 되돌렸다**(로그라이트 전면 재작성, 2-26 참고). 아래 다각형 서술(260923~260924)은
+> 지금 코드와 다르다 — `CTerritoryGrid`는 다시 `CELL_STATE[]` 배열 + 플러드필이고, `CMoveHandler`는 칸 중심
+> 스냅 이동이다. `RINGS`·`Try_Find_BoundaryLocation`·올가미 규칙(`Try_Capture_Lasso`)은 없어졌고, Clipper2는
+> 리포에 남아 있지만 더 이상 참조하지 않는다. `Is_OwnedPoint`·`Try_Find_NearestBoundary`·`Step_To`처럼
+> 이름이 같은 API도 있지만(호출부 대부분이 그대로 컴파일되게 하려던 것) 내부는 칸 조회로 바뀌었고
+> `Step_To`는 이제 `Vector2Int`(칸) 두 개를 받는다. 8방향 · 나선형 이동(2-22)은 이번 범위에서 보류다.
+> 아래 260901~260924 기록은 그 시절 판단 근거로만 참고할 것 — 지금 동작을 설명하지 않는다.
+
 > 260923_**다각형 방식으로 바꿨다**(예전 결정 "그리드 마스크 + 플러드필, 폴리곤 아님"을 뒤집었다).
 > 칸 단위로는 사선이 계단, 나선이 네모가 되어 **그은 모양 그대로 먹을 수 없었다.** 이제 선과 점령지가 완전히 매끈하다.
 
@@ -1582,6 +1590,12 @@ CGameManager.On_Stylish  글자(CUI_InGame.Show_Callout) · 소리 · 진동 · 
 - 개발 스위치 `m_bStylishEnabled` · 세기 `m_fPunchOnStylish` · `m_fTraumaOnStylish`(`GameConfig.asset`, 1-6). 옵션 UI에는 아직 안 올렸다
 
 ### 2-22. 캐릭터별 이동 방식 (260920)
+> 260928_**8방향(`EIGHT_WAY`) · 나선형(`SPIRAL`)은 로그라이트 재작성 범위에서 보류다**(2-26).
+> `MOVE_STYLE`·`CharacterInfo.csv`의 `eMoveStyle` 값은 그대로 있고 `CMoveHandler.Set_MoveStyle`도
+> 값을 저장하지만, 실제 이동은 **어떤 값이어도 4방향처럼 동작한다** — 대각선 입력 자체를 받지 않는다
+> (`CTerritoryGrid.Is_Diagonal`인 방향은 `MOVE_DIR.NONE`으로 바뀐다). 아래 서술(연속 대각선 · 나선 궤적)은
+> 코드를 지우지 않았을 뿐 지금은 동작하지 않는다 — 되살릴 때 참고할 기록으로 남겨 둔다.
+
 캐릭터가 스킨과 스탯 배율만 다른 상태였는데(2-17), **어떻게 움직이는가**를 캐릭터마다 다르게 줬다.
 같은 맵도 조작감이 달라지므로 캐릭터를 바꿀 이유가 생긴다.
 
@@ -1871,8 +1885,44 @@ CGameManager            OnFieldItemUsed → 소리 · 진동
 연결하지 않았다(표시·보상 여부는 기획 확인 필요, `Docs/Design_Roguelite_Rewrite.md` 9장 참고).
 `Calc_TimeStar`는 순수 static이라 화면 없이 `CProtoTest.Test_TimeStar`가 검증한다.
 
-**나머지(격자 이동 재작성·칸 기반 점령 회귀·그로기/기절·새 카드 30종)는 아직 코드 미착수** — 순서와
-각 단계의 구체안은 설계 문서에 있다.
+#### 260928_격자 이동 재작성 + 칸 기반 점령 회귀 (설계 문서 2장·3장)
+`CTerritoryGrid`(다각형 → `CELL_STATE[]` 배열 + 플러드필)와 `CMoveHandler`(연속 경계 미끄러짐 → 칸 중심
+스냅 이동)를 다시 썼다. **공개 API 이름·시그니처는 최대한 그대로 두고 내부만 바꿨다** — `Is_OwnedPoint` ·
+`Is_PlayablePoint` · `Try_Find_NearestBoundary` · `Distance_ToBoundary` · `Erode_Near` · `Try_Find_TrailTouch` ·
+`Get_TrailPoint` · `TRAIL_PIECES` 등은 시그니처가 같아서, 이 API만 쓰던 `CPlayer` · `CStage_Manager` ·
+`CEnemyMoveHandler` · 기믹/픽업 클래스들은 **한 줄도 고치지 않았다**(grep으로 폴리곤 전용 내부를
+쓰는 곳이 `CGridRenderer`·`CMoveHandler`뿐임을 먼저 확인하고 잡은 전략). `CTerritoryGrid.Step_To`만
+`(Vector2 vFrom, Vector2 vTo, out Vector2 vEnd, out int)`에서 `(Vector2Int vFrom, Vector2Int vTo, out int)`로
+바뀌었는데, 이걸 직접 부르는 곳이 `CMoveHandler`와 `CProtoTest`뿐이라 파급이 작았다.
+
+- **트레일은 칸 인덱스 목록(규칙용) + 그리드 공간 폴리라인(렌더링·도화선용)을 같이 든다.** 폴리라인은
+  칸 중심을 잇지만 **첫 조각의 맨 앞에 "나간 자리"(직전 안전 칸의 중심)를 하나 더 붙여** 경계와
+  이어져 보이게 한다. 어디로든 신발로 반대편에 넘어가면(칸 사이가 안 붙어 있으면) 새 조각을 시작한다 —
+  `Try_Find_TrailTouch`/`Get_TrailPoint`/`BURN_FROM`/`BURN_TO`(2-14-1 도화선)는 이 폴리라인을 그대로 쓰므로
+  거의 손대지 않았다
+- **점령 규칙은 다시 "가장 넓은 빈 땅 하나만 남기고 나머지를 먹는다"**(260901~260922 시절, 올가미 규칙
+  이전)다. 칸은 폭이 있으므로(선 자체가 1칸을 차지) 같은 모양이라도 다각형 시절보다 조금 더 넓게
+  잡힌다 — 버그가 아니라 칸으로 돌아온 것 자체의 트레이드오프다(`CProtoTest.Test_CaptureWithoutEnemy` 참고)
+- **손을 떼거나 반대로 꺾어도 선을 긋는 중이면 멈추지 않는다**(원본 스펙 §1, `CProtoTest.Test_ContinueWhileDrawing`).
+  260921에는 손을 떼면 그 자리에 섰는데 이번엔 뒤집었다 — **역주행 입력만 무시**하고 마지막 방향을 그대로 잇는다.
+  내 땅 위에서는 그대로 정지가 기본이다(260902_선분 자동 추적, 변경 없음)
+- **8방향 · 나선형은 이번 범위에서 보류**(위 2-22 참고). `CMoveHandler`가 대각선 입력을 아예 받지 않는다
+- **`CGridRenderer.Refresh_All`도 칸 그대로 뚫는 방식으로 단순해졌다** — 다각형 시절의 서브픽셀
+  안티앨리어싱(가로줄을 4번 나눠 재기)이 필요 없어져 걷어냈다. 트레일 메시(`Refresh_Trail`/`Build_Trail`/
+  `Draw_Part`)는 `TRAIL_PIECES` API가 그대로라 손대지 않았다
+- **선예약(칸 중앙 도달 전 입력 버퍼) · 30% 후보정 · 안전 귀환 버튼 · 실시간 점유율 미리보기**(설계 문서 §2)는
+  아직 안 붙였다 — 칸 경계에서만 방향을 다시 읽는 지금 구조가 이미 스펙의 취지("전환은 칸 중심에서만
+  일어난다")를 대부분 만족해서 우선순위를 낮췄다. 필요해지면 이어서 붙일 것
+- **어디로든 신발은 좌우(가로)만 잇는다** — 260923에 추가됐던 위아래(세로) 랩은 이번 범위에서 보류다
+  (`CMoveHandler.Get_NextCell`이 X축만 모듈로 감는다)
+- `CProtoTest`도 같이 갈아엎었다 — 올가미(`Test_CaptureLasso`) · 8방향 사선 점령(`Test_CaptureDiagonal`) ·
+  자유 8방향(`Test_FreeEightWay`) · 나선형(`Test_SpiralMove`) · 부드러운 경계 추적(`Test_FollowBoundary`)
+  테스트는 지금 동작하지 않는 기능이라 지웠다. `Test_TinyCaptureIsNotCapture`는 `Test_MinCaptureIsOneCell`로,
+  `Test_EdgeWrapBothAxis`는 `Test_EdgeWrap`(좌우만)으로, `Test_StopWhileDrawing`은 `Test_ContinueWhileDrawing`
+  (반대 결과를 검증)으로 바뀌었다. `PLAYER_START`도 옛 경계 **선**(`y=BORDER_THICK`)이 아니라 경계 **칸의
+  가운데**(`y=BORDER_THICK-0.5`)를 가리키도록 고쳤다 — 칸 스냅 이동은 항상 칸 중심에 선다
+
+**나머지(그로기/기절·새 카드 30종·굴절)는 아직 코드 미착수** — 순서와 각 단계의 구체안은 설계 문서에 있다.
 
 ---
 

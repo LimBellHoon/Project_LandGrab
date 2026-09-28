@@ -16,8 +16,9 @@ namespace Client
     /// N웨이브의 가림막은 이미지 스택의 [N-1]이고, 그걸 다 걷으면 [N]이 나온다.
     /// 그래서 1웨이브의 가림막이 곧 '마스크'다 (MapInfo.csv의 strLayerTex 참고).
     ///
-    /// 260923_땅이 다각형이 되면서 가림막도 **다각형 모양 그대로** 뚫는다 — 가장자리는 픽셀을 나눠 재어 부드럽게 옅어진다.
-    /// 긋는 중인 선은 가림막에 찍지 않고 띠 메시(CTrailMesh_Utility)로 따로 그린다 — 사선 · 곡선이 계단 없이 보인다.
+    /// 260928_로그라이트 재작성으로 땅이 다시 칸이 됐다(Docs/Design_Roguelite_Rewrite.md 3장) — 가림막도
+    /// 칸 그대로 뚫는다(칸 하나 = 사각형 하나, 안티앨리어싱 없음). 긋는 중인 선은 가림막에 찍지 않고
+    /// 띠 메시(CTrailMesh_Utility)로 따로 그린다 — 트레일이 칸을 따라가는 꺾은선이라도 매끈하게 보인다.
     ///
     /// 260912_사본은 원본과 같은 해상도로 만든다.
     /// 한 장이 이번 웨이브에는 보상(reveal)이었다가 다음 웨이브에는 가림막(cover)이 되므로,
@@ -37,8 +38,6 @@ namespace Client
         private const float             GLOW_ALPHA      = 0.25f;                            // 260924_발광 띠의 진하기
         private static readonly Color32 COLOR_BLOCK     = new Color32(0, 0, 0, 255);        // 맵 밖
 
-        // 260923_가림막을 다각형으로 뚫을 때 한 픽셀 줄을 몇 번 나눠 재는가 — 가장자리가 계단 없이 옅어진다
-        private const int   COVERAGE_SUBROW   = 4;
         private const float TRAIL_WIDTH_DEFAULT = 0.3f;    // 260924_선 굵기 기본값(칸). GameConfig로 덮어쓴다
         private const float FIRE_LENGTH_CELL  = 0.8f;      // 불 머리 길이(칸)
         private const float GLOW_WIDTH_SCALE  = 2.4f;      // 260924_발광 띠는 본 선의 몇 배 굵기인가
@@ -56,8 +55,6 @@ namespace Client
 
         private Color32[]   m_arrPixel;         // 마스크 전체 픽셀
         private Color32[]   m_arrCoverPixel;    // 가림막 이미지를 마스크 해상도로 미리 샘플링해 둔 것
-        private float[]     m_arrRowCoverage;   // 260923_한 줄의 픽셀마다 점령지가 덮은 비율(0~1)
-        private readonly List<float> m_lstCross = new List<float>();
 
         // 260923_선은 직접 만든 띠 메시로 그린다(CTrailMesh_Utility) — 왜 LineRenderer가 아닌지는 그 파일에 적어 두었다
         private GameObject              m_goTrailRoot;
@@ -176,10 +173,9 @@ namespace Client
             if (m_texMask != null)
                 Object.Destroy(m_texMask);
 
-            m_texMask        = null;
-            m_arrPixel       = null;
-            m_arrCoverPixel  = null;
-            m_arrRowCoverage = null;
+            m_texMask       = null;
+            m_arrPixel      = null;
+            m_arrCoverPixel = null;
         }
 
         private static void Clear_Sprite(SpriteRenderer srTarget, ref Sprite spOwned)
@@ -212,7 +208,6 @@ namespace Client
 
             m_arrPixel       = new Color32[m_iTexWidth * m_iTexHeight];
             m_arrCoverPixel  = new Color32[m_iTexWidth * m_iTexHeight];
-            m_arrRowCoverage = new float[m_iTexWidth];
 
             m_spMask = Sprite.Create(m_texMask, new Rect(0f, 0f, m_iTexWidth, m_iTexHeight),
                                      new Vector2(0.5f, 0.5f), 100f, 0u, SpriteMeshType.FullRect);
@@ -398,76 +393,41 @@ namespace Client
             Refresh_Trail();
         }
 
-        // 260923_가림막을 점령지 다각형 모양으로 뚫는다. 픽셀 한 줄을 COVERAGE_SUBROW번 나눠 가로줄이 경계와 만나는
-        // x를 구하고, 그 사이에 든 몫만큼 픽셀을 투명하게 한다 — 가장자리가 반쯤 걸친 픽셀은 반쯤 비친다.
+        // 260928_로그라이트 재작성 — 땅이 다시 칸이 되면서(3장) 가림막도 칸 그대로 뚫는다.
+        // 칸은 축에 맞춘 사각형이라 다각형 시절의 서브픽셀 안티앨리어싱(가로줄을 여러 번 나눠 재기)이
+        // 필요 없어졌다 — 그 칸이 OWNED인지만 보고 통째로 뚫거나 덮는다.
         private void Refresh_All()
         {
             if (m_texMask == null)
                 return;
 
-            IReadOnlyList<Vector2[]> lstRing = m_cGrid.RINGS;
             float fPixelPerCellX = (float)m_iTexWidth / m_cGrid.WIDTH;
             float fCellPerPixelY = (float)m_cGrid.HEIGHT / m_iTexHeight;
-            float fSubWeight     = 1f / COVERAGE_SUBROW;
 
             for (int py = 0; py < m_iTexHeight; ++py)
             {
-                System.Array.Clear(m_arrRowCoverage, 0, m_iTexWidth);
-
-                for (int iSub = 0; iSub < COVERAGE_SUBROW; ++iSub)
-                {
-                    float fGridY = (py + (iSub + 0.5f) * fSubWeight) * fCellPerPixelY;
-                    CPolygon_Utility.Collect_RowCrossings(lstRing, fGridY, m_lstCross);
-
-                    for (int k = 0; k + 1 < m_lstCross.Count; k += 2)
-                        Add_Span(m_lstCross[k] * fPixelPerCellX, m_lstCross[k + 1] * fPixelPerCellX, fSubWeight);
-                }
-
-                int iRow  = py * m_iTexWidth;
+                int iRow   = py * m_iTexWidth;
                 int iCellY = Mathf.Min(m_cGrid.HEIGHT - 1, (int)(py * fCellPerPixelY));
 
                 for (int px = 0; px < m_iTexWidth; ++px)
                 {
                     int iCellX = Mathf.Min(m_cGrid.WIDTH - 1, (int)(px / fPixelPerCellX));
-                    if (m_cGrid.Get_Cell(iCellX, iCellY) == CELL_STATE.BLOCK)
+                    CELL_STATE eState = m_cGrid.Get_Cell(iCellX, iCellY);
+
+                    if (eState == CELL_STATE.BLOCK)
                     {
                         m_arrPixel[iRow + px] = COLOR_BLOCK;
                         continue;
                     }
 
                     Color32 cColor = m_arrCoverPixel[iRow + px];
-                    cColor.a = (byte)Mathf.RoundToInt(255f * (1f - Mathf.Clamp01(m_arrRowCoverage[px])));
+                    cColor.a = eState == CELL_STATE.OWNED ? (byte)0 : (byte)255;
                     m_arrPixel[iRow + px] = cColor;
                 }
             }
 
             m_texMask.SetPixels32(m_arrPixel);
             m_texMask.Apply(false);
-        }
-
-        // 픽셀 좌표 [fX0, fX1)을 덮었다 — 걸친 몫만큼 더한다
-        private void Add_Span(float fX0, float fX1, float fWeight)
-        {
-            fX0 = Mathf.Max(0f, fX0);
-            fX1 = Mathf.Min(m_iTexWidth, fX1);
-            if (fX1 <= fX0)
-                return;
-
-            int iStart = (int)fX0;
-            int iEnd   = Mathf.Min(m_iTexWidth - 1, (int)fX1);
-
-            if (iStart == iEnd)
-            {
-                m_arrRowCoverage[iStart] += (fX1 - fX0) * fWeight;
-                return;
-            }
-
-            m_arrRowCoverage[iStart] += (iStart + 1 - fX0) * fWeight;
-            for (int px = iStart + 1; px < iEnd; ++px)
-                m_arrRowCoverage[px] += fWeight;
-
-            if (iEnd < m_iTexWidth)
-                m_arrRowCoverage[iEnd] += (fX1 - iEnd) * fWeight;
         }
 
         // 260923_긋는 중인 선. 도화선이 탄 구간은 빼고, 불 머리는 주황으로 그린다

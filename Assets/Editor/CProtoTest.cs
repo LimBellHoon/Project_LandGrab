@@ -17,8 +17,9 @@ namespace Client
     {
         private const int   GRID_SIZE       = 20;
         private const int   BORDER_THICK    = 1;
-        // 260923_플레이어 시작 자리(그리드 공간) — 아래 테두리의 윗변 가운데
-        private static readonly Vector2 PLAYER_START = new Vector2(GRID_SIZE / 2 + 0.5f, BORDER_THICK);
+        // 260928_로그라이트 재작성 — 플레이어 시작 자리(그리드 공간)는 이제 칸 중심이다(칸 (x,BORDER_THICK-1)의 가운데).
+        // 다각형 시절에는 경계 '선'(y=BORDER_THICK) 위에서 시작했지만, 칸 스냅 이동에서는 항상 칸 중심에 선다.
+        private static readonly Vector2 PLAYER_START = new Vector2(GRID_SIZE / 2 + 0.5f, BORDER_THICK - 0.5f);
         private const float STEP_SPEED      = 1f;   // 속도 1 · dt 1 → Tick 1회당 정확히 한 칸 이동
 
         private static StringBuilder s_sbLog;
@@ -34,15 +35,12 @@ namespace Client
 
             Test_InitialBorder();
             Test_CaptureWithoutEnemy();
-            Test_CaptureDiagonal();
-            Test_CaptureLasso();
             Test_ClearTrail();
             Test_StepOnOwnTrailIsDeadly();
             Test_MoveRules();
             Test_BoundaryOnlyMove();
-            Test_FollowBoundary();
-            Test_TinyCaptureIsNotCapture();
-            Test_EdgeWrapBothAxis();
+            Test_MinCaptureIsOneCell();
+            Test_EdgeWrap();
             Test_TrailMesh();
             Test_LineFollow();
             Test_EnemyTable();
@@ -66,12 +64,10 @@ namespace Client
             Test_TrailZoom();
             Test_Account();
             Test_MoveSkill();
-            Test_SpiralMove();
-            Test_FreeEightWay();
             Test_Erode();
             Test_Fuse();
             Test_TimeStar();
-            Test_StopWhileDrawing();
+            Test_ContinueWhileDrawing();
             Test_PickRnD();
             Test_StyleTracker();
             Test_EnemyStaysInside();
@@ -127,10 +123,9 @@ namespace Client
             Check("시작 시 선분 없음", cGrid.IS_DRAWING == false);
             Check("테두리는 안전 지대", cGrid.Get_Cell(0, 0) == CELL_STATE.OWNED);
             Check("내부는 미점령", cGrid.Get_Cell(10, 10) == CELL_STATE.EMPTY);
-            // 260923_진짜 모양은 다각형이다 — 칸 사본과 같은 답을 내야 한다
-            Check("다각형 — 테두리 안의 점은 점령지", cGrid.Is_OwnedPoint(new Vector2(0.5f, 10f)));
-            Check("다각형 — 가운데 점은 빈 땅", cGrid.Is_EmptyPoint(new Vector2(10f, 10f)));
-            Check("다각형 — 맵 밖은 빈 땅이 아니다", cGrid.Is_EmptyPoint(new Vector2(-1f, 10f)) == false);
+            Check("점 질의 — 테두리 안의 점은 점령지", cGrid.Is_OwnedPoint(new Vector2(0.5f, 10f)));
+            Check("점 질의 — 가운데 점은 빈 땅", cGrid.Is_EmptyPoint(new Vector2(10f, 10f)));
+            Check("점 질의 — 맵 밖은 빈 땅이 아니다", cGrid.Is_EmptyPoint(new Vector2(-1f, 10f)) == false);
         }
 
         // 가장 넓은 영역만 남기고 나머지를 점령한다
@@ -139,64 +134,21 @@ namespace Client
             CTerritoryGrid cGrid = Make_Grid();
             int iCaptured = Walk_ClosedLoop(cGrid, out CMoveHandler _);
 
-            // 260923_(10.5, 1)에서 위로 5 → 왼쪽 7 → 아래로 5, 테두리(y=1)에 닿아 닫힌다 — 가로 7 x 세로 5 = 35칸
-            Check("점령 넓이(둘러싼 직사각형)", iCaptured, 35);
+            // 260928_칸 (10,0)에서 위로 5 → 왼쪽 7 → 아래로 5, 테두리(행 0)에 닿아 닫힌다 —
+            // 선이 지나간 칸(16) + 안에 갇힌 칸(cols 4~9 x rows 1~4 = 24) = 40칸.
+            // 칸 기반으로 돌아오면서 선 자체도 폭 1칸을 차지한다 — 다각형 시절의 '선은 거의 폭이 없다'와
+            // 다른 점이다(2-3, 칸으로 돌아가는 것 자체의 트레이드오프).
+            Check("점령 넓이(둘러싼 직사각형)", iCaptured, 40);
             Check("점령 후 선분 없음", cGrid.IS_DRAWING == false);
             Check("둘러싼 안쪽이 점령됨", cGrid.Is_OwnedPoint(new Vector2(7f, 3f)));
             Check("바깥 영역은 미점령 유지", cGrid.Is_EmptyPoint(new Vector2(15f, 15f)));
-            Check("선 바로 바깥은 그대로 빈 땅(선 두께만큼만 먹는다)", cGrid.Is_EmptyPoint(new Vector2(10.6f, 3f)));
             Check("칸 사본도 같이 바뀐다", cGrid.Get_Cell(6, 2) == CELL_STATE.OWNED && cGrid.Get_Cell(15, 15) == CELL_STATE.EMPTY);
         }
 
-        // 260923_올가미 규칙(2-3) — 넓이가 아니라 **내가 두른 안쪽**을 먹는다.
-        // 예전(가장 넓은 조각만 남기기)에는 두른 쪽이 남은 땅보다 넓어지면 정반대가 점령됐다.
-        private static void Test_CaptureLasso()
-        {
-            CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(20, 20, 1f, Vector2.zero, 0, null, 2);   // 20x20 · 가운데 작은 섬 [8,11]
-
-            CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(9.5f, 8f), 1f);
-
-            // 섬을 크게 한 바퀴 둘러 돌아온다 — 두른 안쪽(226칸)이 바깥 테두리(151칸)보다 넓다
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 6);
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 8);
-            Walk(cGrid, cMove, MOVE_DIR.UP, 16);
-            Walk(cGrid, cMove, MOVE_DIR.RIGHT, 16);
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 16);
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7);
-            int iCaptured = Walk(cGrid, cMove, MOVE_DIR.UP, 7);
-
-            Check("올가미 — 두른 안쪽을 먹는다(바깥 151칸이 아니다)", iCaptured > 200);
-            Check("올가미 — 두른 안쪽 왼쪽", cGrid.Is_OwnedPoint(new Vector2(5f, 10f)));
-            Check("올가미 — 두른 안쪽 위", cGrid.Is_OwnedPoint(new Vector2(9.5f, 15f)));
-            Check("올가미 — 두른 바깥 구석은 빈 땅", cGrid.Is_EmptyPoint(new Vector2(0.5f, 0.5f)));
-            Check("올가미 — 두른 바깥 오른쪽은 빈 땅", cGrid.Is_EmptyPoint(new Vector2(19f, 10f)));
-
-            // 작게 두르는 평소 경우도 그대로다 — 두른 쪽이 작을 때는 예전 규칙과 같은 답이 나온다
-            CTerritoryGrid cSmall = Make_Grid();
-            Check("올가미 — 작게 두르면 예전과 같다", Walk_ClosedLoop(cSmall, out CMoveHandler _), 35);
-        }
-
-        // 260923_사선으로 그으면 사선 모양 그대로 먹는다 — 칸 시절에는 계단이 됐다(2-3)
-        private static void Test_CaptureDiagonal()
-        {
-            CTerritoryGrid cGrid = Make_Grid();
-            CMoveHandler cMove = Make_Move(cGrid);
-            cMove.Set_MoveStyle(MOVE_STYLE.EIGHT_WAY);
-
-            // (10.5, 1) → 위로 5 → 왼쪽 1 → 왼쪽 아래 대각선으로 테두리까지(곧장 꺾으면 뒤로 꺾는 입력이라 막힌다)
-            // 꼭짓점 (10.5,1) (10.5,6) (9.5,6) (4.5,1) 사다리꼴 = (1 + 6) / 2 * 5 = 17.5칸
-            Walk(cGrid, cMove, MOVE_DIR.UP, 5);
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 1);
-            int iCaptured = Walk(cGrid, cMove, MOVE_DIR.DOWN_LEFT, 10);
-
-            Check("사선 — 사다리꼴 넓이만큼 먹었다", iCaptured >= 17 && iCaptured <= 18);
-            Check("사선 — 빗변 아래는 점령", cGrid.Is_OwnedPoint(new Vector2(9f, 3f)));
-            Check("사선 — 빗변 위는 빈 땅", cGrid.Is_EmptyPoint(new Vector2(7f, 4f)));
-            // 빗변은 x = y + 3.5 — 계단이 아니라 곧은 선이라 바로 옆까지 정확하다
-            Check("사선 — 빗변 바로 옆까지 정확하다", cGrid.Is_OwnedPoint(new Vector2(7.5f, 3.9f)) && cGrid.Is_EmptyPoint(new Vector2(7.5f, 4.1f)));
-        }
+        // 260928_로그라이트 재작성 — 올가미 규칙(260923 다각형 전용)과 8방향 사선 점령은 칸 기반으로
+        // 돌아가며 함께 걷어냈다(Docs/Design_Roguelite_Rewrite.md 1장·3장). 칸 점령은 다시 "가장 넓은
+        // 빈 땅 하나만 남기고 나머지를 먹는다"는 옛 규칙(Test_CaptureWithoutEnemy가 검증)으로 돌아갔고,
+        // 대각선 이동(2-22 EIGHT_WAY)은 이번 재작성 범위에서 보류다.
 
         // 사망 시 그리던 선분이 원상복구되는가
         private static void Test_ClearTrail()
@@ -220,172 +172,128 @@ namespace Client
             CTerritoryGrid cGrid = Make_Grid();
             CMoveHandler cMove = Make_Move(cGrid);
 
-            Walk(cGrid, cMove, MOVE_DIR.UP, 4);       // (10.5, 5)
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 2);     // (8.5, 5)
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 2);     // (8.5, 3)
+            Walk(cGrid, cMove, MOVE_DIR.UP, 4);       // (10.5, 4.5)
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 2);     // (8.5, 4.5)
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 2);     // (8.5, 2.5)
 
-            // 오른쪽으로 가면 x=10.5의 자기 선을 가로지른다
+            // 오른쪽으로 가면 열10의 자기 선을 가로지른다
             Check("자기 선 가로지르기 = DEAD", Walk_Result(cGrid, cMove, MOVE_DIR.RIGHT, 3) == STEP_RESULT.DEAD);
 
-            // 규칙 직접 — 선이 점령지로 들어가면 CAPTURE, 선이 없으면 SAFE
+            // 규칙 직접(칸 단위) — 선이 점령지로 들어가면 CAPTURE, 선이 없으면 SAFE
             CTerritoryGrid cRule = Make_Grid();
-            cRule.Begin_Trail(new Vector2(10.5f, 1f));
-            cRule.Step_To(new Vector2(10.5f, 1f), new Vector2(10.5f, 5f), out Vector2 _, out int _);
+            cRule.Step_To(new Vector2Int(10, 0), new Vector2Int(10, 1), out int _);   // 안전 지대 → 미점령(선 시작)
             Check("점령지로 들어가면 CAPTURE",
-                  cRule.Step_To(new Vector2(10.5f, 5f), new Vector2(0.5f, 5f), out Vector2 vEnd, out int _) == STEP_RESULT.CAPTURE);
-            Check("들어간 자리는 경계(x=1)", Mathf.Abs(vEnd.x - 1f) < 0.01f);
+                  cRule.Step_To(new Vector2Int(10, 1), new Vector2Int(10, 0), out int _) == STEP_RESULT.CAPTURE);
 
             CTerritoryGrid cClean = Make_Grid();
-            Check("선이 없으면 SAFE", cClean.Step_To(new Vector2(5f, 1f), new Vector2(6f, 1f), out Vector2 _, out int _) == STEP_RESULT.SAFE);
+            Check("선이 없으면 SAFE", cClean.Step_To(new Vector2Int(0, 0), new Vector2Int(0, 1), out int _) == STEP_RESULT.SAFE);
         }
 
-        // 이동 규칙: 점령지 안쪽으로는 못 들어감 · 안전 지대에서 정지 · 260921_미점령 지대에서도 정지 · 180도 반전 차단
+        // 이동 규칙: 점령지 안쪽으로는 못 들어감 · 안전 지대에서 정지 · 260921_미점령 지대에서도 정지
+        // 260928_테두리 두께 1짜리는 전부 경계라(2-3) 진짜 '내부'를 보려면 시작 섬(반지름 2)을 쓴다.
         private static void Test_MoveRules()
         {
-            CTerritoryGrid cGrid = Make_Grid();
-            CMoveHandler cMove = Make_Move(cGrid);
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(GRID_SIZE, GRID_SIZE, 1f, Vector2.zero, 0, null, 2);   // 섬 [8,12] (가운데 10,10)
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2(10.5f, 8.5f), STEP_SPEED);   // 섬 아래쪽 경계 칸(10,8)
             Vector2 vStart = cMove.POS;
 
-            // 아래는 테두리(점령지) 안쪽 → 이동 불가
-            cMove.Tick(1f, MOVE_DIR.DOWN, out int _);
+            // 위로 가면 섬 안쪽(10,9) — 경계가 아닌 진짜 내부라 이동 불가
+            cMove.Tick(1f, MOVE_DIR.UP, out int _);
             Check("점령지 안쪽으로는 못 들어감", cMove.POS == vStart);
 
             // 안전 지대에서 입력이 없으면 정지
             cMove.Tick(1f, MOVE_DIR.NONE, out int _);
             Check("안전 지대에서 정지", cMove.POS == vStart);
 
-            // 260921_미점령 지대에서도 입력이 없으면 멈춘다
-            Walk(cGrid, cMove, MOVE_DIR.UP, 2);
-            Check("선을 그리기 시작", cGrid.IS_DRAWING && Near(cMove.POS, vStart + new Vector2(0f, 2f)));
+            // 아래(바깥)로 누르면 선을 긋기 시작한다
+            Walk(cGrid, cMove, MOVE_DIR.DOWN, 2);
+            Check("선을 그리기 시작", cGrid.IS_DRAWING && Near(cMove.POS, vStart - new Vector2(0f, 2f)));
 
+            // 260921_미점령 지대에서도 입력이 없으면 멈춘다
             Vector2 vHold = cMove.POS;
             Walk(cGrid, cMove, MOVE_DIR.NONE, 1);
             Check("미점령 지대에서도 손을 떼면 정지", cMove.POS == vHold);
-
-            // 180도 반전은 자기 선을 밟게 되므로 막는다 — 막히면 그 자리에 선다
-            Walk(cGrid, cMove, MOVE_DIR.DOWN, 1);
-            Check("180도 반전 차단", cMove.POS == vHold);
         }
-        // 260923_내 땅 위에서는 경계선을 따라 미끄러진다 — 안쪽으로는 못 들어가고, 바깥으로 누르면 선을 긋는다
+
+        // 260928_내 땅 위에서 경계를 따라간다 — 안쪽으로는 못 들어가고, 바깥으로 누르면 선을 긋는다.
+        // 칸으로 돌아오면서 260923의 부드러운 경계 미끄러짐(임의 각도)은 없어지고, 칸을 한 칸씩 짚어 가는
+        // 260902_선분 자동 추적으로 되돌아갔다(직각으로 막히면 수직 방향을 대신 찾는다, 2-3).
         private static void Test_BoundaryOnlyMove()
         {
             CTerritoryGrid cGrid = Make_Grid();
-            CMoveHandler cMove = Make_Move(cGrid);    // (10.5, 1) — 아래 테두리의 윗변
+            CMoveHandler cMove = Make_Move(cGrid);    // (10.5, 0.5) — 아래 테두리 칸(10,0)
 
             cMove.Tick(1f, MOVE_DIR.RIGHT, out int _);
-            Check("경계를 따라 오른쪽으로", Near(cMove.POS, new Vector2(11.5f, 1f)) && cGrid.IS_DRAWING == false);
+            Check("경계를 따라 오른쪽으로", Near(cMove.POS, new Vector2(11.5f, 0.5f)) && cGrid.IS_DRAWING == false);
 
             cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
             cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
-            Check("경계를 따라 왼쪽으로", Near(cMove.POS, new Vector2(9.5f, 1f)));
+            Check("경계를 따라 왼쪽으로", Near(cMove.POS, new Vector2(9.5f, 0.5f)));
 
-            // 260924_모서리에 닿아도 서지 않고 **옆 변을 타고 돌아** 계속 간다 — 예전엔 여기서 멈춰
-            // "점령지에서 자꾸 막힌다"가 됐다. 누르고 있는 동안 선을 따라가는 것이 이 게임의 조작감이다
+            // 오른쪽 끝(열19)에 닿으면 더 갈 곳이 없어 자동 추적이 위쪽(오른쪽 테두리 열)으로 방향을 튼다 —
+            // 테두리 두께 1이라 오른쪽 열 전체가 안전 지대다.
             for (int i = 0; i < 20; ++i)
                 cMove.Tick(1f, MOVE_DIR.RIGHT, out int _);
             Check("모서리를 돌아 옆 변으로 이어 간다",
-                  Mathf.Abs(cMove.POS.x - 19f) < 0.05f && cMove.POS.y > 2f && cGrid.IS_DRAWING == false);
+                  Mathf.Abs(cMove.POS.x - 19.5f) < 0.05f && cMove.POS.y > 2f && cGrid.IS_DRAWING == false);
 
-            // 바깥(빈 땅) 쪽으로 누르면 그 자리에서 선을 긋기 시작한다
+            // 빈 땅(지도 안쪽) 쪽으로 누르면 그 자리에서 선을 긋기 시작한다
             Vector2 vCorner = cMove.POS;
             cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
             Check("빈 땅 쪽으로 누르면 선을 긋는다", cGrid.IS_DRAWING && cMove.POS.x < vCorner.x - 0.5f);
         }
-        // 260923_경계선 따라가기 — 누른 방향이 변과 직각이면 돌던 방향으로 계속 간다(260902_선분 자동 추적의 다각형판)
-        private static void Test_FollowBoundary()
-        {
-            CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(40, 40, 1f, Vector2.zero, 0, null, 5);   // 섬 [15,26] x [15,26]
 
-            CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(20.5f, 26f), 9f);      // 섬 위쪽 경계 — 아래는 점령지 내부다
-
-            // 아직 아무 데도 안 가 본 상태에서 안쪽(아래)을 누르면 선다 — 따라갈 방향이 없다
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.2f, out int _, out Vector2 _, out Vector2 _);
-            Check("따라가기 — 돌던 방향이 없으면 안쪽 입력에 선다", Near(cMove.POS, new Vector2(20.5f, 26f)));
-
-            // 오른쪽으로 경계를 타다가
-            Run_Move(cGrid, cMove, MOVE_DIR.RIGHT, 0.2f, out int _, out Vector2 _, out Vector2 _);
-            Check("따라가기 — 경계를 따라 오른쪽으로 갔다", cMove.POS.x > 21f && Mathf.Abs(cMove.POS.y - 26f) < 0.01f);
-
-            // 아래(안쪽)를 눌러도 멈추지 않고 가던 방향으로 계속 간다
-            Vector2 vBefore = cMove.POS;
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.3f, out int _, out Vector2 _, out Vector2 _);
-            Check("따라가기 — 안쪽을 눌러도 선을 따라 계속 간다", cMove.POS.x > vBefore.x + 1f);
-            Check("따라가기 — 선 위에 그대로 있다", cGrid.Distance_ToBoundary(cMove.POS) < 0.01f && cGrid.IS_DRAWING == false);
-
-            // 260924_변 한가운데서 안쪽을 누르면(양쪽이 똑같으면) 그 자리에 선다 — 벽을 미는 셈이다
-            CMoveHandler cMid = new CMoveHandler();
-            cMid.Initialize(cGrid, new Vector2(20.5f, 26f), 9f);
-            Run_Move(cGrid, cMid, MOVE_DIR.DOWN, 0.3f, out int _, out Vector2 _, out Vector2 _);
-            Check("따라가기 — 곧은 변 한가운데서 안쪽을 누르면 선다", Near(cMid.POS, new Vector2(20.5f, 26f)));
-
-            // 260924_한쪽이 누른 방향으로 꺾이면 그 쪽으로 돈다 — 점령 직후 안쪽을 눌러도 막히지 않는 이유다
-            CMoveHandler cSide = new CMoveHandler();
-            cSide.Initialize(cGrid, new Vector2(24f, 15f), 9f);     // 섬 아래 변, 오른쪽 모서리에 가깝다
-            Run_Move(cGrid, cSide, MOVE_DIR.UP, 0.5f, out int _, out Vector2 _, out Vector2 _);
-            Check("따라가기 — 누른 방향으로 꺾이는 쪽으로 돈다", cSide.POS.x > 25f && cGrid.IS_DRAWING == false);
-
-            // 모서리를 돌아 오른쪽 변을 타고 내려가다가, 아래 경계에 닿으면 누르던 아래로 나간다
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 4f, out int _, out Vector2 _, out Vector2 _);
-            Check("따라가기 — 모서리를 돌아 내려간다", cMove.POS.y < 26f);
-            Check("따라가기 — 나갈 수 있게 되면 그 방향으로 나간다", cGrid.IS_DRAWING == true && cMove.POS.y < 15f);
-        }
-
-        // 260923_넓이가 없다시피 한 도형은 점령이 아니다 — 8방향에서 CHAIN 자막이 도배되던 원인
-        private static void Test_TinyCaptureIsNotCapture()
+        // 260928_칸 기반에서는 '넓이 0짜리 점령'이 있을 수 없다 — 한 칸이 최소 단위다.
+        // 한 칸 나갔다가 바로 돌아와도 정확히 그 한 칸만큼 점령된다(예전 8방향 전용 버그는 8방향과 함께 없어졌다).
+        private static void Test_MinCaptureIsOneCell()
         {
             CTerritoryGrid cGrid = Make_Grid();
             int iOwnedBefore = Count_Owned(cGrid);
 
-            // 테두리에서 한 걸음 나갔다가 곧바로 되돌아온다 — 감싼 넓이가 0이다
-            cGrid.Begin_Trail(new Vector2(10.5f, 1f));
-            cGrid.Step_To(new Vector2(10.5f, 1f), new Vector2(10.5f, 1.3f), out Vector2 _, out int _);
+            Check("한 칸 나가면 선을 긋는다",
+                  cGrid.Step_To(new Vector2Int(10, 0), new Vector2Int(10, 1), out int _) == STEP_RESULT.DRAW);
 
-            STEP_RESULT eResult = cGrid.Step_To(new Vector2(10.5f, 1.3f), new Vector2(10.6f, 0.9f),
-                                                out Vector2 _, out int iCaptured);
+            STEP_RESULT eResult = cGrid.Step_To(new Vector2Int(10, 1), new Vector2Int(10, 0), out int iCaptured);
+            Check("한 칸만 나갔다 돌아와도 점령이다", eResult == STEP_RESULT.CAPTURE);
+            Check("점령 넓이는 정확히 1칸", iCaptured, 1);
+            Check("점령 칸 수가 정확히 하나 늘었다", Count_Owned(cGrid), iOwnedBefore + 1);
 
-            Check("0칸 점령 — 점령으로 치지 않는다(SAFE)", eResult == STEP_RESULT.SAFE);
-            Check("0칸 점령 — 넓이 0", iCaptured, 0);
-            Check("0칸 점령 — 선은 사라진다", cGrid.IS_DRAWING == false);
-            Check("0칸 점령 — 점령 칸이 늘지 않는다", Count_Owned(cGrid) <= iOwnedBefore + 1);
-
-            // 제대로 감싼 도형은 그대로 점령된다
+            // 제대로 감싼 도형은 그만큼 정확히 점령된다
             CTerritoryGrid cBig = Make_Grid();
-            Check("제대로 감싼 도형은 점령된다", Walk_ClosedLoop(cBig, out CMoveHandler _), 35);
+            Check("제대로 감싼 도형은 점령된다", Walk_ClosedLoop(cBig, out CMoveHandler _), 40);
         }
 
-        // 260923_어디로든 신발 — 좌우뿐 아니라 위아래 끝도 이어야 한다
-        private static void Test_EdgeWrapBothAxis()
+        // 260928_어디로든 신발 — 이번 재작성 범위에서는 좌우(가로) 끝만 잇는다(옛 260901~260922 시절과 같다).
+        // 260923_다각형 시절에 추가됐던 위아래(세로) 랩은 이번엔 보류다(설계 문서 1장).
+        private static void Test_EdgeWrap()
         {
-            foreach (bool bVertical in new[] { false, true })
-            {
-                CTerritoryGrid cGrid = new CTerritoryGrid();
-                cGrid.Initialize(20, 20, 1f, Vector2.zero, 0, null, 3);   // 섬 [7,14]
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(20, 20, 1f, Vector2.zero, 0, null, 3);   // 섬 [7,13] (가운데 10,10)
 
-                CMoveHandler cMove = new CMoveHandler();
-                Vector2 vStart = bVertical ? new Vector2(10.5f, 7f) : new Vector2(7f, 10.5f);
-                cMove.Initialize(cGrid, vStart, 10f);
-                cMove.Set_EdgeWrap(true);
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2(7.5f, 10.5f), 10f);    // 섬 왼쪽 경계 칸(7,10)
+            cMove.Set_EdgeWrap(true);
 
-                MOVE_DIR eDir = bVertical ? MOVE_DIR.DOWN : MOVE_DIR.LEFT;
-                // 7칸 가면 맵 끝 → 반대편(19.999)에서 3칸 더 간다
-                Run_Move(cGrid, cMove, eDir, 1f, out int _, out Vector2 _, out Vector2 _);
+            // 왼쪽으로 쭉 가면 맵 끝(열0)을 넘어 반대편(열19)에서 이어 긋는다.
+            // 7칸(열0 도달) + 1칸(랩) + 4칸 = 12칸, 섬 오른쪽 끝(열13)에 닿기 전에 멈춘다
+            for (int i = 0; i < 12; ++i)
+                cMove.Tick(1f, MOVE_DIR.LEFT, out int _);
 
-                string strAxis = bVertical ? "위아래" : "좌우";
-                Check($"신발 — {strAxis} 끝을 넘으면 반대편에서 이어 긋는다",
-                      bVertical ? cMove.POS.y > 16f : cMove.POS.x > 16f);
-                Check($"신발 — {strAxis}로 넘어가도 선은 이어진다", cGrid.IS_DRAWING == true);
-                Check($"신발 — {strAxis} 선이 두 조각으로 나뉜다", cGrid.TRAIL_PIECES.Count, 2);
-            }
+            Check("신발 — 좌우 끝을 넘으면 반대편에서 이어 긋는다", cMove.POS.x > 10f);
+            Check("신발 — 넘어가도 선은 이어진다", cGrid.IS_DRAWING == true);
+            Check("신발 — 맵을 넘어가면 선이 두 조각으로 나뉜다", cGrid.TRAIL_PIECES.Count, 2);
 
             // 신발이 없으면 맵 끝에서 선다
             CTerritoryGrid cWall = new CTerritoryGrid();
             cWall.Initialize(20, 20, 1f, Vector2.zero, 0, null, 3);
             CMoveHandler cStop = new CMoveHandler();
-            cStop.Initialize(cWall, new Vector2(10.5f, 7f), 10f);
-            Run_Move(cWall, cStop, MOVE_DIR.DOWN, 1.2f, out int _, out Vector2 _, out Vector2 _);
-            Check("신발이 없으면 맵 끝에서 선다", cStop.POS.y >= 0f && cStop.POS.y < 1f);
+            cStop.Initialize(cWall, new Vector2(7.5f, 10.5f), 10f);
+            for (int i = 0; i < 12; ++i)
+                cStop.Tick(1f, MOVE_DIR.LEFT, out int _);
+            Check("신발이 없으면 맵 끝에서 선다", cStop.CUR_CELL.x, 0);
         }
 
         // 260923_선을 그리는 띠 메시 — 구간이 굵기보다 짧아도 모양이 무너지지 않아야 한다(꺾을 때마다 일그러지던 버그)
@@ -477,23 +385,22 @@ namespace Client
             Check("띠 메시 — 점 하나면 아무것도 안 만든다", lstIndex.Count, 0);
         }
 
-        // 260923_점령한 모양의 모서리를 따라 돈다 — 볼록한 모서리에서 계속 누르면 밖으로 나간다
+        // 260928_점령한 모양의 경계 칸을 한 칸씩 따라 돈다 — 볼록한 모서리에서 계속 누르면 밖으로 나간다
         private static void Test_LineFollow()
         {
             CTerritoryGrid cGrid = Make_Grid();
             Walk_ClosedLoop(cGrid, out CMoveHandler cMove);
-            // 이 시점의 점령 모양: 테두리 + 아래 테두리 위에 얹힌 x 3.5~10.5 · y 1~6 블록. 플레이어는 (3.5, 1)
+            // 이 시점의 점령 모양: 테두리 + 아래 테두리 위에 얹힌 열3~10 · 행0~5 블록. 플레이어는 칸(3,0)
 
             Check("점령 뒤 경계 위에 선다", cGrid.Distance_ToBoundary(cMove.POS) < 0.01f && cGrid.IS_DRAWING == false);
 
-            // 꼭짓점 코앞(0.01칸 모자란 자리)까지 올라간다 — 거기서 꺾어도 걸리지 않아야 한다
             for (int i = 0; i < 5; ++i)
                 cMove.Tick(1f, MOVE_DIR.UP, out int _);
-            Check("블록 왼쪽 변을 타고 올라간다", Near(cMove.POS, new Vector2(3.5f, 6f), 0.05f) && cGrid.IS_DRAWING == false);
+            Check("블록 왼쪽 변을 타고 올라간다", Near(cMove.POS, new Vector2(3.5f, 5.5f), 0.05f) && cGrid.IS_DRAWING == false);
 
             for (int i = 0; i < 7; ++i)
                 cMove.Tick(1f, MOVE_DIR.RIGHT, out int _);
-            Check("블록 윗변을 따라 오른쪽 모서리까지", Near(cMove.POS, new Vector2(10.5f, 6f), 0.05f) && cGrid.IS_DRAWING == false);
+            Check("블록 윗변을 따라 오른쪽 모서리까지", Near(cMove.POS, new Vector2(10.5f, 5.5f), 0.05f) && cGrid.IS_DRAWING == false);
 
             cMove.Tick(1f, MOVE_DIR.RIGHT, out int _);
             Check("볼록한 모서리에서 계속 누르면 밖으로 나가 선을 긋는다", cGrid.IS_DRAWING);
@@ -865,7 +772,7 @@ namespace Client
 
             // BLOCK으로는 들어갈 수 없다 — 선을 긋다가 잘린 경계(x=10)로 밀어 본다
             CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(5.5f, 1f), STEP_SPEED);
+            cMove.Initialize(cGrid, new Vector2(5.5f, BORDER_THICK - 0.5f), STEP_SPEED);
             Walk(cGrid, cMove, MOVE_DIR.UP, 4);
             Walk(cGrid, cMove, MOVE_DIR.RIGHT, 10);
             Check("BLOCK으로는 진입 불가", cMove.POS.x <= 10f && cGrid.IS_DRAWING);
@@ -1316,41 +1223,8 @@ namespace Client
             Check("분신 — 쿨이 있다", cDecoy.fCool > 0f);
         }
 
-        // 260921_나선형 이동(2-22) — 내 땅 위에서는 조작하는 대로, 나가면 아르키메데스 나선으로 돌아 한 바퀴에 닫는다
-        private static void Test_SpiralMove()
-        {
-            Check("나선 반지름은 돌수록 커진다 (r = a + bθ)",
-                  CMoveHandler.Get_SpiralRadius(Mathf.PI * 2f) > CMoveHandler.Get_SpiralRadius(Mathf.PI)
-                  && CMoveHandler.Get_SpiralRadius(Mathf.PI) > CMoveHandler.Get_SpiralRadius(0f));
-
-            CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(61, 61, 1f, Vector2.zero, 0, null, 5);
-
-            CMoveHandler cMove = new CMoveHandler();
-            Vector2 vStart = new Vector2(cGrid.START_CENTER.x + 0.5f, cGrid.START_CENTER.y - 5f);
-            cMove.Initialize(cGrid, vStart, 10f);
-            cMove.Set_MoveStyle(MOVE_STYLE.SPIRAL);
-
-            // 내 땅 위에서는 제멋대로 움직이지 않는다
-            Run_Move(cGrid, cMove, MOVE_DIR.NONE, 0.5f, out int _, out Vector2 _, out Vector2 _);
-            Check("나선형 — 입력이 없으면 내 땅에서 멈춰 있다", cMove.POS == vStart);
-
-            // 나가는 것은 내 의지 — 아래로 누른다
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.15f, out int _, out Vector2 _, out Vector2 _);
-            Check("나선형 — 누르면 선을 긋기 시작한다", cGrid.IS_DRAWING == true);
-
-            // 260921_손을 떼면 멈춘다 — 선을 긋는 중에도
-            Vector2 vHold = cMove.POS;
-            Run_Move(cGrid, cMove, MOVE_DIR.NONE, 0.5f, out int _, out Vector2 _, out Vector2 _);
-            Check("나선형 — 손을 떼면 선을 긋다가도 멈춘다", cMove.POS == vHold && cMove.IS_MOVING == false);
-
-            // 같은 방향을 계속 누르고 있으면 나선을 그리며 돈다
-            STEP_RESULT eResult = Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 20f, out int iCaptured, out Vector2 vMin, out Vector2 vMax);
-            Check("나선형 — 한 바퀴 돌고 스스로 닫아 점령한다", eResult == STEP_RESULT.CAPTURE);
-            Check("나선형 — 둥글게 돌았다(가로 · 세로로 모두 퍼졌다)", vMax.x - vMin.x >= 6f && vMax.y - vMin.y >= 6f);
-            Check("나선형 — 도형 하나만큼 먹었다", iCaptured >= 30);
-            Check("나선형 — 점령하면 경계 위로 돌아온다", cGrid.IS_DRAWING == false && cGrid.Distance_ToBoundary(cMove.POS) < 0.01f);
-        }
+        // 260928_로그라이트 재작성 — 나선형 이동(2-22 SPIRAL)은 연속 각도 계산을 요구해 칸 스냅 이동과
+        // 맞지 않는다. 8방향과 같은 자리로 보류한다(Docs/Design_Roguelite_Rewrite.md 1장).
 
         // 260922_외벽이 점령지가 아니어도 몬스터는 맵 밖으로 나가지 않는다
         private static void Test_EnemyStaysInside()
@@ -1434,23 +1308,33 @@ namespace Client
             Check("글자 — 연속 점령", CUI_InGame.Get_CalloutText(STYLE_ACTION.CHAIN, 3) == "CHAIN ×3");
         }
 
-        // 260921_선을 긋는 중에도 손을 떼면 멈춘다
-        private static void Test_StopWhileDrawing()
+        // 260928_로그라이트 재작성 — 선을 긋는 중에는 손을 떼거나 반대로 꺾어도 멈추지 않는다(원본 스펙 §1).
+        // 예전(260921)에는 손을 떼면 그 자리에 섰지만, 이제는 마지막 방향을 그대로 잇는다 —
+        // 역주행 입력만 무시하고 그 외 새 방향은 그대로 받는다(Docs/Design_Roguelite_Rewrite.md 2장).
+        private static void Test_ContinueWhileDrawing()
         {
             CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 3);
+            cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 3);   // 섬 [17,23] (가운데 20,20)
             CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(cGrid.START_CENTER.x + 0.5f, cGrid.START_CENTER.y - 3f), 10f);
+            cMove.Initialize(cGrid, new Vector2(20.5f, 17.5f), 10f);   // 섬 아래쪽 경계 칸(20,17)
 
             Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.2f, out int _, out Vector2 _, out Vector2 _);
-            Check("멈추기 — 나가서 선을 긋기 시작했다", cGrid.IS_DRAWING == true);
+            Check("나가서 선을 긋기 시작했다", cGrid.IS_DRAWING == true);
 
-            Vector2 vHold = cMove.POS;
+            // 손을 떼도 마지막 방향(DOWN)을 그대로 잇는다 — 예전(260921)과 반대다
+            Vector2 vBefore = cMove.POS;
             Run_Move(cGrid, cMove, MOVE_DIR.NONE, 0.5f, out int _, out Vector2 _, out Vector2 _);
-            Check("멈추기 — 손을 떼면 선을 긋다가도 멈춘다", cMove.POS == vHold);
+            Check("손을 떼도 선을 긋다가 멈추지 않는다", cMove.POS.y < vBefore.y - 1f);
 
-            Run_Move(cGrid, cMove, MOVE_DIR.LEFT, 0.2f, out int _, out Vector2 _, out Vector2 _);
-            Check("멈추기 — 다시 누르면 간다", cMove.POS != vHold);
+            // 역주행(UP)은 자기 선을 밟게 되므로 무시하고 마지막 방향(DOWN)을 그대로 잇는다
+            Vector2 vBeforeReverse = cMove.POS;
+            Run_Move(cGrid, cMove, MOVE_DIR.UP, 0.5f, out int _, out Vector2 _, out Vector2 _);
+            Check("역주행 입력은 무시하고 계속 나아간다", cMove.POS.y < vBeforeReverse.y - 1f);
+
+            // 역주행이 아닌 새 방향(LEFT)은 그대로 받아 방향을 바꾼다
+            Vector2 vBeforeTurn = cMove.POS;
+            Run_Move(cGrid, cMove, MOVE_DIR.LEFT, 0.5f, out int _, out Vector2 _, out Vector2 _);
+            Check("역주행이 아니면 새 방향을 그대로 받는다", cMove.POS.x < vBeforeTurn.x - 1f);
         }
 
         // 260923_3지선다 R&D — 다시 뽑기 · 버리기가 같은 선택지를 가리는지, 시작 섬 슬롯이 도는지 본다
@@ -1520,27 +1404,30 @@ namespace Client
             CTerritoryGrid cGrid = Make_Grid();
             CMoveHandler cMove = Make_Move(cGrid);
 
-            Walk(cGrid, cMove, MOVE_DIR.UP, 3);   // (10.5, 1) → (10.5, 4), 길이 3
+            Walk(cGrid, cMove, MOVE_DIR.UP, 3);   // 칸(10,0) → (10,3), 길이 3
             Check("도화선 — 선 길이", Mathf.RoundToInt(cGrid.TRAIL_LENGTH), 3);
 
+            // 260928_선은 나간 자리(칸(10,0), 그리드 공간 (10.5,0.5))부터 잰다 — 그 점이 이어 붙어 있다.
             Check("도화선 — 닿은 자리의 길이를 찾는다",
-                  cGrid.Try_Find_TrailTouch(new Vector2(11.2f, 2.5f), 1f, out float fArc) && Mathf.Abs(fArc - 1.5f) < 0.01f);
+                  cGrid.Try_Find_TrailTouch(new Vector2(11.2f, 2.5f), 1f, out float fArc) && Mathf.Abs(fArc - 2f) < 0.01f);
             Check("도화선 — 멀면 안 닿는다", cGrid.Try_Find_TrailTouch(new Vector2(15f, 15f), 1f, out float _) == false);
-            Check("도화선 — 길이로 자리를 되찾는다", Near(cGrid.Get_TrailPoint(1.5f), new Vector2(10.5f, 2.5f)));
+            Check("도화선 — 길이로 자리를 되찾는다", Near(cGrid.Get_TrailPoint(2f), new Vector2(10.5f, 2.5f)));
 
             cGrid.Set_Burn(1.5f, 2f);
             Check("도화선 — 탄 구간을 적어 둔다(렌더러가 뺀다)", cGrid.BURN_FROM == 1.5f && cGrid.BURN_TO == 2f);
 
-            // 불보다 먼저 안전 지대로 돌아오면 — 선만 잃는다. 점령은 안 된다.
-            int iOwnedBefore = Count_Owned(cGrid);
-            cGrid.IS_TRAIL_BURNING = true;
-            STEP_RESULT eResult = cGrid.Step_To(new Vector2(10.5f, 4f), new Vector2(0.5f, 4f), out Vector2 _, out int iCaptured);
+            // 불보다 먼저 안전 지대로 돌아오면 — 선만 잃는다. 점령은 안 된다(칸 단위, 독립된 트레일로 검증).
+            CTerritoryGrid cSafe = Make_Grid();
+            cSafe.Step_To(new Vector2Int(10, 0), new Vector2Int(10, 1), out int _);   // 선 시작
+            int iOwnedBefore = Count_Owned(cSafe);
+            cSafe.IS_TRAIL_BURNING = true;
+            STEP_RESULT eResult = cSafe.Step_To(new Vector2Int(10, 1), new Vector2Int(10, 0), out int iCaptured);
 
             Check("도화선 — 타는 동안 안전 지대로 돌아오면 SAFE(점령 아님)", eResult == STEP_RESULT.SAFE);
             Check("도화선 — 새로 점령한 칸은 없다", iCaptured, 0);
-            Check("도화선 — 점령 칸 수도 그대로다", Count_Owned(cGrid), iOwnedBefore);
-            Check("도화선 — 선은 사라진다", cGrid.IS_DRAWING == false);
-            Check("도화선 — 도망쳤으니 스스로 꺼진다", cGrid.IS_TRAIL_BURNING == false && cGrid.BURN_FROM < 0f);
+            Check("도화선 — 점령 칸 수도 그대로다", Count_Owned(cSafe), iOwnedBefore);
+            Check("도화선 — 선은 사라진다", cSafe.IS_DRAWING == false);
+            Check("도화선 — 도망쳤으니 스스로 꺼진다", cSafe.IS_TRAIL_BURNING == false && cSafe.BURN_FROM < 0f);
         }
 
         // 260928_로그라이트 재작성(Docs/Design_Roguelite_Rewrite.md 5장) — 시간 초과는 더 이상 실패가 아니라
@@ -1554,30 +1441,6 @@ namespace Client
             Check("시간 별 — 1.5배를 넘으면 1성", CStage_Manager.Calc_TimeStar(91f, 60f), 1);
             Check("시간 별 — 아무리 늦어도 1성 밑으로는 안 떨어진다", CStage_Manager.Calc_TimeStar(600f, 60f), 1);
             Check("시간 별 — 목표 시간이 없는 웨이브는 3성 취급", CStage_Manager.Calc_TimeStar(9999f, 0f), 3);
-        }
-
-        // 260921_8방향은 선을 긋는 동안 곧게 비스듬히 간다 — 계단이 아니라 대각선 모양으로 점령한다
-        private static void Test_FreeEightWay()
-        {
-            CTerritoryGrid cGrid = new CTerritoryGrid();
-            cGrid.Initialize(61, 61, 1f, Vector2.zero, 0, null, 5);
-
-            CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(cGrid.START_CENTER.x + 0.5f, cGrid.START_CENTER.y - 5f), 10f);
-            cMove.Set_MoveStyle(MOVE_STYLE.EIGHT_WAY);
-
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 0.15f, out int _, out Vector2 _, out Vector2 _);
-            Vector2 vFrom = cMove.POS;
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN_RIGHT, 1f, out int _, out Vector2 _, out Vector2 _);
-            Vector2 vTo = cMove.POS;
-
-            Check("8방향 — 선을 긋는 중", cGrid.IS_DRAWING == true);
-            Check("8방향 — 두 축이 같은 만큼 간다(곧은 대각선)",
-                  vTo.x - vFrom.x >= 5f && Mathf.Abs((vTo.x - vFrom.x) - (vFrom.y - vTo.y)) < 0.05f);
-
-            // 뒤로 꺾는 입력은 무시한다 — 자기 선을 밟는 즉사를 막는다
-            STEP_RESULT eResult = Run_Move(cGrid, cMove, MOVE_DIR.UP_LEFT, 0.3f, out int _, out Vector2 _, out Vector2 _);
-            Check("8방향 — 뒤로 꺾어 자기 선을 밟지 않는다", eResult != STEP_RESULT.DEAD && cMove.POS == vTo);
         }
 
         /// <summary>
@@ -1616,13 +1479,13 @@ namespace Client
             CTerritoryGrid cGrid = new CTerritoryGrid();
             cGrid.Initialize(20, 20, 1f, Vector2.zero, 2);
 
-            // (10.5, 2) → (10.5, 3) 선을 하나 깐다
+            // 칸(10,1)(테두리 두께 2의 안쪽 줄) → 칸(10,2) 선을 하나 깐다
             CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(10.5f, 2f), STEP_SPEED);
+            cMove.Initialize(cGrid, new Vector2(10.5f, 1.5f), STEP_SPEED);
             Walk(cGrid, cMove, MOVE_DIR.UP, 1);
             Check("선을 그리는 중", cGrid.IS_DRAWING);
 
-            Vector2 vOnLine = new Vector2(10.5f, 2.5f);
+            Vector2 vOnLine = new Vector2(10.5f, 2f);
             Vector2 vNear   = vOnLine + new Vector2(1.5f, 0f);
             Check("작은 몸은 안 닿는다", cGrid.Try_Find_TrailTouch(vNear, 0.4f, out float _) == false);
             Check("큰 몸은 닿는다", cGrid.Try_Find_TrailTouch(vNear, 1.6f, out float _));
@@ -1671,8 +1534,8 @@ namespace Client
                                        && cGrid.Get_Cell(40, 40) == CELL_STATE.EMPTY);
             Check("맵 가장자리도 미점령", cGrid.Get_Cell(vCenter.x, 0) == CELL_STATE.EMPTY);
 
-            // 섬의 아래 경계가 플레이어가 설 자리다 — 안쪽은 '점령지 내부'라 움직일 수 없다
-            Vector2 vStart = new Vector2(vCenter.x + 0.5f, vCenter.y - 5f);
+            // 섬의 아래 경계 칸이 플레이어가 설 자리다 — 안쪽은 '점령지 내부'라 움직일 수 없다
+            Vector2 vStart = new Vector2(vCenter.x + 0.5f, vCenter.y - 4.5f);
             Check("시작 자리는 섬의 경계", cGrid.Distance_ToBoundary(vStart) < 1e-3f);
             Check("섬 한가운데는 경계가 아니다", cGrid.Distance_ToBoundary(CTerritoryGrid.Cell_ToGrid(vCenter)) > 1f);
 
@@ -1739,20 +1602,20 @@ namespace Client
             Check("데드존 안은 멈춤",
                   CVirtualJoystick.To_Dir(new Vector2(0.01f, 0.01f), 0.1f, MOVE_STYLE.EIGHT_WAY) == MOVE_DIR.NONE);
 
-            // 260923_실제 이동 — 8방향은 경계에서 비스듬히 나가 곧은 사선을 긋는다
+            // 260928_로그라이트 재작성 — 8방향 실제 이동(연속 사선)은 이번 범위에서 보류다(설계 문서 1장).
+            // EIGHT_WAY로 설정해도 대각선 입력 자체를 받지 않는다 — Set_MoveStyle은 값만 저장해 둔다.
             CTerritoryGrid cGrid = new CTerritoryGrid();
             cGrid.Initialize(20, 20, 1f, Vector2.zero, 2, null);
 
             CMoveHandler cMove = new CMoveHandler();
-            Vector2 vStart = new Vector2(5.5f, 2f);
+            Vector2 vStart = new Vector2(5.5f, 1.5f);
             cMove.Initialize(cGrid, vStart, 10f);
             cMove.Set_MoveStyle(MOVE_STYLE.EIGHT_WAY);
 
             Run_Move(cGrid, cMove, MOVE_DIR.UP_RIGHT, 0.3f, out int _, out Vector2 _, out Vector2 _);
-            Vector2 vMoved = cMove.POS - vStart;
-            Check("8방향 — 비스듬히 나가 선을 긋는다", cGrid.IS_DRAWING && vMoved.x > 1f && Mathf.Abs(vMoved.x - vMoved.y) < 0.05f);
+            Check("8방향으로 설정해도 대각선 입력으로는 움직이지 않는다(보류)", cMove.POS == vStart && cGrid.IS_DRAWING == false);
 
-            // 4방향 캐릭터는 대각선 입력을 받아도 움직이지 않는다
+            // 4방향 캐릭터도 마찬가지다 — 대각선 처리 자체가 이동 방식과 무관하게 꺼져 있다
             CTerritoryGrid cGrid4 = new CTerritoryGrid();
             cGrid4.Initialize(20, 20, 1f, Vector2.zero, 2, null);
             CMoveHandler cFour = new CMoveHandler();
@@ -4067,21 +3930,18 @@ namespace Client
             // 260904_스테이지 규칙은 MapInfo.csv로 옮겼다. 프리뷰도 같은 표를 읽어 크기를 맞춘다.
             CMapInfo cMapInfo = CProtoSetup.Load_MapInfo(1);
 
-            // 260923_시작 섬에서 나선 한 번 · 사선 한 번을 먹는다 — 다각형 점령의 가장자리가 매끈한지 눈으로 본다
+            // 260928_로그라이트 재작성 — 8방향 · 나선형 실제 이동은 이번 범위에서 보류라(설계 문서 1장)
+            // 시작 섬에서 사각형 모양으로 몇 칸 먹어 칸 기반 가림막이 제대로 뚫리는지만 눈으로 본다.
             CTerritoryGrid cGrid = new CTerritoryGrid();
             cGrid.Initialize(cMapInfo.iGridWidth, cMapInfo.iGridHeight, cMapInfo.fCellSize,
                              Vector2.zero, cMapInfo.iBorderThick, null, cMapInfo.iStartRadius);
 
             CMoveHandler cMove = new CMoveHandler();
-            cMove.Initialize(cGrid, new Vector2(cGrid.START_CENTER.x + 0.5f, cGrid.START_CENTER.y - cMapInfo.iStartRadius), 10f);
+            cMove.Initialize(cGrid, new Vector2(cGrid.START_CENTER.x + 0.5f, cGrid.START_CENTER.y - cMapInfo.iStartRadius + 0.5f), 10f);
 
-            cMove.Set_MoveStyle(MOVE_STYLE.SPIRAL);
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 20f, out int _, out Vector2 _, out Vector2 _);
-
-            cMove.Set_MoveStyle(MOVE_STYLE.EIGHT_WAY);
-            Run_Move(cGrid, cMove, MOVE_DIR.UP_LEFT, 1.5f, out int _, out Vector2 _, out Vector2 _);
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN_LEFT, 1.2f, out int _, out Vector2 _, out Vector2 _);
-            Run_Move(cGrid, cMove, MOVE_DIR.DOWN_RIGHT, 10f, out int _, out Vector2 _, out Vector2 _);
+            Run_Move(cGrid, cMove, MOVE_DIR.DOWN, 8f, out int _, out Vector2 _, out Vector2 _);
+            Run_Move(cGrid, cMove, MOVE_DIR.LEFT, 6f, out int _, out Vector2 _, out Vector2 _);
+            Run_Move(cGrid, cMove, MOVE_DIR.UP, 12f, out int _, out Vector2 _, out Vector2 _);
 
             // 실제 런타임과 동일한 경로로 마스크를 만든다.
             GameObject goOverlay = new GameObject("Overlay_Preview");
@@ -4156,14 +4016,14 @@ namespace Client
             return cMove;
         }
 
-        /// <summary> (10.5, 1)에서 출발해 ㄷ자로 돌아 테두리로 복귀하는 닫힌 도형. 점령 넓이 반환. </summary>
+        /// <summary> 칸(10,0)에서 출발해 ㄷ자로 돌아 테두리로 복귀하는 닫힌 도형. 점령 넓이 반환. </summary>
         private static int Walk_ClosedLoop(CTerritoryGrid cGrid, out CMoveHandler cMove)
         {
             cMove = Make_Move(cGrid);
 
-            Walk(cGrid, cMove, MOVE_DIR.UP, 5);           // (10.5, 6)
-            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7);         // (3.5, 6)
-            return Walk(cGrid, cMove, MOVE_DIR.DOWN, 5);  // 테두리 윗변(y=1)에 닿아 점령
+            Walk(cGrid, cMove, MOVE_DIR.UP, 5);           // 칸(10,5)
+            Walk(cGrid, cMove, MOVE_DIR.LEFT, 7);         // 칸(3,5)
+            return Walk(cGrid, cMove, MOVE_DIR.DOWN, 5);  // 테두리(행0)에 닿아 점령
         }
 
         /// <summary>
