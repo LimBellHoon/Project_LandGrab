@@ -70,6 +70,7 @@ namespace Client
             Test_FreeEightWay();
             Test_Erode();
             Test_Fuse();
+            Test_TimeStar();
             Test_StopWhileDrawing();
             Test_PickRnD();
             Test_StyleTracker();
@@ -1540,6 +1541,19 @@ namespace Client
             Check("도화선 — 점령 칸 수도 그대로다", Count_Owned(cGrid), iOwnedBefore);
             Check("도화선 — 선은 사라진다", cGrid.IS_DRAWING == false);
             Check("도화선 — 도망쳤으니 스스로 꺼진다", cGrid.IS_TRAIL_BURNING == false && cGrid.BURN_FROM < 0f);
+        }
+
+        // 260928_로그라이트 재작성(Docs/Design_Roguelite_Rewrite.md 5장) — 시간 초과는 더 이상 실패가 아니라
+        // 별 등급만 깎는다. Calc_TimeStar는 순수 static이라 화면 없이 바로 검증한다.
+        private static void Test_TimeStar()
+        {
+            Check("시간 별 — 목표 안에 깨면 3성", CStage_Manager.Calc_TimeStar(59f, 60f), 3);
+            Check("시간 별 — 정확히 목표 시간이어도 3성", CStage_Manager.Calc_TimeStar(60f, 60f), 3);
+            Check("시간 별 — 1.5배 이내면 2성", CStage_Manager.Calc_TimeStar(89f, 60f), 2);
+            Check("시간 별 — 정확히 1.5배여도 2성", CStage_Manager.Calc_TimeStar(90f, 60f), 2);
+            Check("시간 별 — 1.5배를 넘으면 1성", CStage_Manager.Calc_TimeStar(91f, 60f), 1);
+            Check("시간 별 — 아무리 늦어도 1성 밑으로는 안 떨어진다", CStage_Manager.Calc_TimeStar(600f, 60f), 1);
+            Check("시간 별 — 목표 시간이 없는 웨이브는 3성 취급", CStage_Manager.Calc_TimeStar(9999f, 0f), 3);
         }
 
         // 260921_8방향은 선을 긋는 동안 곧게 비스듬히 간다 — 계단이 아니라 대각선 모양으로 점령한다

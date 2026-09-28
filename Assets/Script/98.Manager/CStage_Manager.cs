@@ -173,7 +173,11 @@ namespace Client
         private STAGE_STATE         m_eState = STAGE_STATE.READY;
         private int                 m_iWave;
         private int                 m_iStar;    // 260905_이번 판에서 완료한 웨이브 수
+        // 260928_로그라이트 재작성(Docs/Design_Roguelite_Rewrite.md 5장) — 시간 초과가 더 이상 실패가 아니다.
+        // 웨이브별로 "목표 시간"을 얼마나 넘겼는지로만 별을 매긴다. 음수(초과)까지 그대로 잰다 — 클램프는
+        // 화면에 보여줄 때(REMAIN_TIME)만 한다.
         private float               m_fRemainTime;
+        private int                 m_iTimeStar = 3;    // 가장 늦게 깬 웨이브가 전체 등급을 정한다(최솟값)
         private bool                m_bPlayerExposed;   // 기믹 발동 조건 — 매 프레임 Tick_Enemy가 갱신한다
         private bool                m_bPaused;
 
@@ -203,7 +207,8 @@ namespace Client
         public CTerritoryGrid   GRID            => m_cGrid;
         public CPlayer          PLAYER          => m_cPlayer;
         public STAGE_STATE      STATE           => m_eState;
-        public float            REMAIN_TIME     => m_fRemainTime;
+        // 260928_초과분까지 내부적으로는 음수로 잰다(별 계산용) — 화면에는 0 밑으로 보여줄 이유가 없어 여기서 자른다.
+        public float            REMAIN_TIME     => Mathf.Max(0f, m_fRemainTime);
         public float            OWNED_RATIO     => m_cGrid.OWNED_RATIO;
         // 260920_카메라가 선 길이만큼 물러날 때 본다(2-10)
         /// <summary> 260923_지금 긋는 선의 길이(칸) — 카메라가 물러나는 정도를 정한다(2-10) </summary>
@@ -214,6 +219,9 @@ namespace Client
         public int              WAVE            => m_iWave;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
         public int              STAR            => m_iStar;
+        // 260928_시간 별 등급(1~3) — 목표 시간 대비 얼마나 빨리 깼는지. 웨이브 수 별(STAR)과는 다른 값이다 —
+        // 맵 해금(2-7)은 여전히 STAR를 본다. 이건 스테이지 선택 화면 표시용(Docs/Design_Roguelite_Rewrite.md 5장).
+        public int              TIME_STAR       => m_iTimeStar;
         // 260921_계정 경험치를 나눌 진행도 0~1 — 달성한 웨이브 + 지금 웨이브의 점령률(2-23)
         public float            PROGRESS        => m_eState == STAGE_STATE.CLEAR ? 1f
                                                  : CAccount_Utility.Calc_StageProgress(m_iStar, WAVE_COUNT,
@@ -440,6 +448,7 @@ namespace Client
 
             m_bPaused    = false;
             m_iStar      = 0;               // 260905_판을 새로 시작하면 별도 처음부터
+            m_iTimeStar  = 3;                // 260928_시간 별도 처음엔 만점에서 시작해 늦은 웨이브가 있으면 깎인다
             m_eWavePhase = WAVE_PHASE.NONE;
             m_cGridRenderer.Set_CoverAlpha(1f);
 
@@ -480,12 +489,9 @@ namespace Client
             Tick_Decoy();
             Tick_FieldItemSpawn(fDeltaTime);
 
+            // 260928_로그라이트 재작성 — 시간 소진으로 인한 실패를 없앴다(Docs/Design_Roguelite_Rewrite.md 5장).
+            // 음수로 계속 흘러가게 둔다 — Next_Wave가 이 초과분으로 시간 별을 매긴다.
             m_fRemainTime -= fDeltaTime;
-            if (m_fRemainTime <= 0f)
-            {
-                m_fRemainTime = 0f;
-                Set_State(STAGE_STATE.FAIL);
-            }
         }
 
         // 260920_웨이브 진입 — 판을 다시 깐다.
@@ -536,7 +542,30 @@ namespace Client
             // 뒤 웨이브에서 죽더라도 여기까지의 별은 남는다.
             m_iStar = m_iWave;
 
+            // 260928_시간 별 — 이 웨이브를 목표 시간 대비 얼마 만에 깼는지 잰다. m_iWave는 아직 이번 웨이브를
+            // 가리키고 있다(Enter_Wave가 다음 웨이브로 넘기는 건 연출이 끝난 뒤라서). 여러 웨이브 중
+            // 가장 늦게 깬 쪽이 전체 등급이 된다 — 하나만 잘해도 다 잘한 것으로 치지 않는다.
+            CWaveInfo cWave = m_cMapInfo.Get_Wave(m_iWave);
+            if (cWave != null && cWave.fTimeLimit > 0f)
+            {
+                float fElapsed = cWave.fTimeLimit - m_fRemainTime;
+                m_iTimeStar = Mathf.Min(m_iTimeStar, Calc_TimeStar(fElapsed, cWave.fTimeLimit));
+            }
+
             Begin_WaveTransition(m_iWave >= m_cMapInfo.iWaveCount ? 0 : m_iWave + 1);
+        }
+
+        // 260928_목표 시간 대비 별 등급. 시간 초과는 이제 실패가 아니라 등급만 깎는다(Docs/Design_Roguelite_Rewrite.md 5장).
+        // 화면 없이 테스트하기 좋게 순수 static으로 둔다(CAccount_Utility.Calc_StageProgress와 같은 자리).
+        public static int Calc_TimeStar(float fElapsed, float fTimeLimit)
+        {
+            if (fTimeLimit <= 0f || fElapsed <= fTimeLimit)
+                return 3;
+
+            if (fElapsed <= fTimeLimit * 1.5f)
+                return 2;
+
+            return 1;
         }
 
         private void Begin_WaveTransition(int iNextWave)
