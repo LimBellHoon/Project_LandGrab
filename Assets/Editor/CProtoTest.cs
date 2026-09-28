@@ -91,6 +91,7 @@ namespace Client
             Test_RunSkillTable();
             Test_RunSkill();
             Test_CardHandler();
+            Test_CardCatalog();
             Test_WeaponAndAwaken();
             Test_OrbitAndClub();
             Test_BattleConsumable();
@@ -2273,6 +2274,142 @@ namespace Client
 
             cHandler.Clear();
             Check("Clear 뒤엔 비었다", cHandler.Has(CARD_TYPE.SHIELD) == false && cHandler.ALL.Count == 0);
+        }
+
+        // 260928_카드 30종(태스크 #22, Docs/Design_Card_Catalog_Spec.md) — CSV 값 스케일(비율 vs %)과
+        // CCardEffect 몇 종, K03의 스테이지 쪽 원시 동작(Try_ForceStunIfLow)을 짚는다. 값 스케일이
+        // 카드마다 다른 게 가장 틀리기 쉬운 지점이라(예: K06/G08는 %라 100으로 나누고, M01/F01은
+        // 이미 비율이라 나누지 않는다) 대표를 하나씩 골랐다 — 30종을 전부 재지는 않는다.
+        private static void Test_CardCatalog()
+        {
+            CCSVData_CardInfo cTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");
+            if (cTable == null)
+            {
+                Check("CardInfo.csv 로드(Test_CardCatalog)", false);
+                return;
+            }
+
+            // 옛 20종은 지우지 않고 잠갔다(2-25 "가중치 0 = 잠금") — 데이터는 남아 있어야 한다
+            CCardInfo cShield = cTable.Get_Info(1);
+            Check("옛 카드(SHIELD)는 남아 있다", cShield != null && cShield.eType == CARD_TYPE.SHIELD);
+            Check("옛 카드는 잠겨 있다(가중치 0)", cShield != null && cShield.iWeight == 0);
+
+            // K01_ELECTRIC_LINE(21) — ★ 첫 선택 고정 풀, 기절 시간은 초 단위 그대로
+            CCardInfo cK01 = cTable.Get_Info(21);
+            Check("K01 있다", cK01 != null && cK01.eType == CARD_TYPE.K01_ELECTRIC_LINE);
+            Check("K01은 ★ 첫 선택 고정 풀", cK01 != null && cK01.bFirstPickOnly == true);
+            Check("K01 레벨별 기절 시간", cK01 != null && cK01.Get_Value(1) == 1.5f && cK01.Get_Value(3) == 2.5f);
+
+            // K06_SINGULARITY(26) — %로 적혀 있다. Apply_Card가 100으로 나눠 비율로 바꾼다(코드 쪽에서 검증)
+            CCardInfo cK06 = cTable.Get_Info(26);
+            Check("K06 레벨별 둔화(%)", cK06 != null && cK06.Get_Value(1) == 35f && cK06.Get_Value(3) == 55f);
+
+            // G08_REFRACTION(43) — 확률(%) + 조율값(깊이, 칸)
+            CCardInfo cG08 = cTable.Get_Info(43);
+            Check("G08 레벨별 확률(%)", cG08 != null && cG08.Get_Value(1) == 60f && cG08.Get_Value(3) == 100f);
+            Check("G08 조율값(깊이, 칸)", cG08 != null
+                  && cG08.Get_Param("DEPTH", 1) == 2f && cG08.Get_Param("DEPTH", 3) == 4f);
+
+            // M07_SIZE_SHIFT(35) — 주 수치(대형 HP)와 조율값(소형 이속 %)이 서로 다른 뜻
+            CCardInfo cM07 = cTable.Get_Info(35);
+            Check("M07 대형 HP 가산", cM07 != null && cM07.Get_Value(1) == 2f && cM07.Get_Value(3) == 4f);
+            Check("M07 소형 이속 가산(%)", cM07 != null
+                  && cM07.Get_Param("SPEED", 1) == 25f && cM07.Get_Param("SPEED", 3) == 45f);
+
+            // 레벨 범위를 벗어나면 0 — CRunSkillInfo와 같은 방어
+            Check("레벨 0은 0을 돌려준다", cK01 != null && cK01.Get_Value(0) == 0f);
+            Check("없는 조율값은 기본값", cK01 != null && cK01.Get_Param("NOPE", 1, -1f) == -1f);
+
+            // Collect_Candidates — 레벨링 카드(iMaxLevel>1)만, 만렙은 빠진다
+            System.Func<CARD_TYPE, int> fnZero = eType => 0;
+            List<CCardInfo> lstFresh = cTable.Collect_Candidates(fnZero);
+            Check("레벨링 카드 30종이 후보다(옛 20종 제외)", lstFresh.Count, 30);
+            Check("옛 카드(즉시효과)는 후보가 아니다", lstFresh.Contains(cShield) == false);
+
+            System.Func<CARD_TYPE, int> fnMaxK01 = eType => eType == CARD_TYPE.K01_ELECTRIC_LINE ? 3 : 0;
+            Check("만렙이면 후보에서 빠진다", cTable.Collect_Candidates(fnMaxK01).Contains(cK01) == false);
+
+            // ---- CCardEffect 다이렉트 디스패치 — 몬스터/그리드를 안 건드리는 카드만 CCardEffect를 만든다 ----
+            Check("K01은 CCardEffect가 있다(플레이어 혼자 해결)", CCardEffect.Create(CARD_TYPE.K01_ELECTRIC_LINE) != null);
+            Check("K02는 CCardEffect가 없다(스테이지가 직접 다룬다)", CCardEffect.Create(CARD_TYPE.K02_BOUNDARY_SHOCK) == null);
+            Check("G08은 CCardEffect가 없다(그리드를 직접 건드린다)", CCardEffect.Create(CARD_TYPE.G08_REFRACTION) == null);
+            Check("K08은 아직 미배선(귀환 버튼 없음)", CCardEffect.Create(CARD_TYPE.K08_WHIRL) == null);
+            Check("M04는 아직 미배선(귀환 버튼 없음)", CCardEffect.Create(CARD_TYPE.M04_UNBREAKABLE_RUSH) == null);
+
+            // ---- CPlayer.Add_Card — 레벨업 델타 누적(G05_STURDY)과 즉시 충전(F05_FUSE_BOMB) ----
+            CTerritoryGrid cGrid = Make_Grid();
+            GameObject goPlayer = new GameObject("Test_CardCatalogPlayer");
+            CPlayer cPlayer = goPlayer.AddComponent<CPlayer>();
+            cPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartPos     = PLAYER_START,
+                fMoveSpeed    = STEP_SPEED,
+                iLife         = 3,
+                fEvasion      = 0f,
+            });
+
+            CCardInfo cG05 = cTable.Get_Info(40);
+            Check("G05 있다", cG05 != null && cG05.eType == CARD_TYPE.G05_STURDY);
+            int iMaxLifeBefore = cPlayer.MAX_LIFE;
+            cPlayer.Add_Card(cG05);   // 1레벨 — +1
+            Check("G05 1레벨 — 최대 HP가 1 는다", cPlayer.MAX_LIFE, iMaxLifeBefore + 1);
+            cPlayer.Add_Card(cG05);   // 2레벨 — 델타(2-1=1)만 더 는다(두 배로 붙지 않는다)
+            Check("G05 2레벨 — 델타만큼만 더 는다", cPlayer.MAX_LIFE, iMaxLifeBefore + 2);
+            Check("카드 레벨도 같이 올랐다", cPlayer.CARD.Get_Level(CARD_TYPE.G05_STURDY), 2);
+
+            CCardInfo cF05 = cTable.Get_Info(48);
+            Check("F05 있다", cF05 != null && cF05.eType == CARD_TYPE.F05_FUSE_BOMB);
+            cPlayer.Add_Card(cF05);   // 1레벨 — 충전 1
+            Check("F05 1레벨 — 무효화 1회 소모할 수 있다", cPlayer.Try_ConsumeFuseBomb() == true);
+            Check("F05 1레벨 — 그 이상은 없다", cPlayer.Try_ConsumeFuseBomb() == false);
+
+            // 스테이지 종료(Initialize 재호출)로 카드도 전부 사라진다 — 런 스킬(2-11-1)과 같은 결
+            cPlayer.Initialize(new CPlayerDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.PLAYER,
+                strPrefabName = "Prefab_Player",
+                cGrid         = cGrid,
+                vStartPos     = PLAYER_START,
+                fMoveSpeed    = STEP_SPEED,
+                iLife         = 3,
+                fEvasion      = 0f,
+            });
+            Check("재초기화하면 카드가 전부 사라진다", cPlayer.CARD.Has(CARD_TYPE.G05_STURDY) == false);
+            Check("재초기화하면 최대 HP도 표 기본값으로 돌아간다", cPlayer.MAX_LIFE, 3);
+
+            Object.DestroyImmediate(goPlayer);
+
+            // ---- K03_LEVY 원시 동작 — 그로기가 문턱 이하로 남으면 즉시 기절시킨다 ----
+            GameObject goEnemy = new GameObject("Test_CardCatalogEnemy");
+            CEnemy cEnemy = goEnemy.AddComponent<CEnemy>();
+            cEnemy.Initialize(new CEnemyDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName = "Prefab_Enemy",
+                cGrid         = cGrid,
+                vStartCell    = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir     = Vector2.right,
+                iEnemyID      = 995,
+                eGimmick      = ENEMY_GIMMICK.NONE,
+                fSpeed        = 1f,
+                fChaseSpeed   = 1f,
+                fTurnRate     = 1f,
+                fHitRange     = 0.5f,
+                iGroggyMax    = 10,
+                fStunDuration = 2f,
+            });
+
+            Check("징수 — 그로기가 넉넉히 남으면(15% 초과) 안 건드린다",
+                  cEnemy.Try_ForceStunIfLow(0.15f) == false && cEnemy.IS_STUNNED == false);
+
+            cEnemy.Damage(9);   // 10 중 9 — 남은 그로기 비율 10%
+            Check("징수 — 문턱(15%) 이하로 남으면 즉시 기절시킨다",
+                  cEnemy.Try_ForceStunIfLow(0.15f) == true && cEnemy.IS_STUNNED == true);
+
+            Object.DestroyImmediate(goEnemy);
         }
 
         // 260917_투사체 무기(뱀서라이크 자동 발사) · 각성 — 쿨마다 쏘는지, 대상이 없으면 기다리는지, 각성이 무엇을 바꾸는지

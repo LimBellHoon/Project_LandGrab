@@ -55,6 +55,36 @@ namespace Client
         // 260916_영혼 수집가가 맵 위에 영혼을 놓을 창구. ISkillHost처럼 스테이지가 꽂아 준다.
         private IRunSkillHost   m_cRunSkillHost;
 
+        // 260928_카드 30종(태스크 #22, Docs/Design_Card_Catalog_Spec.md) — CRunSkillHandler/Effect와 같은
+        // 조합 구조(CCardHandler/CCardEffect, 1-1). 몬스터·그리드를 건드리는 카드는 CCardEffect가 아니라
+        // CStage_Manager.Apply_Card가 직접 다룬다 — "그리드는 칸만 알고 몬스터는 스테이지가 본다"(2-3)와
+        // 같은 구분. 여기서는 레벨 추적 + 플레이어 혼자 해결되는 수치만 든다.
+        private readonly CCardHandler          m_cCardHandler = new CCardHandler();
+        private readonly List<CCardEffect>     m_lstCardEffect = new List<CCardEffect>();
+        // K01_ELECTRIC_LINE — 3번째 선 긋기마다 전기화된다. 카운터는 여기, 실제 판정(기절)은 CStage_Manager가 한다.
+        private int              m_iDrawStartCount;
+        private bool             m_bTrailElectrified;
+        private float            m_fTrailElectrifyStun;
+        // F03_FIREBREAK/F07_POWDER_WICK/G07_LAST_STAND — 도화선 전파 속도에 곱할 배율. 매 프레임 카드 목록에서
+        // 다시 계산한다(G07은 HP 1일 때만 적용되는 조건부라 값을 들고 있지 않고 매번 물어본다).
+        private float            m_fFuseSpeedCardScale = 1f;
+        // M07_SIZE_SHIFT(축소) — 몸 충돌 판정 거리에 곱할 배율. 플레이어가 몸집을 줄이는 카드라 여기 둔다.
+        private float            m_fHitboxCardScale = 1f;
+        // 260928_G04_MASS_SHIELD/M05_GHOST_STEP처럼 "한 번에 X% 이상 점령"이 조건인 카드가
+        // OnCapture 핸들러 안에서 바로 읽을 수 있게, 점령 직후 매번 갱신해 둔다.
+        private float            m_fLastCaptureRatio;
+        // F05_FUSE_BOMB — 판당 무효화 횟수. CStage_Manager.Tick_Fuse가 따라잡히기 직전에 소모를 시도한다.
+        private int              m_iFuseBombCharge;
+        // G01_EXTINGUISHER — 판당 충전 수. CStage_Manager.Tick_Fuse가 발화 임박(1.5초 이내)에 소모를 시도한다.
+        private int              m_iExtinguisherCharge;
+        // M01_SPRINTER/M03_CORNERING/M06_NEARMISS_MASTER — 짧게 터지는 가속(시한부). 여러 장이면 가장 큰/긴 값으로 갱신한다.
+        private float            m_fCardBurstSpeedBonus;
+        private float            m_fCardBurstSpeedTimer;
+        // M02_MOMENTUM — 직진할수록 누적되는 배율. 카드 자신이 매 프레임 다시 계산해 넣는다.
+        private float            m_fMomentumSpeedScale = 1f;
+        // G07_LAST_STAND/F01_BURNING_HASTE — "조건이 맞는 동안만" 곱하는 속도 배율. 매 프레임 카드 목록에서 다시 계산한다.
+        private float            m_fConditionalCardSpeedScale = 1f;
+
         // 260912_속도는 두 갈래로 곱해진다 — 거미줄(환경)과 질주(스킬).
         // 스테이지가 매 프레임 환경 배율을 넣어 주므로, 스킬 배율을 따로 두지 않으면
         // 질주를 걸어도 다음 프레임에 덮어써져 아무 일도 일어나지 않는다.
@@ -135,6 +165,19 @@ namespace Client
         public bool             IS_MOVING   => m_cMoveHandler.IS_MOVING;
         /// <summary> 260916_자석 스킬이 걸어 둔 습득 범위(셀). 픽업 쪽이 읽는다. </summary>
         public float            PICKUP_RADIUS => m_fPickupRadius;
+        /// <summary> 260928_지금 들고 있는 카드들의 레벨(태스크 #22). UI/디버그가 읽는다. </summary>
+        public CCardHandler      CARD           => m_cCardHandler;
+        /// <summary> K01_ELECTRIC_LINE — 지금 긋는 중인 선이 전기화됐는가. CStage_Manager의 트레일 접촉 판정이 읽는다. </summary>
+        public bool              TRAIL_ELECTRIFIED     => m_bTrailElectrified;
+        public float             TRAIL_ELECTRIFY_STUN  => m_fTrailElectrifyStun;
+        /// <summary> F03/F07/G07 등이 도화선 전파 속도에 곱하는 배율. 1이면 영향 없음. CStage_Manager.Tick_Fuse가 읽는다. </summary>
+        public float             FUSE_SPEED_SCALE => m_fFuseSpeedCardScale;
+        /// <summary> M07_SIZE_SHIFT(축소)가 몸 충돌 판정 거리에 곱하는 배율. 1이면 영향 없음. </summary>
+        public float             HITBOX_SCALE     => m_fHitboxCardScale;
+        /// <summary> 260928_방금 점령이 맵 전체에서 차지한 비율(0~1). OnCapture 핸들러 안에서만 유효하다. </summary>
+        public float             LAST_CAPTURE_RATIO => m_fLastCaptureRatio;
+        /// <summary> 260928_지금 긋고 있는 선이 도화선에 타는 중인가. F01_BURNING_HASTE가 읽는다. </summary>
+        public bool              IS_TRAIL_BURNING  => m_cGrid != null && m_cGrid.IS_TRAIL_BURNING;
         // 260923_사냥형 카드(HUNT_*) — CStage_Manager가 몸 충돌 처리부에서 읽어 간다(1-1, 몸 충돌은 스테이지가 본다)
         /// <summary> 돌가죽 — 몸 충돌 피해에 곱할 배율. 1이면 감소 없음 </summary>
         public float             BODY_DAMAGE_SCALE => m_fBodyDamageScale;
@@ -182,6 +225,9 @@ namespace Client
         public event Action OnDrawStart;
         /// <summary> 이동 방향이 바뀐 순간 (잔상) </summary>
         public event Action OnTurn;
+        // 260928_카드 30종(태스크 #22)이 듣는 훅.
+        /// <summary> NEAR MISS 판정에 성공한 순간(2-24). CStage_Manager가 On_NearMiss()를 부를 때 같이 올라간다. </summary>
+        public event Action OnNearMissSuccess;
         // 260920_점령 판정에 몬스터를 더는 넘기지 않는다 — 가두면 무조건 먹고, 갇힌 몬스터는 죽는다(2-3).
 
         #region Engine.CGameObject
@@ -234,6 +280,8 @@ namespace Client
 
             // 260916_런 스킬은 판마다 완전히 초기화된다(뱀서라이크 — 스테이지를 나가면 사라진다).
             Clear_RunSkill();
+            // 260928_카드도 마찬가지다(태스크 #22) — 판이 끝나면 전부 사라진다.
+            Clear_Card();
 
             m_cSkillEffect = CSkillEffect.Create(cDesc.cSkillInfo != null ? cDesc.cSkillInfo.eType
                                                                          : SKILL_TYPE.NONE);
@@ -273,6 +321,7 @@ namespace Client
             Tick_SkillBuffer(fDeltaTime);
             Tick_RunSkill(fDeltaTime);
             Tick_DodgeCards(fDeltaTime);
+            Tick_Card(fDeltaTime);
 
             // 260917_적탄 효과(기절 · 감속 · 번쩍임).
             // 260918_도트는 플레이어에게 걸지 않는다 — 목숨제라 초마다 목숨이 하나씩 빠지면 맞자마자 끝난다.
@@ -308,6 +357,7 @@ namespace Client
         public override void Hide()
         {
             Clear_RunSkill();
+            Clear_Card();
 
             // 풀에 반납되므로 외부 구독을 끊어 다음 재사용에 새지 않게 한다.
             OnCapture       = null;
@@ -317,6 +367,7 @@ namespace Client
             OnDrawStart     = null;
             OnTurn          = null;
             OnDamaged       = null;
+            OnNearMissSuccess = null;
             m_cGrid         = null;
             m_cImpact.Clear();
 
@@ -342,6 +393,9 @@ namespace Client
                     // 월보(런 스킬)를 공짜로 얻은 셈이라, 가장 가까운 경계선으로 되돌려 놓는다.
                     m_cMoveHandler.Snap_ToBoundary();
                     m_vLastSafePos = m_cMoveHandler.POS;
+                    // 260928_"한 번에 X% 이상 점령" 카드(G04/M05 등)가 OnCapture 핸들러 안에서 바로 읽는다.
+                    m_fLastCaptureRatio = m_cGrid != null && m_cGrid.PLAYABLE_COUNT > 0
+                        ? (float)iCapturedCount / m_cGrid.PLAYABLE_COUNT : 0f;
                     OnCapture?.Invoke(iCapturedCount);
                     break;
 
@@ -480,6 +534,8 @@ namespace Client
         {
             if (m_fNearMissDodgeDuration > 0f)
                 m_fNearMissDodgeTimer = m_fNearMissDodgeDuration;
+
+            OnNearMissSuccess?.Invoke();
         }
 
         /// <summary> 도주 본능 — 피격 직후 가속 지속시간을 늘린다(여러 장이면 가장 긴 값). </summary>
@@ -642,6 +698,168 @@ namespace Client
                 m_lstRunSkillEffect[i].On_MonsterHit();
         }
 
+        // 260928_카드 30종(태스크 #22) — 3지선다가 고른 것을 여기로 넘긴다. 레벨 추적은 항상 하고,
+        // CCardEffect.Create가 뭔가를 만들면 그것도 같이 레벨을 맞춘다(만들지 않으면 순수 스테이지 카드라는
+        // 뜻이다 — CStage_Manager.Apply_Card가 자기 몫을 따로 처리한다).
+        /// <returns> 적용된 이후 레벨 </returns>
+        public int Add_Card(CCardInfo cInfo)
+        {
+            if (cInfo == null)
+                return 0;
+
+            int iLevel = m_cCardHandler.Add_Or_LevelUp(cInfo.eType, Mathf.Max(1, cInfo.iMaxLevel));
+
+            CCardEffect cOwned = Find_CardEffect(cInfo.eType);
+            if (cOwned != null)
+            {
+                cOwned.On_LevelChanged(cInfo, iLevel);
+                return iLevel;
+            }
+
+            CCardEffect cEffect = CCardEffect.Create(cInfo.eType);
+            if (cEffect == null)
+                return iLevel;
+
+            cEffect.Initialize(this);
+            cEffect.On_LevelChanged(cInfo, iLevel);
+            m_lstCardEffect.Add(cEffect);
+            return iLevel;
+        }
+
+        public CCardEffect Find_CardEffect(CARD_TYPE eType)
+        {
+            for (int i = 0; i < m_lstCardEffect.Count; ++i)
+            {
+                if (m_lstCardEffect[i].TYPE == eType)
+                    return m_lstCardEffect[i];
+            }
+            return null;
+        }
+
+        private void Tick_Card(float fDeltaTime)
+        {
+            if (m_fCardBurstSpeedTimer > 0f)
+            {
+                m_fCardBurstSpeedTimer -= fDeltaTime;
+                if (m_fCardBurstSpeedTimer <= 0f)
+                {
+                    m_fCardBurstSpeedTimer = 0f;
+                    m_fCardBurstSpeedBonus = 0f;
+                }
+            }
+
+            float fFuseScale        = 1f;
+            float fHitboxScale      = 1f;
+            float fConditionalScale = 1f;
+
+            for (int i = 0; i < m_lstCardEffect.Count; ++i)
+            {
+                m_lstCardEffect[i].Tick(fDeltaTime);
+                fFuseScale        *= m_lstCardEffect[i].Get_FuseSpeedScale();
+                fHitboxScale      *= m_lstCardEffect[i].Get_HitboxScale();
+                fConditionalScale *= m_lstCardEffect[i].Get_ConditionalSpeedScale();
+            }
+
+            m_fFuseSpeedCardScale        = Mathf.Max(0.1f, fFuseScale);
+            m_fHitboxCardScale           = Mathf.Max(0.1f, fHitboxScale);
+            m_fConditionalCardSpeedScale = Mathf.Max(0.1f, fConditionalScale);
+            // 260928_Apply_Speed()는 CPlayer.Tick()이 이 함수 뒤에 매 프레임 다시 부른다 — 여기서 두 번 부르지 않는다.
+        }
+
+        private void Clear_Card()
+        {
+            for (int i = 0; i < m_lstCardEffect.Count; ++i)
+                m_lstCardEffect[i].Release();
+
+            m_lstCardEffect.Clear();
+            m_cCardHandler.Clear();
+            m_iDrawStartCount      = 0;
+            m_bTrailElectrified    = false;
+            m_fTrailElectrifyStun  = 0f;
+            m_fFuseSpeedCardScale  = 1f;
+            m_fHitboxCardScale     = 1f;
+            m_fLastCaptureRatio    = 0f;
+            m_iFuseBombCharge      = 0;
+            m_iExtinguisherCharge  = 0;
+            m_fCardBurstSpeedBonus = 0f;
+            m_fCardBurstSpeedTimer = 0f;
+            m_fMomentumSpeedScale  = 1f;
+            m_fConditionalCardSpeedScale = 1f;
+        }
+
+        /// <summary> K01_ELECTRIC_LINE 전용 — 효과 모듈이 부른다. </summary>
+        public void Set_TrailElectrified(bool bOn, float fStunDuration)
+        {
+            m_bTrailElectrified   = bOn;
+            m_fTrailElectrifyStun = fStunDuration;
+        }
+
+        /// <summary> K01_ELECTRIC_LINE 전용 — 선을 새로 긋기 시작할 때마다 1씩 늘려 돌려준다. </summary>
+        public int Count_DrawStart() => ++m_iDrawStartCount;
+
+        /// <summary> M01_SPRINTER/M03_CORNERING/M06_NEARMISS_MASTER — 짧게 터지는 가속. 여러 장이면 큰/긴 값으로 갱신한다. </summary>
+        public void Add_CardBurstSpeed(float fBonus, float fDuration)
+        {
+            if (fBonus <= 0f || fDuration <= 0f)
+                return;
+
+            m_fCardBurstSpeedBonus = Mathf.Max(m_fCardBurstSpeedBonus, fBonus);
+            m_fCardBurstSpeedTimer = Mathf.Max(m_fCardBurstSpeedTimer, fDuration);
+        }
+
+        /// <summary> M02_MOMENTUM 전용 — 카드 자신이 매 프레임 다시 계산해 넣는다. 1이면 영향 없음. </summary>
+        public void Set_MomentumSpeedScale(float fScale) => m_fMomentumSpeedScale = Mathf.Max(0.1f, fScale);
+
+        /// <summary> F05_FUSE_BOMB — 충전을 더한다(레벨업마다 직전 레벨과의 차이만 넘길 것). </summary>
+        public void Add_FuseBombCharge(int iAmount)
+        {
+            if (iAmount > 0) m_iFuseBombCharge += iAmount;
+        }
+
+        /// <summary> 도화선에 따라잡히기 직전 CStage_Manager가 부른다. 충전이 있으면 소모하고 true. </summary>
+        public bool Try_ConsumeFuseBomb()
+        {
+            if (m_iFuseBombCharge <= 0)
+                return false;
+
+            --m_iFuseBombCharge;
+            return true;
+        }
+
+        /// <summary> G01_EXTINGUISHER — 충전을 더한다(레벨업마다 직전 레벨과의 차이만 넘길 것). </summary>
+        public void Add_ExtinguisherCharge(int iAmount)
+        {
+            if (iAmount > 0) m_iExtinguisherCharge += iAmount;
+        }
+
+        /// <summary> 도화선이 거의 다 탔을 때 CStage_Manager가 부른다. 충전이 있으면 소모하고 true. </summary>
+        public bool Try_ConsumeExtinguisher()
+        {
+            if (m_iExtinguisherCharge <= 0)
+                return false;
+
+            --m_iExtinguisherCharge;
+            return true;
+        }
+
+        /// <summary> G01_EXTINGUISHER 충전을 ON_CLOSE(점령)로 회복한다 — 카드 최대치까지. </summary>
+        public void Refill_ExtinguisherCharge(int iMax)
+        {
+            if (iMax > 0)
+                m_iExtinguisherCharge = iMax;
+        }
+
+        /// <summary> G05_STURDY/M07_SIZE_SHIFT(대형) — 최대 HP를 늘리고 그만큼 그 자리에서 채워 준다. </summary>
+        public void Add_CardMaxLife(int iAmount)
+        {
+            if (iAmount <= 0)
+                return;
+
+            m_iMaxLife += iAmount;
+            m_iLife = Mathf.Min(m_iMaxLife, m_iLife + iAmount);
+            OnLifeChanged?.Invoke(m_iLife);
+        }
+
         // 260918_몽둥이는 좌우로만 휘두른다 — 셀 크기를 아는 곳이 여기라 셀 단위 오프셋을 월드 좌표로 바꿔 준다.
         /// <param name="vOffsetCells"> 플레이어 기준 오프셋(셀) </param>
         public Vector2 Get_OffsetPoint(Vector2 vOffsetCells)
@@ -696,9 +914,14 @@ namespace Client
             // 260928_도주 본능(DODGE_PANIC_SPEED) — 피격 직후 시한부로만 곱한다.
             float fPanicScale = m_fPanicSpeedTimer > 0f ? 1f + PANIC_SPEED_BONUS : 1f;
 
+            // 260928_카드 30종(태스크 #22) — 짧게 터지는 가속(M01/M03/M06) · 직진 누적(M02) ·
+            // 조건부 배율(G07/F01)이 세 갈래 더 늘었다. 전부 곱해서 겹친다 — 서로의 존재를 몰라도 된다.
+            float fCardBurstScale = m_fCardBurstSpeedTimer > 0f ? 1f + m_fCardBurstSpeedBonus : 1f;
+
             // 260917_탄 감속이 네 번째 갈래다. 스테이지가 넣는 환경 배율(거미줄)에 덮어써지지 않게 따로 곱한다.
             m_cMoveHandler.SPEED = m_fBaseSpeed * m_fEnvSpeedScale * m_fSkillSpeedScale * m_fCardSpeedScale
-                                 * m_fTrailSpeedScale * m_cImpact.SPEED_SCALE * fBoundaryScale * fPanicScale;
+                                 * m_fTrailSpeedScale * m_cImpact.SPEED_SCALE * fBoundaryScale * fPanicScale
+                                 * fCardBurstScale * m_fMomentumSpeedScale * m_fConditionalCardSpeedScale;
         }
 
         // 260921_선 긋기 시작 · 방향 전환을 알린다. 상태를 비교하는 자리를 한곳에 모아 둔다 —

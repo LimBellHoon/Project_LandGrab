@@ -191,6 +191,15 @@ Calc_TimeStar(fElapsed, fTimeLimit):
 > - `CProtoTest.Test_CardHandler`가 `CCardHandler`의 레벨링 규칙(첫 획득 1레벨 · 재선택 시 레벨업 ·
 >   만렙 클램프 · 카드별로 독립)을, `Test_EnemyCombat`이 `CEnemy.OnStunned`가 기절 순간에 정확히 한 번
 >   울리는지를 화면 없이 검증한다
+>
+> **260928_태스크 #22(카드 30종 카탈로그) 구현 완료.** 사용자가 원본 스펙 표 전문을 다시 붙여 줘서
+> `Docs/Design_Card_Catalog_Spec.md`에 그대로 보존해 두었다(컨텍스트 압축으로 원문이 사라졌던 사고의
+> 재발 방지 — 앞으로 사용자가 주는 1차 스펙 원문은 옮겨 적어 둔다). 실제로 구현한 내용·스코프 판단·
+> 남은 항목은 `CLAUDE.md` 2-26의 "260928_카드 30종 실제 구현" 항목에 적었다 — 요약하면: 옛 20종은
+> 지우지 않고 가중치 0으로 잠갔고(런 스킬 이식/삭제도 다음 정리 태스크로 미뤘다), `CardInfo.csv`가
+> 16열로 늘었으며, `CCardEffect.Create`는 플레이어 혼자 해결되는 16종만 만들고 나머지(K02~K07·G08·
+> F02/F04/F06/F07)는 `CStage_Manager`가 직접 든다. `K08_WHIRL`·`M04_UNBREAKABLE_RUSH`는 안전 귀환
+> 버튼이 없어 데이터만 있고 미배선이다. `CProtoTest.Test_CardCatalog`가 대표 카드들을 검증한다.
 
 `Client_Enum.CARD_TYPE`의 기존 값(`SHIELD`~`DODGE_FREE_HIT`, 이번 세션에 넣은 것 포함)을 전부 지우고
 원본 스펙 §9의 30종으로 새로 채운다. 매핑 원칙:

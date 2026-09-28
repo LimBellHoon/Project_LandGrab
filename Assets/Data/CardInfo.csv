@@ -1,37 +1,89 @@
-﻿iCardID	eType	strName	strDesc	fValue	iWeight	eTheme	NONE
+iCardID	eType	strName	strDesc	fValue	iWeight	eTheme	eFamily	iTier	iMaxLevel	fValueLv1	fValueLv2	fValueLv3	strParam	bFirstPickOnly	NONE
 ;== 카드 테이블 ==	점령률을 넘길 때마다 셋 중 하나를 고른다. 고른 판에서만 유지된다
 ;eType : Client_Enum.CARD_TYPE 이름과 철자가 같아야 한다
-;fValue : SHIELD/HEAL은 개수, SPEED/EVASION은 더할 비율, SLOW는 몬스터에게 곱할 배율
-;fValue(사냥형, 260923 Docs/Design_Card_Pool.md 1장) : HUNT_THORN/HUNT_FEAST=고정 피해·회복량 /
-;  HUNT_KNOCKBACK=넉백 거리에 더할 배율 / HUNT_STONESKIN=몸 충돌 피해에 곱할 배율(곱해서 누적) /
-;  HUNT_TAUNT=몸 충돌마다 추가로 올릴 분노 틱 수 / HUNT_MARK=감속 지속시간(초, 배율은 고정 0.5) /
-;  HUNT_LOOT=드롭 확률에 더할 값 / HUNT_EXECUTE=스플래시 반경(칸)
-;fValue(회피형, 260928 Docs/Design_Card_Pool.md 2장) : DODGE_INVINCIBLE_UP=무적시간 가산(초) /
-;  DODGE_BOUNDARY_SPEED=경계선 위 속도 배율 가산 / DODGE_NEARMISS=NEAR MISS 보너스 지속시간(초, 확률은 고정 0.15) /
-;  DODGE_PANIC_SPEED=피격 후 가속 지속시간(초, 배율은 고정 0.25) / DODGE_TURN_GRACE=방향전환 무적 쿨타임(초, 무적시간은 고정 0.15) /
-;  DODGE_LUCKY_CHAIN=확정 회피 예약 시간(초) / DODGE_FREE_HIT=무효화 1회권 개수
-;iWeight : 뽑힐 가중치. 클수록 자주 나온다. 0이면 안 나온다
-;eTheme : 카드 색 테마(2-10-1) — COMBAT 파랑 / MOVE 주황. 각성은 보라색이라 여기 안 적는다 (260920)
-;---	type	이름	설명	수치	가중치	테마	메모
-1	SHIELD	보호막	다음 피격 한 번을 막는다	1	10	COMBAT	즉시
-2	HEAL	회복	목숨을 하나 회복한다	1	7	COMBAT	즉시
-3	SPEED	가속	이동 속도가 15% 빨라진다	0.15	10	MOVE	누적된다
-4	EVASION	회피	피격을 흘릴 확률이 오른다	0.08	10	MOVE	누적된다
-5	SLOW	둔화	몬스터가 20% 느려진다	0.8	10	COMBAT	곱해서 누적
-;== 사냥형 (260923, Docs/Design_Card_Pool.md 1장) ==	몸으로 부딪히는 것을 공격 기회로 바꾼다
-6	HUNT_THORN	가시 갑옷	몸으로 부딪힌 몬스터에게 고정 피해를 준다	1	10	COMBAT	누적된다
-7	HUNT_KNOCKBACK	거센 팔뚝	몸 충돌 넉백 거리가 늘어난다	0.4	9	COMBAT	누적된다
-8	HUNT_STONESKIN	돌가죽	몸 충돌로 받는 피해가 줄어든다	0.85	9	COMBAT	곱해서 누적
-9	HUNT_TAUNT	도발	몸 충돌마다 분노 게이지가 더 오른다	1	8	COMBAT	분노조절못해가 있어야 의미 있다
-10	HUNT_MARK	사냥감 표식	넉백당한 몬스터가 잠깐 느려진다	2.5	6	COMBAT	갱신된다
-11	HUNT_LOOT	노획 본능	몬스터 처치 시 필드 아이템 확률이 오른다	0.1	6	COMBAT	누적된다
-12	HUNT_EXECUTE	처형자	가둬 잡기로 죽은 자리 주변도 피해를 입는다	2	5	COMBAT	갱신된다
-13	HUNT_FEAST	만찬	가시 갑옷으로 피해를 줄 때마다 회복한다	1	3	COMBAT	가시 갑옷과 조합 전제
-;== 회피형 (260928, Docs/Design_Card_Pool.md 2장) ==	맞지 않는 것 자체를 화려하게 만든다
-14	DODGE_INVINCIBLE_UP	여유로운 몸놀림	피격 후 무적시간이 길어진다	0.3	10	MOVE	누적된다
-15	DODGE_BOUNDARY_SPEED	외줄타기	경계선을 따라 미끄러질 때 이동속도가 오른다	0.15	9	MOVE	누적된다
-16	DODGE_NEARMISS	아슬아슬한 본능	아슬아슬하게 피하면 짧게 회피 확률이 오른다	2	8	MOVE	누적된다
-17	DODGE_PANIC_SPEED	도주 본능	피격 직후 짧게 이동속도가 오른다	1.2	6	MOVE	갱신된다
-18	DODGE_TURN_GRACE	스치는 그림자	방향을 꺾을 때 아주 짧게 무적이 된다(쿨타임)	4	5	MOVE	여러 장이면 쿨이 짧아진다
-19	DODGE_LUCKY_CHAIN	요행	회피에 성공하면 다음 한 번은 무조건 피한다	3	3	MOVE	갱신된다
-20	DODGE_FREE_HIT	잔영	몸 충돌 피해를 다음 1회 완전히 무효화한다	1	3	MOVE	누적된다
+;260928_카드 30종(태스크 #22, Docs/Design_Card_Catalog_Spec.md) 도입 — 옛 20종(1~20행)은 iWeight를 0으로
+;  잠갔다(1-1 "가중치 0 = 잠금" 패턴). 옛 20종의 fValue 뜻은 아래 예전 주석 그대로 읽으면 된다.
+;fValue(옛 즉시효과, 260912) : SHIELD/HEAL은 개수, SPEED/EVASION은 더할 비율, SLOW는 몬스터에게 곱할 배율
+;fValue(옛 사냥형, 260923) : HUNT_THORN/HUNT_FEAST=고정 피해·회복량 / HUNT_KNOCKBACK=넉백 거리에 더할 배율 /
+;  HUNT_STONESKIN=몸 충돌 피해에 곱할 배율(곱해서 누적) / HUNT_TAUNT=몸 충돌마다 추가로 올릴 분노 틱 수 /
+;  HUNT_MARK=감속 지속시간(초, 배율은 고정 0.5) / HUNT_LOOT=드롭 확률에 더할 값 / HUNT_EXECUTE=스플래시 반경(칸)
+;fValue(옛 회피형, 260928) : DODGE_INVINCIBLE_UP=무적시간 가산(초) / DODGE_BOUNDARY_SPEED=경계선 위 속도 배율 가산 /
+;  DODGE_NEARMISS=NEAR MISS 보너스 지속시간(초, 확률은 고정 0.15) / DODGE_PANIC_SPEED=피격 후 가속 지속시간(초, 배율은 고정 0.25) /
+;  DODGE_TURN_GRACE=방향전환 무적 쿨타임(초, 무적시간은 고정 0.15) / DODGE_LUCKY_CHAIN=확정 회피 예약 시간(초) / DODGE_FREE_HIT=무효화 1회권 개수
+;iWeight : 뽑힐 가중치. 클수록 자주 나온다. 0이면 안 나온다. 새 30종은 전부 기본값(10) — 계열별 튜닝은 태스크 #23
+;eTheme : 옛 카드가 쓰는 카드 색 테마(2-10-1) — COMBAT 파랑 / MOVE 주황. 새 30종은 CARD_FAMILY가 대신하며 아직 화면에 안 쓴다
+;eFamily : CARD_FAMILY 이름과 철자가 같아야 한다(CONTROL=제어 MOBILITY=기동 GUARD=수호 FUSE=도화선). 옛 카드는 안 쓴다(기본값)
+;iTier : 원본 스펙의 T(그 계열 안에서의 단계). 아직 코드가 안 읽는다(태스크 #23에서 뽑기 확률에 쓸 수 있다)
+;iMaxLevel : 레벨링 카드면 3. 0/1이면 옛 카드처럼 즉시효과 1회권(fValue만 본다)
+;fValueLv1~3 : 그 레벨에서의 주 수치. 카드마다 뜻이 다르다 — 아래 카드별 요약 참고
+;strParam : 두 번째 수치가 필요한 카드의 조율값(KEY_LV1:값|KEY_LV2:값|KEY_LV3:값). 없으면 "-"
+;bFirstPickOnly : ★(원본 스펙 "첫 선택 5% 고정 풀"). 1이면 표시만 해 둔 것 — 실제 배선은 태스크 #23
+;
+;=== 제어형(K, CONTROL) — fValueLv1~3 뜻 ===
+;K01_ELECTRIC_LINE 전기화된 선에 닿은 적 기절 시간(초) / K02_BOUNDARY_SHOCK 닫을 때 근처 적에게 주는 그로기 /
+;K03_LEVY 이 비율 이하로 남으면 즉시 기절(0~1) / K04_TURRET 최대 포탑 수 / K05_FROST_PRISON 빙결 시간(초) /
+;K06_SINGULARITY 장판 안 적 둔화(%, 양수로 적지만 감속으로 적용) / K07_DARK_CHAIN 속박 시간(초) / K08_WHIRL 회전 시간(초, 미배선)
+;=== 기동형(M, MOBILITY) ===
+;M01_SPRINTER 가속 비율 / M02_MOMENTUM 직진 가속 최대치(비율) / M03_CORNERING 전환 후 속도 유지 시간(초) /
+;M04_UNBREAKABLE_RUSH 판당 사용 횟수(미배선) / M05_GHOST_STEP 몸통 통과 시간(초) / M06_NEARMISS_MASTER 가속 비율 /
+;M07_SIZE_SHIFT 대형(거대화) 최대HP 가산 — strParam의 SPEED_LV1~3은 소형(축소) 이동속도 가산(비율), 50/50 랜덤은 코드가 정한다
+;=== 수호형(G, GUARD) ===
+;G01_EXTINGUISHER 판당 충전 수 / G02_INVINCIBLE_STAR 무적 시간(초) / G03_LAST_SANCTUARY 무적 시간(초, 판당 1회) /
+;G04_MASS_SHIELD 보호막 충전 수 / G05_STURDY 최대 HP 가산 / G06_BANSHEE_VEIL 재충전 쿨타임(초, 낮을수록 좋다) /
+;G07_LAST_STAND HP 1일 때 이속 가산(비율) — strParam의 FUSE_LV1~3은 같은 조건에서 도화선 속도 감소(비율) /
+;G08_REFRACTION 굴절 발동 확률(%) — strParam의 DEPTH_LV1~3은 굴절 깊이(칸)
+;=== 도화선형(F, FUSE) ===
+;F01_BURNING_HASTE 도화선이 타는 동안 이속 가산(비율) / F02_SCORCHED_GROUND 탄 자리에 적이 닿으면 주는 그로기 /
+;F03_FIREBREAK 도화선 전파 속도 감소(비율) / F04_COUNTER_FIRE 발화시킨 적 기절 시간(초) / F05_FUSE_BOMB 판당 무효화 횟수 /
+;F06_PLAYING_WITH_FIRE 스택당 그로기(최대 5스택) / F07_POWDER_WICK 앞머리가 적과 겹칠 때 주는 그로기(대가로 전파 속도 +25%, 고정)
+;---	type	이름	설명	수치	가중치	테마	가족	단계	만렙	Lv1	Lv2	Lv3	조율값	첫선택	메모
+1	SHIELD	보호막	다음 피격 한 번을 막는다	1	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+2	HEAL	회복	목숨을 하나 회복한다	1	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+3	SPEED	가속	이동 속도가 15% 빨라진다	0.15	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+4	EVASION	회피	피격을 흘릴 확률이 오른다	0.08	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+5	SLOW	둔화	몬스터가 20% 느려진다	0.8	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+6	HUNT_THORN	가시 갑옷	몸으로 부딪힌 몬스터에게 고정 피해를 준다	1	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+7	HUNT_KNOCKBACK	거센 팔뚝	몸 충돌 넉백 거리가 늘어난다	0.4	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+8	HUNT_STONESKIN	돌가죽	몸 충돌로 받는 피해가 줄어든다	0.85	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+9	HUNT_TAUNT	도발	몸 충돌마다 분노 게이지가 더 오른다	1	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+10	HUNT_MARK	사냥감 표식	넉백당한 몬스터가 잠깐 느려진다	2.5	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+11	HUNT_LOOT	노획 본능	몬스터 처치 시 필드 아이템 확률이 오른다	0.1	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+12	HUNT_EXECUTE	처형자	가둬 잡기로 죽은 자리 주변도 피해를 입는다	2	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+13	HUNT_FEAST	만찬	가시 갑옷으로 피해를 줄 때마다 회복한다	1	0	COMBAT	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+14	DODGE_INVINCIBLE_UP	여유로운 몸놀림	피격 후 무적시간이 길어진다	0.3	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+15	DODGE_BOUNDARY_SPEED	외줄타기	경계선을 따라 미끄러질 때 이동속도가 오른다	0.15	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+16	DODGE_NEARMISS	아슬아슬한 본능	아슬아슬하게 피하면 짧게 회피 확률이 오른다	2	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+17	DODGE_PANIC_SPEED	도주 본능	피격 직후 짧게 이동속도가 오른다	1.2	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+18	DODGE_TURN_GRACE	스치는 그림자	방향을 꺾을 때 아주 짧게 무적이 된다(쿨타임)	4	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+19	DODGE_LUCKY_CHAIN	요행	회피에 성공하면 다음 한 번은 무조건 피한다	3	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+20	DODGE_FREE_HIT	잔영	몸 충돌 피해를 다음 1회 완전히 무효화한다	1	0	MOVE	CONTROL	0	0	0	0	0	-	0	잠김(태스크 #22)
+21	K01_ELECTRIC_LINE	감전 선	3번째 선 긋기마다 선이 전기화된다. 닿은 적은 도화선 대신 기절한다	0	10	COMBAT	CONTROL	1	3	1.5	2.0	2.5	-	1	★ 첫 선택 고정 풀
+22	K02_BOUNDARY_SHOCK	경계선 충격파	경계선에서 충격파가 일어나 적을 밀어내고 그로기를 준다	0	10	COMBAT	CONTROL	1	3	10	18	26	-	0	넉백 3칸 고정
+23	K03_LEVY	징수	그로기가 이 비율 이하로 남으면 즉시 기절시킨다	0	10	COMBAT	CONTROL	2	3	0.15	0.22	0.30	-	0	-
+24	K04_TURRET	포탑 설치	점유한 영역 모서리에 포탑을 세운다. 반경 안 적을 둔화시키고 그로기를 준다	0	10	COMBAT	CONTROL	2	3	2	3	4	-	0	반경6칸·둔화20%·초당그로기3 고정
+25	K05_FROST_PRISON	서리 감옥	한 번에 크게 점령하면 근처 적이 얼어붙는다	0	10	COMBAT	CONTROL	2	3	2.0	2.5	3.0	-	0	점령 12%↑에서 발동
+26	K06_SINGULARITY	광휘의 특이점	점유율 30%를 넘으면 주기적으로 발밑에 둔화 장판이 생긴다	0	10	COMBAT	CONTROL	3	3	35	45	55	-	0	반경4칸·12초주기·3초지속 고정
+27	K07_DARK_CHAIN	어둠의 속박	시작점과 나를 잇는 사슬에 닿은 적을 속박한다	0	10	COMBAT	CONTROL	3	3	1.0	1.4	1.8	-	0	쿨타임 6초 고정
+28	K08_WHIRL	빙글빙글	귀환이 시작점을 축으로 한 회전 돌파로 바뀐다	0	10	COMBAT	CONTROL	3	3	0.75	1.0	1.25	-	0	귀환 버튼 미구현으로 아직 미배선
+29	M01_SPRINTER	스프린터	선을 긋기 시작하면 잠깐 빨라진다	0	10	MOVE	MOBILITY	1	3	0.30	0.45	0.60	-	1	★ 첫 선택 고정 풀, 1초 지속 고정
+30	M02_MOMENTUM	관성	직진할수록 빨라진다. 방향을 바꾸면 초기화된다	0	10	MOVE	MOBILITY	1	3	0.15	0.25	0.35	-	0	초당 +5% 고정
+31	M03_CORNERING	코너링	방향을 바꿔도 속도가 줄지 않고 잠깐 유지된다	0	10	MOVE	MOBILITY	1	3	0.3	0.5	0.7	-	0	-
+32	M04_UNBREAKABLE_RUSH	불굴의 돌진	귀환이 무적 돌진으로 바뀐다. 판당 사용 횟수 제한	0	10	MOVE	MOBILITY	2	3	1	2	3	-	0	귀환 버튼 미구현으로 아직 미배선
+33	M05_GHOST_STEP	유령 걸음	한 번에 크게 점령하면 잠깐 몸이 통과 상태가 된다	0	10	MOVE	MOBILITY	2	3	2.0	2.7	3.4	-	0	점령 12%↑에서 발동
+34	M06_NEARMISS_MASTER	니어미스 달인	아슬아슬하게 피하면 잠깐 빨라진다	0	10	MOVE	MOBILITY	2	3	0.50	0.65	0.80	-	0	1초 지속 고정
+35	M07_SIZE_SHIFT	거대화 / 축소	스테이지 시작마다 반반 확률로 거대화(최대HP 증가) 또는 축소(이속 증가)한다	0	10	MOVE	MOBILITY	3	3	2	3	4	SPEED_LV1:25|SPEED_LV2:35|SPEED_LV3:45	0	Lv1값=대형HP가산, 조율값=소형 이속가산
+36	G01_EXTINGUISHER	소화기	도화선이 거의 다 타면 자동으로 잠깐 꺼 준다	0	10	COMBAT	GUARD	1	3	1	2	3	-	1	★ 첫 선택 고정 풀, 1.5초 이내 자동발동·3초정지 고정
+37	G02_INVINCIBLE_STAR	무적의 별	주기적으로 보호막과 무적을 함께 얻는다	0	10	COMBAT	GUARD	1	3	1.0	1.5	2.0	-	0	35초 주기 고정
+38	G03_LAST_SANCTUARY	최후의 성역	목숨이 위급해지면 완전히 무적이 된다(판당 1회)	0	10	COMBAT	GUARD	3	3	2.0	2.5	3.0	-	0	HP 1일 때 발동
+39	G04_MASS_SHIELD	대량 보호막	한 번에 크게 점령하면 보호막을 얻는다	0	10	COMBAT	GUARD	1	3	1	2	3	-	0	점령 10%↑에서 발동
+40	G05_STURDY	강골	최대 HP가 늘어난다	0	10	COMBAT	GUARD	1	3	1	2	3	-	0	-
+41	G06_BANSHEE_VEIL	밴시의 베일	주기적으로 다음 피격 한 번을 무효화할 준비를 한다	0	10	COMBAT	GUARD	2	3	20	16	12	-	0	값=재충전 쿨타임(초, 낮을수록 좋다)
+42	G07_LAST_STAND	불굴	목숨이 하나 남으면 빨라지고 도화선도 느려진다	0	10	COMBAT	GUARD	3	3	25	40	55	FUSE_LV1:20|FUSE_LV2:35|FUSE_LV3:50	0	HP 1일 때만 적용
+43	G08_REFRACTION	불강금선	도화선 대신 확률로 선이 옆으로 굴절된다	0	10	COMBAT	GUARD	3	3	60	80	100	DEPTH_LV1:2|DEPTH_LV2:3|DEPTH_LV3:4	0	CTerritoryGrid.Try_Insert_Detour(2-3-3)
+44	F01_BURNING_HASTE	배수의 진	도화선이 타는 동안 이동 속도가 오른다	0	10	COMBAT	FUSE	1	3	0.40	0.55	0.70	-	0	-
+45	F02_SCORCHED_GROUND	역화	도화선이 타고 지나간 자리에 적이 들어오면 둔화되고 그로기를 입는다	0	10	COMBAT	FUSE	1	3	5	10	15	-	0	둔화40%·2초 고정
+46	F03_FIREBREAK	방화선	도화선이 타는 속도가 느려진다	0	10	COMBAT	FUSE	1	3	0.30	0.40	0.50	-	0	-
+47	F04_COUNTER_FIRE	맞불	발화시킨 몬스터를 그 자리에서 기절시킨다	0	10	COMBAT	FUSE	2	3	1.0	1.4	1.8	-	0	-
+48	F05_FUSE_BOMB	도화선 폭탄	도화선에 따라잡혀도 목숨은 깎이지 않는다(선은 그대로 사라진다)	0	10	COMBAT	FUSE	3	3	1	2	3	-	0	판당 횟수
+49	F06_PLAYING_WITH_FIRE	불장난	도화선이 타던 시간만큼 닫는 순간 근처 적에게 그로기를 준다	0	10	COMBAT	FUSE	3	3	8	14	20	-	0	최대 5스택 고정
+50	F07_POWDER_WICK	화약 심지	도화선 앞머리가 적과 겹치면 그로기를 준다	0	10	COMBAT	FUSE	2	3	12	20	28	-	0	대가로 전파 속도 +25% 고정

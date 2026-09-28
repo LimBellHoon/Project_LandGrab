@@ -186,6 +186,45 @@
         DODGE_TURN_GRACE,     // 스치는 그림자 — 방향 전환 시 짧은 무적(쿨타임 있음)
         DODGE_LUCKY_CHAIN,    // 요행 — 회피 성공 시 다음 한 번은 확정 회피
         DODGE_FREE_HIT,       // 잔영 — 몸 충돌 피해를 다음 1회 완전히 무효화
+
+        // 260928_카드 30종(Docs/Design_Card_Catalog_Spec.md, 태스크 #22) — 위 사냥형/회피형 15종을 대신한다.
+        // 옛 15종은 지우지 않고 CardInfo.csv에서 iWeight=0으로 잠갔다(1-1의 "가중치 0 = 잠금" 패턴) —
+        // 다음 정리 태스크에서 옛 스위치문(CStage_Manager.Apply_Card)과 함께 완전히 걷어낼 것.
+        // 이름은 ID+영문 의미명 조합이다(Docs/Design_Roguelite_Rewrite.md 6장 권장 표기).
+        // 제어형(K, CARD_FAMILY.CONTROL) 8종
+        K01_ELECTRIC_LINE,    // 감전 선 — 3번째 선마다 전기화, 닿은 적은 도화선/굴절 대신 기절
+        K02_BOUNDARY_SHOCK,   // 경계선 충격파 — 닫을 때 근처 적 넉백 + 그로기
+        K03_LEVY,             // 징수 — 그로기 잔여량이 낮으면 즉시 기절 처리
+        K04_TURRET,           // 포탑 설치 — 닫은 자리에 포탑, 반경 내 둔화 + 초당 그로기
+        K05_FROST_PRISON,     // 서리 감옥 — 대형 점령 시 근처 적 빙결(기절)
+        K06_SINGULARITY,      // 광휘의 특이점 — 점유율 30% 이후 주기적으로 장판(둔화)
+        K07_DARK_CHAIN,       // 어둠의 속박 — 시작점-플레이어 사슬에 닿은 적 속박
+        K08_WHIRL,            // 빙글빙글 — 귀환을 원형 돌파로 덮어씀 (귀환 버튼 없어 미배선)
+        // 기동형(M, CARD_FAMILY.MOBILITY) 7종
+        M01_SPRINTER,         // 스프린터 — 선 긋기 시작 시 잠깐 가속
+        M02_MOMENTUM,         // 관성 — 직진할수록 가속(최대치), 꺾으면 리셋
+        M03_CORNERING,        // 코너링 — 방향 전환 시 감속 없이 속도 유지
+        M04_UNBREAKABLE_RUSH, // 불굴의 돌진 — 귀환을 무적 돌진으로 덮어씀 (귀환 버튼 없어 미배선)
+        M05_GHOST_STEP,       // 유령 걸음 — 대형 점령 후 잠깐 몸통 통과(기존 무적 재사용)
+        M06_NEARMISS_MASTER,  // 니어미스 달인 — NEAR MISS 성공 시 가속
+        M07_SIZE_SHIFT,       // 거대화/축소 — 스테이지 시작 시 랜덤 특성
+        // 수호형(G, CARD_FAMILY.GUARD) 8종
+        G01_EXTINGUISHER,     // 소화기 — 도화선이 임박하면 자동으로 잠깐 멈춘다
+        G02_INVINCIBLE_STAR,  // 무적의 별 — 주기적으로 보호막+무적
+        G03_LAST_SANCTUARY,   // 최후의 성역 — HP 위급 시 완전 무적(판당 1회)
+        G04_MASS_SHIELD,      // 대량 보호막 — 대형 점령 시 보호막 획득
+        G05_STURDY,           // 강골 — 최대 HP 증가
+        G06_BANSHEE_VEIL,     // 밴시의 베일 — 주기적으로 다음 피격 1회 무효
+        G07_LAST_STAND,       // 불굴 — HP 1일 때 이속 증가 + 도화선 둔화
+        G08_REFRACTION,       // 불강금선 — 도화선 대신 확률로 굴절(2-3-3, CTerritoryGrid.Try_Insert_Detour)
+        // 도화선형(F, CARD_FAMILY.FUSE) 7종
+        F01_BURNING_HASTE,    // 배수의 진 — 도화선이 타는 동안 이동속도 증가
+        F02_SCORCHED_GROUND,  // 역화 — 도화선이 지나간 자리에 적이 닿으면 둔화 + 그로기
+        F03_FIREBREAK,        // 방화선 — 도화선 전파 속도 감소
+        F04_COUNTER_FIRE,     // 맞불 — 발화시킨 적을 그 자리에서 기절
+        F05_FUSE_BOMB,        // 도화선 폭탄 — 따라잡혀도 HP는 안 깎인다(판당 횟수)
+        F06_PLAYING_WITH_FIRE,// 불장난 — 불이 붙어 있던 시간만큼 닫을 때 근처 적에게 그로기
+        F07_POWDER_WICK,      // 화약 심지 — 도화선 앞머리가 적과 겹치면 그로기(대가로 전파 속도 증가)
     }
 
 

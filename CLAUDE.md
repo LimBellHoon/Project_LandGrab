@@ -2006,6 +2006,56 @@ CGameManager            OnFieldItemUsed → 소리 · 진동
 **나머지(카드 30종 실제 구현 + 옛 시스템 이식/삭제 · 굴절 호출 배선 · 상한/배타/스테이지 테이블)는
 아직 코드 미착수** — 순서와 각 단계의 구체안은 설계 문서에 있다.
 
+#### 260928_카드 30종 실제 구현 (태스크 #22, `Docs/Design_Card_Catalog_Spec.md`)
+사용자가 원본 스펙 표 전문(제어형 K01~K08 · 기동형 M01~M07 · 수호형 G01~G08 · 도화선형 F01~F07)을
+다시 붙여 줘서 `Docs/Design_Card_Catalog_Spec.md`에 그대로 옮겨 적었다 — 이전에 "원본 전문은 다시
+옮기지 않는다"고 판단했던 게 컨텍스트 압축 이후 스펙 자체가 사라지는 사고로 이어졌던 것을 겪고 나서
+바꾼 방침이다. **사용자가 준 1차 스펙 원문은 앞으로도 옮겨 적어 둔다.**
+
+- **옛 20종은 지우지 않고 `CardInfo.csv`에서 가중치 0으로 잠갔다**(2-25 "가중치 0 = 잠금" 패턴).
+  `CStage_Manager.Apply_Card`의 옛 스위치문 · `CARD_TYPE`의 옛 값 · `PICK_THEME`도 전부 그대로다.
+  런 스킬(`RunSkillInfo.csv`/`CRunSkillHandler`)도 손대지 않았다 — "런 스킬을 카드 시스템에
+  흡수한다"는 사용자 확인(태스크 #21)은 방향이 정해진 것이지 이번 태스크의 범위는 아니라고 보고,
+  실제 이식/삭제는 다음 정리 태스크로 미뤘다(지금 지우면 대신할 게 없어 3지선다가 죽는다)
+- `CardInfo.csv`가 16열로 늘었다 — `eFamily`(CARD_FAMILY) · `iTier` · `iMaxLevel` · `fValueLv1~3`
+  (레벨별 주 수치, 기본값+증가치가 아니라 스펙 그대로 레벨마다 따로 적는다 — 항상 등차수열은 아니라서)
+  · `strParam`(두 번째 수치가 필요한 카드의 `KEY_LV1:값|KEY_LV2:값|KEY_LV3:값`, `ProjectileInfo.csv`와
+  같은 규약) · `bFirstPickOnly`(★ 표시만, 실제 첫 선택 고정 풀 배선은 태스크 #23).
+  **값의 스케일은 카드마다 다르다** — CSV 머리 주석에 카드별 뜻을 적어 뒀다. K06/G07(strParam 포함)/G08은
+  %로 적고 코드가 100으로 나누며, M01/M02/M06/F01/F03은 이미 비율로 적고 그대로 곱한다 —
+  **헷갈려서 실제로 F01/F03을 잘못 나눴다가(아래 참고) 이번에 고쳤다.**
+- `CCardHandler`/`CCardEffect`(태스크 #21 프레임)를 실제로 채웠다. `CCardEffect.Create`는 **플레이어
+  혼자 해결되는 16종**(K01, M01/M02/M03/M05/M06/M07, G01~G07, F01/F03/F05)만 만든다 — 나머지
+  (K02~K07 · G08 · F02/F04/F06/F07)는 "그리드는 칸만 알고 몬스터는 스테이지가 본다"(2-3) 그대로
+  `CStage_Manager`가 직접 든다(옛 HUNT_*/DODGE_* 카드와 같은 자리 — 필드 하나 + `Apply_Card`에서
+  그 필드를 채우는 한 줄, `ICardHost` 같은 새 인터페이스는 만들지 않았다).
+  `CStage_Manager.Apply_Card`가 이제 30종 전부를 분기한다 — 플레이어 쪽은 `CPlayer.Add_Card(cInfo)` 한
+  줄로 끝나고, 스테이지 쪽은 그 반환 레벨로 `cInfo.Get_Value`/`Get_Param`을 읽어 필드에 다시 적는다.
+  포탑 자리 · K06 장판 타이머 · K07/F02/F07 쿨타임 딕셔너리처럼 **웨이브에 묶인 상태**는 `Enter_Wave`에서
+  지우고, 카드 보유/레벨 자체는 옛 카드(`m_fEnemyCardSlow` 등)와 같이 `Release`(스테이지 종료)에서만 지운다
+- **3지선다 뽑기 풀도 레벨을 안다.** `CCSVData_CardInfo.Collect_Candidates`(런 스킬의 `Collect_Candidates`와
+  같은 자리)가 만렙이 아닌 레벨링 카드만 후보로 걸러 주고, `CPickOption`/`CPickOption_Utility.Pick`에
+  카드 레벨 개념을 더했다(`From_Card`가 `iNextLevel`을 받는다, `LEVEL`/`IS_NEW`가 CARD 종류도 본다).
+  `CUI_CardPick.Get_LevelText`도 런 스킬만 보던 것을 레벨링 카드까지 넓혀 NEW/Lv.N을 보여 준다 —
+  아이콘(`CProtoSetup.ARR_CARD_ICON`)은 30종분이 아직 없어(로컬 `Setup Assets` 필요, 3-1과 같은 사정)
+  당장은 빈 칸으로 뜬다. 옛 즉시효과 카드(iMaxLevel≤1)는 레벨 개념이 없어 그대로 매번 후보에 낀다
+- **귀환 버튼이 없어 미배선인 카드 둘** — `K08_WHIRL`(귀환을 회전 돌파로 덮어씀) · `M04_UNBREAKABLE_RUSH`
+  (귀환을 무적 돌진으로 덮어씀). `Docs/Design_Roguelite_Rewrite.md §2`가 이미 "아직 안 붙였다"로
+  남겨 둔 안전 귀환 버튼에 둘 다 의존한다 — `CARD_TYPE`·CSV 행은 있고 레벨도 세지만(`Apply_Card`가
+  `Add_Card`만 부른다) `CCardEffect.Create`는 null을 돌려주고 실제 동작은 없다
+- **원본 스펙에서 일부러 안 지킨 것 하나**: M07(거대화/축소)의 "대형은 선이 굵어져 점유 면적 +10%"는
+  넣지 않았다. 선 굵기(`GameConfig.m_fTrailWidthCell`)는 순수 시각값이고 점령 판정은 칸 기반이라는
+  게 이미 확정된 설계(2-3, 2-3-1) — 점령 넓이 자체를 바꾸려면 `CTerritoryGrid.Step_To`(규칙 단일
+  진입점)를 건드려야 해서 카드 하나 때문에 벌이지 않았다. 대형은 최대 HP만, 소형은 이속+히트박스만 준다
+- `CProtoTest.Test_CardCatalog`가 대표 카드들(K01/K06/G08/M07의 값·조율값 스케일, `Collect_Candidates`
+  필터, `CCardEffect.Create`의 플레이어측/스테이지측 분기, G05의 레벨업 델타 누적, F05의 충전 소모,
+  K03의 `CEnemy.Try_ForceStunIfLow`)을 검증한다 — 30종을 전부 재지는 않았다(스케일 버그처럼 값 하나
+  틀리기 쉬운 지점 위주로 짚었다)
+
+**아직 남은 것**: 옛 카드/런 스킬 이식 또는 삭제, K08/M04의 귀환 버튼 설계, ★ 첫 선택 고정 풀 ·
+계열/단계(`iTier`) 기반 뽑기 확률 · 상한/배타 규칙은 태스크 #23(굴절 G08의 호출부는 이번에 이미
+붙였다 — `Try_Refract`가 `Tick_Enemy`에서 도화선보다 먼저 확인한다).
+
 ---
 
 ## 3. 에디터 툴

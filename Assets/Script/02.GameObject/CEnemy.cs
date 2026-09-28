@@ -266,6 +266,25 @@ namespace Client
 
         private float Effective_GroggyMax() => m_fGroggyMax * (1f + m_fResistance);
 
+        /// <summary> 260928_K03_LEVY 카드 전용 — 그로기 잔여량이 fRatio(0~1) 이하면 남은 만큼만 채워
+        /// 기존 Damage() 경로 그대로 즉시 기절시킨다(새 기절 진입로를 만들지 않는다). </summary>
+        public bool Try_ForceStunIfLow(float fRatio)
+        {
+            if (bCollect == true || m_cImpact.IS_STUNNED == true)
+                return false;
+
+            float fEffectiveMax = Effective_GroggyMax();
+            if (fEffectiveMax <= 0f)
+                return false;
+
+            float fRemain = fEffectiveMax - m_fGroggy;
+            if (fRemain / fEffectiveMax > fRatio)
+                return false;
+
+            Damage(Mathf.CeilToInt(fRemain));
+            return true;
+        }
+
         // 안 맞으면 스스로 식는다 — 자연 감소(초당 -2%, Docs/Design_Roguelite_Rewrite.md 4장).
         private void Tick_Groggy(float fDeltaTime)
         {

@@ -152,10 +152,17 @@ namespace Client
         public static string Get_Title(CPickOption cOption)
             => cOption.eKind == PICK_KIND.AWAKEN ? $"각성  {cOption.NAME}" : cOption.NAME;
 
-        /// <summary> 현재 레벨. 새로 얻는 스킬은 NEW, 레벨이 없는 카드 · 각성은 빈 칸이다. </summary>
+        /// <summary>
+        /// 현재 레벨. 새로 얻는 스킬 · 레벨링 카드는 NEW, 레벨이 없는 옛 카드 · 각성은 빈 칸이다.
+        /// 260928_카드 30종(태스크 #22) — 런 스킬만 보던 것을 레벨링 카드(iMaxLevel>1)까지 넓혔다.
+        /// </summary>
         public static string Get_LevelText(CPickOption cOption)
         {
-            if (cOption == null || cOption.eKind != PICK_KIND.RUN_SKILL)
+            if (cOption == null)
+                return string.Empty;
+
+            if (cOption.eKind != PICK_KIND.RUN_SKILL
+             && (cOption.eKind != PICK_KIND.CARD || cOption.cCard == null || cOption.cCard.iMaxLevel <= 1))
                 return string.Empty;
 
             if (cOption.IS_NEW == true)

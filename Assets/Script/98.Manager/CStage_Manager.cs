@@ -116,6 +116,69 @@ namespace Client
         private readonly CImpactInfo        m_cHuntMarkImpact = new CImpactInfo { eType = IMPACT_TYPE.SLOW, fValue = HUNT_MARK_SLOW_RATIO };
         private readonly List<Vector2>      m_lstExecuteKillPos = new List<Vector2>();
 
+        // 260928_카드 30종(태스크 #22) 중 몬스터·그리드를 직접 건드리는 것들 — "그리드는 칸만 알고
+        // 몬스터는 스테이지가 본다"(2-3)는 원칙 그대로, CCardEffect가 아니라 여기서 직접 다룬다.
+        // 카드가 없으면 전부 기본값(0 또는 비어 있음)이라 조용히 아무 일도 안 한다(1-1).
+        private const float K02_SHOCK_RADIUS_CELL     = 4f;    // 경계선 충격파 — 발동 반경(연출 값, CSV로 안 뺐다)
+        private const float K02_SHOCK_KNOCKBACK_CELL  = 3f;    // 원본 스펙 고정값
+        private const float K03_LEVY_CHECK_INTERVAL   = 0.25f; // 징수 — 전 몬스터 그로기를 이 주기로 검사한다
+        private const float K04_TURRET_RADIUS_CELL    = 6f;    // 포탑 — 원본 스펙 고정값
+        private const float K04_TURRET_SLOW_RATIO     = 0.2f;
+        private const float K04_TURRET_GROGGY_PER_SEC = 3f;
+        private const float K05_FROST_RADIUS_CELL     = 5f;    // 서리 감옥 — 발동 반경(연출 값)
+        private const float K06_SINGULARITY_THRESHOLD = 0.30f; // 광휘의 특이점 — 원본 스펙 고정값
+        private const float K06_SINGULARITY_INTERVAL  = 12f;
+        private const float K06_SINGULARITY_RADIUS    = 4f;
+        private const float K06_SINGULARITY_DURATION  = 3f;
+        private const float K07_CHAIN_RADIUS_CELL     = 1.2f;  // 어둠의 속박 — 사슬 판정 두께(몸 판정과 같은 자리)
+        private const float K07_CHAIN_COOLDOWN        = 6f;    // 원본 스펙 고정값
+        private const float G08_REFRACT_DEPTH_MAX     = 6f;    // 안전장치 — 표 값이 과하게 커도 이 이상은 안 민다
+        private const float F02_SCORCH_SLOW_RATIO     = 0.4f;  // 역화 — 원본 스펙 고정값
+        private const float F02_SCORCH_SLOW_TIME      = 2f;
+        private const float F02_SCORCH_COOLDOWN       = 1f;    // 같은 적을 계속 태우지 않게 개별 쿨타임을 둔다
+        private const float F07_WICK_COOLDOWN         = 0.5f;  // 화약 심지 — 원본 스펙 고정값
+        private const float F06_MAX_STACK             = 5f;    // 불장난 — 원본 스펙 고정값
+        private const float G01_TRIGGER_SEC           = 1.5f;  // 소화기 — 원본 스펙 고정값(따라잡히기까지 남은 시간)
+        private const float G01_FREEZE_SEC            = 3f;    // 소화기 — 원본 스펙 고정값(멈추는 시간)
+
+        // 260928_CImpactHandler.Set_Stun/Set_Slow의 딕셔너리 키 — 카드 하나당 하나씩, 인스턴스 전체가 공유한다
+        // (같은 카드가 다시 걸면 새로 걸지 않고 긴 쪽으로 늘어난다, CImpactHandler의 기존 규칙 그대로).
+        private static readonly object s_keyElectricLine    = new object();   // K01
+        private static readonly object s_keyCounterFire     = new object();   // F04
+        private static readonly object s_keyScorchedGround  = new object();   // F02
+        private static readonly object s_keyTurretSlow      = new object();   // K04
+        private static readonly object s_keySingularitySlow = new object();   // K06
+        private static readonly object s_keyDarkChainBind   = new object();   // K07
+        private static readonly object s_keyFrostPrison     = new object();   // K05
+
+        private const float K05_BIG_CAPTURE_RATIO = 0.12f;   // K05/M05 공통 — 원본 스펙 고정값("한 번에 크게")
+
+        private float  m_fG01FreezeTimer;   // G01_EXTINGUISHER — 지금 소화기로 도화선을 멈춰 둔 시간
+
+        private int    m_iK02Groggy;                       // K02 — 경계선 충격파로 줄 그로기(카드 레벨값). 0이면 카드 없음
+        private float  m_fK03LevyRatio;                     // K03 — 이 비율 이하면 즉시 기절. 0이면 카드 없음
+        private float  m_fK03Timer;
+        private readonly List<Vector2> m_lstTurret = new List<Vector2>();
+        private int    m_iTurretMax;                        // K04 — 카드 레벨(최대 포탑 수). 0이면 카드 없음
+        private float  m_fTurretGroggyAccum;
+        private float  m_fK05FreezeDuration;                 // K05 — 0이면 카드 없음
+        private float  m_fK06SlowRatio;                      // K06 — 0이면 카드 없음
+        private bool   m_bK06Unlocked;                       // 점유율 30%를 이미 넘었는가(한 번만 넘는다)
+        private float  m_fK06Timer;
+        private Vector2? m_vK06ZoneCenter;
+        private float  m_fK06ZoneTimer;
+        private float  m_fK07BindDuration;                   // K07 — 0이면 카드 없음
+        private readonly Dictionary<CEnemy, float> m_dicK07Cooldown = new Dictionary<CEnemy, float>();
+        private float  m_fG08Chance;                         // G08 — 0이면 카드 없음(0~1)
+        private float  m_fG08Depth;
+        private int    m_iF02Groggy;                         // F02 — 0이면 카드 없음
+        private readonly Dictionary<CEnemy, float> m_dicF02Cooldown = new Dictionary<CEnemy, float>();
+        private float  m_fF04StunDuration;                   // F04 — 0이면 카드 없음
+        private int    m_iF06GroggyPerStack;                 // F06 — 0이면 카드 없음
+        private float  m_fF06BurnAccum;                      // 이번 트레일이 도화선에 타고 있던 누적 시간(초)
+        private int    m_iF07Groggy;                         // F07 — 0이면 카드 없음
+        private readonly Dictionary<CEnemy, float> m_dicF07Cooldown = new Dictionary<CEnemy, float>();
+
         // 260923_3지선다 트리거 — 다시 점유율 기준이다(2-21 조각 게이지를 되돌림). 점유율이
         // s_arrCardThreshold의 지점을 하나 더 넘을 때마다 하나씩 연다. 웨이브가 넘어가 점유율이
         // 0으로 돌아가면 이 값도 같이 리셋된다.
@@ -369,6 +432,34 @@ namespace Client
             m_bFuseArmed      = false;  // 260924_도화선
             OnFuseIgnited     = null;
 
+            // 260928_카드 30종(태스크 #22) — 카드는 판이 끝나면 사라진다(2-11-1과 같은 결).
+            // 레벨(CCardHandler)은 m_cPlayer.Initialize/Hide의 Clear_Card가 지우고, 여기서는
+            // 이 카드들이 걸어 둔 스테이지 쪽 수치·자리·쿨타임을 지운다.
+            m_iK02Groggy         = 0;
+            m_fK03LevyRatio      = 0f;
+            m_fK03Timer          = 0f;
+            m_lstTurret.Clear();
+            m_iTurretMax         = 0;
+            m_fTurretGroggyAccum = 0f;
+            m_fK05FreezeDuration = 0f;
+            m_fK06SlowRatio      = 0f;
+            m_bK06Unlocked       = false;
+            m_fK06Timer          = 0f;
+            m_vK06ZoneCenter     = null;
+            m_fK06ZoneTimer      = 0f;
+            m_fK07BindDuration   = 0f;
+            m_dicK07Cooldown.Clear();
+            m_fG08Chance         = 0f;
+            m_fG08Depth          = 0f;
+            m_iF02Groggy         = 0;
+            m_dicF02Cooldown.Clear();
+            m_fF04StunDuration   = 0f;
+            m_iF06GroggyPerStack = 0;
+            m_fF06BurnAccum      = 0f;
+            m_iF07Groggy         = 0;
+            m_dicF07Cooldown.Clear();
+            m_fG01FreezeTimer    = 0f;
+
             Collect_Player();
             Collect_Enemies();
             m_cGridRenderer.Release();
@@ -485,6 +576,7 @@ namespace Client
             Tick_EnemySlow(fDeltaTime);
             m_cStyle.Tick(fDeltaTime);
             Tick_Enemy(fDeltaTime);
+            Tick_Cards(fDeltaTime);
             Tick_DevAutoFire(fDeltaTime);
             Tick_Projectile(fDeltaTime);
             Tick_Web();
@@ -522,6 +614,24 @@ namespace Client
             m_cGrid.Reset(m_cMapInfo.iBorderThick, m_cMapInfo.iStartRadius);
             m_iRatioStep = 0;
             m_bFuseArmed = false;   // 260924_그리드가 트레일을 비웠으니 타던 도화선도 같이 끈다
+
+            // 260928_카드 30종(태스크 #22) — 카드를 들고 있는지(레벨값 필드)는 웨이브가 넘어가도 유지한다
+            // (m_fEnemyCardSlow가 그렇듯). 여기서 지우는 건 '자리 · 쿨타임 · 타이머'처럼 이번 웨이브의
+            // 판에 묶여 있던 상태뿐이다 — 안 지우면 지난 웨이브에 세운 포탑이 다음 웨이브에도 남거나,
+            // 쿨타임이 걸린 채로 새 웨이브를 맞는다.
+            m_lstTurret.Clear();
+            m_fTurretGroggyAccum = 0f;
+            m_bK06Unlocked   = false;
+            m_fK06Timer      = 0f;
+            m_vK06ZoneCenter = null;
+            m_fK06ZoneTimer  = 0f;
+            m_fK03Timer      = 0f;
+            m_dicK07Cooldown.Clear();
+            m_dicF02Cooldown.Clear();
+            m_dicF07Cooldown.Clear();
+            m_fF06BurnAccum   = 0f;
+            m_fG01FreezeTimer = 0f;
+
             Respawn_Player();
 
             m_cGridRenderer.Set_WaveTexture(Get_Texture(m_cMapInfo.Get_CoverTex(iWave)),
@@ -936,6 +1046,84 @@ namespace Client
 
                 case CARD_TYPE.DODGE_FREE_HIT:
                     m_cPlayer.Add_FreeHit(Mathf.Max(1, Mathf.RoundToInt(cInfo.fValue)));
+                    return true;
+
+                // 260928_카드 30종(태스크 #22) — 레벨은 전부 CPlayer.Add_Card(CCardHandler)가 센다.
+                // 효과가 플레이어 쪽에만 있는 카드는 그걸로 끝(CCardEffect.Create가 알아서 만든다).
+                // K08 · M04는 귀환 버튼이 아직 없어(2-25/2-26의 "아직 안 붙였다") CCardEffect.Create가
+                // null을 돌려주지만, 레벨만은 미리 세어 둔다 — 버튼이 생기면 바로 쓸 수 있게.
+                case CARD_TYPE.K01_ELECTRIC_LINE:
+                case CARD_TYPE.K08_WHIRL:
+                case CARD_TYPE.M01_SPRINTER:
+                case CARD_TYPE.M02_MOMENTUM:
+                case CARD_TYPE.M03_CORNERING:
+                case CARD_TYPE.M04_UNBREAKABLE_RUSH:
+                case CARD_TYPE.M05_GHOST_STEP:
+                case CARD_TYPE.M06_NEARMISS_MASTER:
+                case CARD_TYPE.M07_SIZE_SHIFT:
+                case CARD_TYPE.G01_EXTINGUISHER:
+                case CARD_TYPE.G02_INVINCIBLE_STAR:
+                case CARD_TYPE.G03_LAST_SANCTUARY:
+                case CARD_TYPE.G04_MASS_SHIELD:
+                case CARD_TYPE.G05_STURDY:
+                case CARD_TYPE.G06_BANSHEE_VEIL:
+                case CARD_TYPE.G07_LAST_STAND:
+                case CARD_TYPE.F01_BURNING_HASTE:
+                case CARD_TYPE.F03_FIREBREAK:
+                case CARD_TYPE.F05_FUSE_BOMB:
+                    m_cPlayer.Add_Card(cInfo);
+                    return true;
+
+                // 그리드는 칸만, 몬스터는 스테이지가 본다(2-3)는 원칙 그대로 — 효과가 몬스터를
+                // 직접 건드리는 카드는 스테이지가 든다. 레벨을 올린 뒤 그 레벨의 수치를 여기 필드에
+                // 다시 적는다(HUNT_MARK가 이미 하던 것과 같은 자리, 2-10-1).
+                case CARD_TYPE.K02_BOUNDARY_SHOCK:
+                    m_iK02Groggy = Mathf.RoundToInt(cInfo.Get_Value(m_cPlayer.Add_Card(cInfo)));
+                    return true;
+
+                case CARD_TYPE.K03_LEVY:
+                    m_fK03LevyRatio = cInfo.Get_Value(m_cPlayer.Add_Card(cInfo));
+                    return true;
+
+                case CARD_TYPE.K04_TURRET:
+                    m_iTurretMax = Mathf.RoundToInt(cInfo.Get_Value(m_cPlayer.Add_Card(cInfo)));
+                    return true;
+
+                case CARD_TYPE.K05_FROST_PRISON:
+                    m_fK05FreezeDuration = cInfo.Get_Value(m_cPlayer.Add_Card(cInfo));
+                    return true;
+
+                case CARD_TYPE.K06_SINGULARITY:
+                    // 표는 %로 적혀 있다(35 = 35%) — 곱셈에 쓰는 비율로 바꿔 든다.
+                    m_fK06SlowRatio = cInfo.Get_Value(m_cPlayer.Add_Card(cInfo)) / 100f;
+                    return true;
+
+                case CARD_TYPE.K07_DARK_CHAIN:
+                    m_fK07BindDuration = cInfo.Get_Value(m_cPlayer.Add_Card(cInfo));
+                    return true;
+
+                case CARD_TYPE.G08_REFRACTION:
+                {
+                    int iLevel = m_cPlayer.Add_Card(cInfo);
+                    m_fG08Chance = cInfo.Get_Value(iLevel) / 100f;
+                    m_fG08Depth  = cInfo.Get_Param("DEPTH", iLevel, m_fG08Depth);
+                    return true;
+                }
+
+                case CARD_TYPE.F02_SCORCHED_GROUND:
+                    m_iF02Groggy = Mathf.RoundToInt(cInfo.Get_Value(m_cPlayer.Add_Card(cInfo)));
+                    return true;
+
+                case CARD_TYPE.F04_COUNTER_FIRE:
+                    m_fF04StunDuration = cInfo.Get_Value(m_cPlayer.Add_Card(cInfo));
+                    return true;
+
+                case CARD_TYPE.F06_PLAYING_WITH_FIRE:
+                    m_iF06GroggyPerStack = Mathf.RoundToInt(cInfo.Get_Value(m_cPlayer.Add_Card(cInfo)));
+                    return true;
+
+                case CARD_TYPE.F07_POWDER_WICK:
+                    m_iF07Groggy = Mathf.RoundToInt(cInfo.Get_Value(m_cPlayer.Add_Card(cInfo)));
                     return true;
 
                 default:
@@ -1358,13 +1546,29 @@ namespace Client
                 if (m_bFuseArmed == false && m_cPlayer.IS_INVINCIBLE == false
                  && m_cGrid.Try_Find_TrailTouch(vEnemyGrid, cEnemy.HIT_RANGE, out float fTouchArc) == true)
                 {
+                    // 260928_K01_ELECTRIC_LINE — 선이 전기화돼 있으면 도화선 대신 그 자리에서 기절시킨다.
+                    if (m_cPlayer.TRAIL_ELECTRIFIED == true)
+                    {
+                        cEnemy.IMPACT.Set_Stun(s_keyElectricLine, m_cPlayer.TRAIL_ELECTRIFY_STUN);
+                        continue;
+                    }
+
+                    // 260928_G08_REFRACTION — 확률로 도화선 대신 굴절시킨다. 실패하면(꺾인 자리 · 막힌 자리 등)
+                    // 그대로 도화선으로 떨어진다(원본 스펙의 폴백 규칙 그대로, Try_Insert_Detour 자체 설명 참고).
+                    if (m_fG08Chance > 0f && UnityEngine.Random.value < m_fG08Chance
+                     && Try_Refract(vEnemyGrid, fTouchArc) == true)
+                    {
+                        continue;
+                    }
+
                     Ignite_Fuse(fTouchArc, cEnemy);
                     continue;
                 }
 
                 // 플레이어와의 직접 충돌은 땅을 먹으러 나와 있을 때만 판정한다. 이건 그대로 즉시 피해다.
+                // 260928_M07_SIZE_SHIFT(축소)가 몸 충돌 판정 거리를 줄인다 — 카드가 없으면 배율 1이라 그대로다.
                 if (bExposed == true
-                    && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE)
+                    && Vector2.Distance(cEnemy.POS, vPlayerPos) <= cEnemy.HIT_RANGE * m_cGrid.CELL_SIZE * m_cPlayer.HITBOX_SCALE)
                 {
                     bHit = true;
                     cHitEnemy = cEnemy;
@@ -1452,14 +1656,38 @@ namespace Client
 
             m_cGrid.IS_TRAIL_BURNING = true;
             m_cGrid.Set_Burn(m_fFuseFrom, m_fFuseFront);
+            m_fF06BurnAccum   = 0f;   // 260928_F06_PLAYING_WITH_FIRE — 이번 트레일의 새 발화라 누적을 다시 잰다
+            m_fG01FreezeTimer = 0f;   // 260928_G01_EXTINGUISHER — 새 발화는 멈춰 있던 상태가 아니다
+
+            // 260928_F04_COUNTER_FIRE — 발화시킨 적을 그 자리에서 기절시킨다. cEnemy는 지금 이 순간에만
+            // 확실히 살아 있다(도화선이 다 타들어올 때쯤엔 어디 있는지도 모른다, 위 주석 참고).
+            if (m_fF04StunDuration > 0f && cEnemy != null)
+                cEnemy.IMPACT.Set_Stun(s_keyCounterFire, m_fF04StunDuration);
 
             OnFuseIgnited?.Invoke(m_cGrid.Grid_ToCell(m_cGrid.Get_TrailPoint(fArc)));
+        }
+
+        // 260928_G08_REFRACTION — 몬스터 반대쪽으로 트레일을 우회시킨다(CTerritoryGrid.Try_Insert_Detour, 2-3-3).
+        // 실패 조건(꺾인 자리 · 밀 자리 없음 · 처음/끝 칸)은 전부 그 함수가 본다 — 여기서는 방향만 골라 넘긴다.
+        private bool Try_Refract(Vector2 vEnemyGrid, float fTouchArc)
+        {
+            Vector2 vTouchPoint = m_cGrid.Get_TrailPoint(fTouchArc);
+            Vector2Int vTouchCell = m_cGrid.Grid_ToCell(vTouchPoint);
+
+            MOVE_DIR eAwayDir = CTerritoryGrid.Vector_ToDir4(vTouchPoint - vEnemyGrid);
+            if (eAwayDir == MOVE_DIR.NONE)
+                return false;
+
+            int iDepth = Mathf.Clamp(Mathf.RoundToInt(m_fG08Depth), 1, Mathf.RoundToInt(G08_REFRACT_DEPTH_MAX));
+            return m_cGrid.Try_Insert_Detour(vTouchCell, CTerritoryGrid.Dir_ToOffset(eAwayDir), iDepth, out int _);
         }
 
         /// <summary>
         /// 260924_도화선을 매 프레임 태운다. 발화 지점부터 트레일 끝(플레이어가 있는 칸)까지 따라잡으면
         /// 선을 통째로 잃고 HP가 깎인다 — 그 전에 플레이어가 안전 지대로 돌아오면(CTerritoryGrid.Step_To)
         /// 선만 잃고 끝난다. 화면 없이도 발화 지점 · 속도만으로 검증할 수 있다(CProtoTest).
+        /// 260928_카드 30종(태스크 #22) — 전파 속도에 F03/F07/G07 배율을 곱하고, G01(소화기) · F02(역화) ·
+        /// F07(화약 심지) · F06(불장난 누적)을 여기서 같이 본다.
         /// </summary>
         private void Tick_Fuse(float fDeltaTime)
         {
@@ -1474,20 +1702,94 @@ namespace Client
                 return;
             }
 
-            // 불은 선 끝(플레이어) 쪽으로 타들어온다. 탄 구간은 그리드에 적어 두면 렌더러가 그리지 않는다
-            m_fFuseFront += FUSE_SPEED_CELL_PER_SEC * fDeltaTime;
+            m_fF06BurnAccum += fDeltaTime;
+
+            float fSpeed = FUSE_SPEED_CELL_PER_SEC * (m_cPlayer != null ? m_cPlayer.FUSE_SPEED_SCALE : 1f);
+
+            // 260928_G01_EXTINGUISHER — 따라잡히기까지 1.5초 이내로 남으면 충전을 하나 써서 3초 멈춘다.
+            float fRemainSec = fSpeed > 0f ? (m_cGrid.TRAIL_LENGTH - m_fFuseFront) / fSpeed : 0f;
+            if (fRemainSec <= G01_TRIGGER_SEC && m_cPlayer != null && m_cPlayer.Try_ConsumeExtinguisher() == true)
+                m_fG01FreezeTimer = G01_FREEZE_SEC;
+
+            if (m_fG01FreezeTimer > 0f)
+            {
+                m_fG01FreezeTimer -= fDeltaTime;
+            }
+            else
+            {
+                // 불은 선 끝(플레이어) 쪽으로 타들어온다. 탄 구간은 그리드에 적어 두면 렌더러가 그리지 않는다
+                m_fFuseFront += fSpeed * fDeltaTime;
+            }
+
             m_cGrid.Set_Burn(m_fFuseFrom, Mathf.Min(m_fFuseFront, m_cGrid.TRAIL_LENGTH));
+
+            // 260928_F02_SCORCHED_GROUND/F07_POWDER_WICK — 탄 구간(F02) · 앞머리(F07)에 적이 겹치면 그로기.
+            if (m_iF02Groggy > 0 || m_iF07Groggy > 0)
+                Tick_FuseCardOverlap(fDeltaTime);
 
             if (m_fFuseFront < m_cGrid.TRAIL_LENGTH)
                 return;
 
-            // 트레일 끝까지 태웠다 — 따라잡혔다. 선은 무조건 사라지고(보호막은 HP만 막는다),
-            // 발화 당시 몬스터의 공격력만큼 깎인다. 선이 끊긴 것이므로 회피는 못 흘린다(bLineCut=true).
+            // 트레일 끝까지 태웠다 — 따라잡혔다. 선은 무조건 사라진다(F05_FUSE_BOMB이 있어도 선은 그대로 잃는다).
             m_bFuseArmed = false;
             m_cGrid.IS_TRAIL_BURNING = false;
             m_cGrid.Clear_Trail();
+
+            // 260928_F05_FUSE_BOMB — 충전이 있으면 HP만 막는다(선 소실은 그대로).
+            if (m_cPlayer != null && m_cPlayer.Try_ConsumeFuseBomb() == true)
+                return;
+
+            // 발화 당시 몬스터의 공격력만큼 깎인다. 선이 끊긴 것이므로 회피는 못 흘린다(bLineCut=true).
             m_cPlayer.Damage(m_iFuseDamage, true);
         }
+
+        // 260928_F02(탄 구간에 적이 들어오면) · F07(앞머리가 적과 겹치면) — 적별 쿨타임을 따로 둔다.
+        private void Tick_FuseCardOverlap(float fDeltaTime)
+        {
+            Vector2 vFront = m_cGrid.Get_TrailPoint(Mathf.Min(m_fFuseFront, m_cGrid.TRAIL_LENGTH));
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                Vector2 vEnemyGrid = m_cGrid.World_ToGrid(cEnemy.POS);
+
+                if (m_iF07Groggy > 0)
+                {
+                    Tick_Cooldown(m_dicF07Cooldown, cEnemy, fDeltaTime);
+                    if (Is_Ready(m_dicF07Cooldown, cEnemy)
+                     && Vector2.Distance(vEnemyGrid, vFront) <= cEnemy.HIT_RANGE)
+                    {
+                        cEnemy.Damage(m_iF07Groggy);
+                        m_dicF07Cooldown[cEnemy] = F07_WICK_COOLDOWN;
+                    }
+                }
+
+                if (m_iF02Groggy > 0 && m_cGrid.Try_Find_TrailTouch(vEnemyGrid, cEnemy.HIT_RANGE, out float fArc) == true
+                 && fArc >= m_fFuseFrom && fArc <= Mathf.Min(m_fFuseFront, m_cGrid.TRAIL_LENGTH))
+                {
+                    Tick_Cooldown(m_dicF02Cooldown, cEnemy, fDeltaTime);
+                    if (Is_Ready(m_dicF02Cooldown, cEnemy) == true)
+                    {
+                        cEnemy.Damage(m_iF02Groggy);
+                        cEnemy.IMPACT.Set_Slow(s_keyScorchedGround, F02_SCORCH_SLOW_TIME, F02_SCORCH_SLOW_RATIO);
+                        m_dicF02Cooldown[cEnemy] = F02_SCORCH_COOLDOWN;
+                    }
+                }
+            }
+        }
+
+        // 260928_카드 쿨타임 딕셔너리 공용 헬퍼 — K07/F02/F07이 몬스터별로 따로 쓴다.
+        private static void Tick_Cooldown(Dictionary<CEnemy, float> dicCooldown, CEnemy cEnemy, float fDeltaTime)
+        {
+            if (dicCooldown.TryGetValue(cEnemy, out float fRemain) == true && fRemain > 0f)
+                dicCooldown[cEnemy] = fRemain - fDeltaTime;
+        }
+
+        private static bool Is_Ready(Dictionary<CEnemy, float> dicCooldown, CEnemy cEnemy)
+            => dicCooldown.TryGetValue(cEnemy, out float fRemain) == false || fRemain <= 0f;
 
         /// <summary>
         /// 260920_점령한 땅 안에 갇힌 몬스터를 죽인다(2-3).
@@ -2221,6 +2523,9 @@ namespace Client
             int iTrapped = Kill_EnemiesInOwned();
             Notify_CaptureStyle(iCapturedCount, iTrapped);
 
+            // 260928_카드 30종(태스크 #22) — ON_CLOSE 훅. 카드가 없으면 필드가 전부 0이라 조용히 아무 일도 안 한다.
+            Apply_CaptureCards(iCapturedCount);
+
             Grant_CaptureReward(iCapturedCount);
 
             // 260912_웨이브를 넘기기 전에 카드부터 본다.
@@ -2246,6 +2551,215 @@ namespace Client
 
             if (iChain >= 2)
                 OnStylish?.Invoke(STYLE_ACTION.CHAIN, iChain);
+        }
+
+        // 260928_카드 30종(태스크 #22) — ON_CLOSE 훅. K02(충격파) · K04(포탑 설치) · K05(서리 감옥, 대형
+        // 점령) · F06(불장난, 도화선이 타던 시간만큼 그로기)을 여기서 본다. 카드가 없으면 필드가 전부
+        // 0이라 아무 일도 안 한다(1-1).
+        private void Apply_CaptureCards(int iCapturedCount)
+        {
+            if (m_cPlayer == null)
+                return;
+
+            Vector2 vCenter = m_cPlayer.transform.position;
+            float   fRatio  = m_cGrid.PLAYABLE_COUNT > 0 ? (float)iCapturedCount / m_cGrid.PLAYABLE_COUNT : 0f;
+
+            if (m_iK02Groggy > 0)
+                Push_And_Groggy_Nearby(vCenter, K02_SHOCK_RADIUS_CELL, K02_SHOCK_KNOCKBACK_CELL, m_iK02Groggy);
+
+            if (m_iTurretMax > 0 && m_lstTurret.Count < m_iTurretMax)
+                m_lstTurret.Add(vCenter);
+
+            if (m_fK05FreezeDuration > 0f && fRatio >= K05_BIG_CAPTURE_RATIO)
+                Freeze_Nearby(vCenter, K05_FROST_RADIUS_CELL, m_fK05FreezeDuration);
+
+            if (m_iF06GroggyPerStack > 0 && m_fF06BurnAccum > 0f)
+            {
+                int iStack = Mathf.Min(Mathf.RoundToInt(F06_MAX_STACK), Mathf.FloorToInt(m_fF06BurnAccum));
+                if (iStack > 0)
+                    Push_And_Groggy_Nearby(vCenter, K02_SHOCK_RADIUS_CELL, 0f, iStack * m_iF06GroggyPerStack);
+            }
+
+            m_fF06BurnAccum = 0f;
+        }
+
+        // 260928_K02_BOUNDARY_SHOCK/F06_PLAYING_WITH_FIRE 공용 — 반경 안 적을 밀어내고(선택) 그로기를 준다.
+        private void Push_And_Groggy_Nearby(Vector2 vCenterWorld, float fRadiusCell, float fKnockbackCell, int iGroggy)
+        {
+            float fRadiusWorld = fRadiusCell * m_cGrid.CELL_SIZE;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                Vector2 vDiff = cEnemy.POS - vCenterWorld;
+                if (vDiff.magnitude > fRadiusWorld)
+                    continue;
+
+                if (fKnockbackCell > 0f)
+                {
+                    Vector2 vDir = vDiff.sqrMagnitude > 0.0001f ? vDiff.normalized : Vector2.up;
+                    cEnemy.Push(vDir, fKnockbackCell * m_cGrid.CELL_SIZE, PLAYER_HIT_KNOCKBACK_DURATION);
+                }
+
+                if (iGroggy > 0)
+                    cEnemy.Damage(iGroggy);
+            }
+        }
+
+        // 260928_K05_FROST_PRISON — 반경 안 적을 얼린다(기절 재사용, 새 상태를 만들지 않는다).
+        private void Freeze_Nearby(Vector2 vCenterWorld, float fRadiusCell, float fDuration)
+        {
+            float fRadiusWorld = fRadiusCell * m_cGrid.CELL_SIZE;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                if (Vector2.Distance(cEnemy.POS, vCenterWorld) <= fRadiusWorld)
+                    cEnemy.IMPACT.Set_Stun(s_keyFrostPrison, fDuration);
+            }
+        }
+
+        // 260928_카드 30종(태스크 #22) — 매 프레임 도는 것들. K03(그로기 낮으면 즉시 기절) · K04(포탑 아우라) ·
+        // K06(특이점 장판) · K07(사슬 속박). 카드가 없으면 필드가 전부 0/비어 있어 아무 일도 안 한다.
+        private void Tick_Cards(float fDeltaTime)
+        {
+            if (m_fK03LevyRatio > 0f)
+            {
+                m_fK03Timer -= fDeltaTime;
+                if (m_fK03Timer <= 0f)
+                {
+                    m_fK03Timer = K03_LEVY_CHECK_INTERVAL;
+                    for (int i = 0; i < m_lstEnemy.Count; ++i)
+                        m_lstEnemy[i]?.Try_ForceStunIfLow(m_fK03LevyRatio);
+                }
+            }
+
+            if (m_lstTurret.Count > 0)
+                Tick_Turret(fDeltaTime);
+
+            if (m_fK06SlowRatio > 0f)
+                Tick_Singularity(fDeltaTime);
+
+            if (m_fK07BindDuration > 0f)
+                Tick_DarkChain(fDeltaTime);
+        }
+
+        private void Tick_Turret(float fDeltaTime)
+        {
+            m_fTurretGroggyAccum += K04_TURRET_GROGGY_PER_SEC * fDeltaTime;
+            bool bGrantGroggy = m_fTurretGroggyAccum >= 1f;
+            if (bGrantGroggy == true)
+                m_fTurretGroggyAccum -= 1f;
+
+            float fRadiusWorld = K04_TURRET_RADIUS_CELL * m_cGrid.CELL_SIZE;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                bool bInRange = false;
+                for (int t = 0; t < m_lstTurret.Count; ++t)
+                {
+                    if (Vector2.Distance(cEnemy.POS, m_lstTurret[t]) <= fRadiusWorld)
+                    {
+                        bInRange = true;
+                        break;
+                    }
+                }
+
+                if (bInRange == false)
+                    continue;
+
+                // 260928_짧은 시한부로 계속 새로 걸어 "반경 안에 있는 동안 슬로우, 벗어나면 곧 풀림"을 흉내 낸다 —
+                // 진입/이탈을 따로 추적하지 않아도 CImpactHandler.Set_Slow의 "다시 걸면 긴 쪽으로" 규칙이 알아서 갱신한다.
+                cEnemy.IMPACT.Set_Slow(s_keyTurretSlow, 0.3f, 1f - K04_TURRET_SLOW_RATIO);
+                if (bGrantGroggy == true)
+                    cEnemy.Damage(1);
+            }
+        }
+
+        private void Tick_Singularity(float fDeltaTime)
+        {
+            if (m_bK06Unlocked == false)
+            {
+                if (m_cGrid.OWNED_RATIO < K06_SINGULARITY_THRESHOLD)
+                    return;
+
+                m_bK06Unlocked = true;
+                m_fK06Timer    = K06_SINGULARITY_INTERVAL;
+            }
+
+            if (m_vK06ZoneCenter.HasValue == true)
+            {
+                m_fK06ZoneTimer -= fDeltaTime;
+                float fRadiusWorld = K06_SINGULARITY_RADIUS * m_cGrid.CELL_SIZE;
+
+                for (int i = 0; i < m_lstEnemy.Count; ++i)
+                {
+                    CEnemy cEnemy = m_lstEnemy[i];
+                    if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                        continue;
+
+                    if (Vector2.Distance(cEnemy.POS, m_vK06ZoneCenter.Value) <= fRadiusWorld)
+                        cEnemy.IMPACT.Set_Slow(s_keySingularitySlow, 0.3f, 1f - m_fK06SlowRatio);
+                }
+
+                if (m_fK06ZoneTimer <= 0f)
+                    m_vK06ZoneCenter = null;
+                return;
+            }
+
+            m_fK06Timer -= fDeltaTime;
+            if (m_fK06Timer > 0f)
+                return;
+
+            m_fK06Timer      = K06_SINGULARITY_INTERVAL;
+            m_vK06ZoneCenter = m_cPlayer != null ? (Vector2)m_cPlayer.transform.position : (Vector2?)null;
+            m_fK06ZoneTimer  = K06_SINGULARITY_DURATION;
+        }
+
+        private void Tick_DarkChain(float fDeltaTime)
+        {
+            if (m_cPlayer == null)
+                return;
+
+            Vector2 vStart = m_cGrid.Cell_ToWorld(m_cGrid.START_CENTER);
+            Vector2 vEnd   = m_cPlayer.transform.position;
+            float   fRadiusWorld = K07_CHAIN_RADIUS_CELL * m_cGrid.CELL_SIZE;
+
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+            {
+                CEnemy cEnemy = m_lstEnemy[i];
+                if (cEnemy == null || cEnemy.IS_ALIVE == false)
+                    continue;
+
+                Tick_Cooldown(m_dicK07Cooldown, cEnemy, fDeltaTime);
+                if (Is_Ready(m_dicK07Cooldown, cEnemy) == false)
+                    continue;
+
+                if (Distance_PointToSegment(cEnemy.POS, vStart, vEnd) <= fRadiusWorld)
+                {
+                    cEnemy.IMPACT.Set_Stun(s_keyDarkChainBind, m_fK07BindDuration);
+                    m_dicK07Cooldown[cEnemy] = K07_CHAIN_COOLDOWN;
+                }
+            }
+        }
+
+        // 260928_K07_DARK_CHAIN 전용 — 점과 선분 사이의 최단 거리(표준 사영 공식).
+        private static float Distance_PointToSegment(Vector2 vPoint, Vector2 vA, Vector2 vB)
+        {
+            Vector2 vAB    = vB - vA;
+            float   fLenSq = vAB.sqrMagnitude;
+            float   fT     = fLenSq > 0.0001f ? Mathf.Clamp01(Vector2.Dot(vPoint - vA, vAB) / fLenSq) : 0f;
+            return Vector2.Distance(vPoint, vA + vAB * fT);
         }
 
         // 260918_점령 리스크·보상 연결 — 한 번에 닫은 도형이 맵 전체에서 차지하는 비율이 클수록

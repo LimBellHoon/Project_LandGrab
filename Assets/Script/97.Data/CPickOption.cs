@@ -22,7 +22,10 @@ namespace Client
                                  : eKind == PICK_KIND.AWAKEN ? cAwaken.strDesc : cRunSkill.strDesc;
         public int      WEIGHT  => eKind == PICK_KIND.CARD ? cCard.iWeight
                                  : eKind == PICK_KIND.AWAKEN ? cAwaken.iWeight : cRunSkill.iWeight;
-        public bool     IS_NEW  => eKind == PICK_KIND.RUN_SKILL && iNextLevel <= 1;
+        // 260928_카드 30종(태스크 #22) — 레벨링 카드(iMaxLevel>1)도 런 스킬과 같은 규칙으로 NEW/Lv.N을 가린다.
+        // 옛 카드(iMaxLevel<=1, 즉시효과 1회권)는 iNextLevel이 늘 0이라 그대로 빈 칸으로 읽힌다.
+        public bool     IS_NEW  => (eKind == PICK_KIND.RUN_SKILL || (eKind == PICK_KIND.CARD && cCard != null && cCard.iMaxLevel > 1))
+                                 && iNextLevel <= 1;
 
         /// <summary>
         /// 260921_같은 선택지인지 가리는 이름. 레벨은 넣지 않는다 — 버린 스킬은 몇 레벨이 되든 다시 안 나와야 한다.
@@ -35,12 +38,13 @@ namespace Client
         public PICK_THEME THEME => eKind == PICK_KIND.CARD ? cCard.eTheme
                                  : cRunSkill != null ? cRunSkill.eTheme : PICK_THEME.COMBAT;
 
-        /// <summary> 고르면 되는 레벨. 레벨 개념이 없으면(카드 · 각성) 0. </summary>
-        public int      LEVEL   => eKind == PICK_KIND.RUN_SKILL && cRunSkill != null && cRunSkill.iMaxLevel > 1
-                                 ? iNextLevel : 0;
+        /// <summary> 고르면 되는 레벨. 레벨 개념이 없으면(옛 카드 · 각성) 0. </summary>
+        public int      LEVEL   => eKind == PICK_KIND.RUN_SKILL && cRunSkill != null && cRunSkill.iMaxLevel > 1 ? iNextLevel
+                                 : eKind == PICK_KIND.CARD && cCard != null && cCard.iMaxLevel > 1 ? iNextLevel
+                                 : 0;
 
-        public static CPickOption From_Card(CCardInfo cInfo)
-            => new CPickOption { eKind = PICK_KIND.CARD, cCard = cInfo };
+        public static CPickOption From_Card(CCardInfo cInfo, int iNextLevel = 0)
+            => new CPickOption { eKind = PICK_KIND.CARD, cCard = cInfo, iNextLevel = iNextLevel };
 
         public static CPickOption From_RunSkill(CRunSkillInfo cInfo, int iNextLevel)
             => new CPickOption { eKind = PICK_KIND.RUN_SKILL, cRunSkill = cInfo, iNextLevel = iNextLevel };
@@ -58,18 +62,32 @@ namespace Client
         /// <param name="fnIsMapCleared"> 런 스킬 해금 조건 </param>
         /// <param name="cAwakenTable"> 260917_없으면 각성 후보가 없다 </param>
         /// <param name="fnIsAwakened"> 그 액티브가 이미 각성했는가 </param>
+        /// <param name="fnGetCardLevel"> 260928_그 카드를 지금 몇 레벨 들고 있는지(안 가졌으면 0). 없으면 레벨링 카드는 늘 1레벨 취급 </param>
         public static List<CPickOption> Pick(CCSVData_CardInfo cCardTable, CCSVData_RunSkillInfo cRunSkillTable,
                                              Func<RUN_SKILL_TYPE, int> fnGetLevel, Func<int, bool> fnIsMapCleared,
                                              int iCount, CCSVData_AwakenInfo cAwakenTable = null,
                                              Func<RUN_SKILL_TYPE, bool> fnIsAwakened = null,
-                                             Func<CPickOption, bool> fnExclude = null)
+                                             Func<CPickOption, bool> fnExclude = null,
+                                             Func<CARD_TYPE, int> fnGetCardLevel = null)
         {
             List<CPickOption> lstCandidate = new List<CPickOption>();
 
             if (cCardTable != null)
             {
+                // 260928_카드 30종(태스크 #22) — 레벨링 카드(iMaxLevel>1)는 만렙 전까지만, 다음 레벨을 달고 나온다.
+                List<CCardInfo> lstLeveled = cCardTable.Collect_Candidates(fnGetCardLevel);
+                for (int i = 0; i < lstLeveled.Count; ++i)
+                {
+                    int iLevel = fnGetCardLevel != null ? fnGetCardLevel(lstLeveled[i].eType) : 0;
+                    lstCandidate.Add(CPickOption.From_Card(lstLeveled[i], iLevel + 1));
+                }
+
+                // 옛 카드(즉시효과 1회권, iMaxLevel<=1)는 레벨 개념이 없어 매번 그대로 후보에 낀다.
                 for (int i = 0; i < cCardTable.ALL.Count; ++i)
-                    lstCandidate.Add(CPickOption.From_Card(cCardTable.ALL[i]));
+                {
+                    if (cCardTable.ALL[i].iMaxLevel <= 1)
+                        lstCandidate.Add(CPickOption.From_Card(cCardTable.ALL[i]));
+                }
             }
 
             if (cRunSkillTable != null)

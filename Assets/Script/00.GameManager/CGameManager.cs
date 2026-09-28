@@ -584,6 +584,7 @@ namespace Client
         private List<CPickOption> Build_PickOptions(int iCount, Func<CPickOption, bool> fnExclude)
         {
             CRunSkillHandler cRunSkill = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.RUN_SKILL : null;
+            CCardHandler     cCard     = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.CARD : null;
             return CPickOption_Utility.Pick(
                 m_cCardTable, m_cRunSkillTable,
                 eType => cRunSkill != null ? cRunSkill.Get_Level(eType) : 0,
@@ -591,7 +592,8 @@ namespace Client
                 iCount,
                 m_cAwakenTable,
                 eType => cRunSkill != null && cRunSkill.Is_Awakened(eType),
-                cOption => m_cStageManager.Is_Banished(cOption) == true || (fnExclude != null && fnExclude(cOption) == true));
+                cOption => m_cStageManager.Is_Banished(cOption) == true || (fnExclude != null && fnExclude(cOption) == true),
+                eType => cCard != null ? cCard.Get_Level(eType) : 0);
         }
 
         // 260921_다시 뽑기 — 세 장을 새로 뽑는다. 횟수가 없으면 null
