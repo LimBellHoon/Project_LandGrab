@@ -208,6 +208,7 @@
         M05_GHOST_STEP,       // 유령 걸음 — 대형 점령 후 잠깐 몸통 통과(기존 무적 재사용)
         M06_NEARMISS_MASTER,  // 니어미스 달인 — NEAR MISS 성공 시 가속
         M07_SIZE_SHIFT,       // 거대화/축소 — 스테이지 시작 시 랜덤 특성
+        M08_MOONWALK,         // 260930_월보 — 점령지 내부(이미지 위)도 지나간다. 레벨이 없는 한 방 카드
         // 수호형(G, CARD_FAMILY.GUARD) 8종
         G01_EXTINGUISHER,     // 소화기 — 도화선이 임박하면 자동으로 잠깐 멈춘다
         G02_INVINCIBLE_STAR,  // 무적의 별 — 주기적으로 보호막+무적

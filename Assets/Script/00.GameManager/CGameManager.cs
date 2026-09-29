@@ -883,7 +883,8 @@ namespace Client
             m_cStageManager.Set_FieldItemTable(m_cFieldItemTable, m_cConfig.FIELD_ITEM_ENABLED);
 
             // 260924_선 겉모습(보이는 값)
-            m_cStageManager.Set_TrailStyle(m_cConfig.TRAIL_WIDTH_CELL, m_cConfig.TRAIL_GLOW_ENABLED);
+            m_cStageManager.Set_TrailStyle(m_cConfig.TRAIL_WIDTH_CELL, m_cConfig.TRAIL_GLOW_ENABLED,
+                                           m_cConfig.TERRITORY_OUTLINE);
 
             // 260912_맵마다 크기가 다르므로 깔고 나서 맞춘다.
             // 보여 줄 칸 수는 고정이라 맵이 커질수록 화면에 담기는 비율이 줄어든다.

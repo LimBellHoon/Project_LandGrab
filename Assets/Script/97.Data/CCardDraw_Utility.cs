@@ -17,8 +17,14 @@ namespace Client
         // 가중치는 소수(×0.1 · ×2.5)라 CWeightedPick_Utility(int)에 넘길 때 이 배율로 키운다.
         private const int  WEIGHT_SCALE         = 1000;
 
-        /// <summary> 스펙 §7.1 티어 해금 — 스테이지 1~3은 T1, 4~6은 T1+T2, 7~10은 전부. </summary>
-        public static int Get_MaxTier(int iStage) => iStage <= 3 ? 1 : (iStage <= 6 ? 2 : 3);
+        /// <summary>
+        /// 티어 해금 — **웨이브 1은 T1, 2는 T1+T2, 3부터는 전부**(260930).
+        ///
+        /// 스펙 §7.1은 스테이지 10판을 전제로 "1~3은 T1, 4~6은 T2까지"라고 적었는데, 이 리포는 그 자리에
+        /// **웨이브 번호(1~3)**를 넘긴다 — 그대로 두면 어떤 판에서도 T1 열두 장밖에 안 나와서
+        /// "카드가 다양하게 안 나온다"가 됐다. 웨이브가 셋뿐이므로 해금도 셋으로 접는다.
+        /// </summary>
+        public static int Get_MaxTier(int iStage) => iStage <= 1 ? 1 : (iStage <= 2 ? 2 : 3);
 
         /// <param name="iPickIndex"> 이번 스테이지에서 지금까지 고른 횟수. 0이면 첫 선택(고정 풀) </param>
         /// <param name="iStage"> 스테이지 번호(1부터) — 이 리포에서는 웨이브 번호다 </param>
@@ -157,14 +163,16 @@ namespace Client
         }
 
         // 레벨링 카드(iMaxLevel > 1)만 새 카드다. iWeight가 0이면 꺼 둔 것(스펙 §5.1의 enabled: false — 안전 귀환이 없는 K08/M04)
-        private static bool Is_Enabled(CCardInfo cInfo) => cInfo.iMaxLevel > 1 && cInfo.iWeight > 0;
+        // 260930_레벨이 없는 한 방 카드(iMaxLevel 1, 예: 월보)도 뽑힌다. 옛 즉시효과 카드는 iMaxLevel 0이라
+        // 여기서 그대로 걸러지고, 잠근 카드는 iWeight 0으로 막힌다 — 두 조건이 각자 제 몫을 한다.
+        private static bool Is_Enabled(CCardInfo cInfo) => cInfo.iMaxLevel >= 1 && cInfo.iWeight > 0;
 
         private static HashSet<CARD_FAMILY> Collect_OwnedFamily(IReadOnlyList<CCardInfo> lstAll, Func<CARD_TYPE, int> fnGetLevel)
         {
             HashSet<CARD_FAMILY> hsFamily = new HashSet<CARD_FAMILY>();
             for (int i = 0; i < lstAll.Count; ++i)
             {
-                if (lstAll[i].iMaxLevel > 1 && fnGetLevel(lstAll[i].eType) > 0)
+                if (lstAll[i].iMaxLevel >= 1 && fnGetLevel(lstAll[i].eType) > 0)
                     hsFamily.Add(lstAll[i].eFamily);
             }
 

@@ -68,6 +68,7 @@ namespace Client
             Test_Fuse();
             Test_Refraction();
             Test_TimeStar();
+            Test_Moonwalk();
             Test_ContinueWhileDrawing();
             Test_PickRnD();
             Test_StyleTracker();
@@ -2311,15 +2312,17 @@ namespace Client
                && lstFirst.Exists(c => c.eType == CARD_TYPE.M01_SPRINTER)
                && lstFirst.Exists(c => c.eType == CARD_TYPE.G01_EXTINGUISHER));
 
-            // 티어 해금 — 스테이지 1~3은 T1만, 4~6은 T2까지, 7 이상은 T3까지
-            Check("티어 — 스테이지 3은 1", CCardDraw_Utility.Get_MaxTier(3), 1);
-            Check("티어 — 스테이지 4는 2", CCardDraw_Utility.Get_MaxTier(4), 2);
-            Check("티어 — 스테이지 7은 3", CCardDraw_Utility.Get_MaxTier(7), 3);
+            // 티어 해금 — 웨이브 번호로 푼다
+            // 260930_웨이브가 셋이라 해금도 셋으로 접었다 — 예전(스테이지 10판 기준)에는 3웨이브짜리 판에서
+            // 티어 1 열두 장밖에 안 나왔다
+            Check("티어 — 1웨이브는 1", CCardDraw_Utility.Get_MaxTier(1), 1);
+            Check("티어 — 2웨이브는 2", CCardDraw_Utility.Get_MaxTier(2), 2);
+            Check("티어 — 3웨이브는 3", CCardDraw_Utility.Get_MaxTier(3), 3);
 
             bool bTierBreak = false, bDuplicate = false, bShort = false;
             for (int n = 0; n < 300; ++n)
             {
-                List<CCardInfo> lstPick = CCardDraw_Utility.Draw(cTable.ALL, 1, 2, fnLevel);
+                List<CCardInfo> lstPick = CCardDraw_Utility.Draw(cTable.ALL, 1, 1, fnLevel);
                 bShort |= lstPick.Count != 3;
                 for (int i = 0; i < lstPick.Count; ++i)
                 {
@@ -2328,7 +2331,7 @@ namespace Client
                         bDuplicate |= lstPick[i] == lstPick[j];
                 }
             }
-            Check("티어 — 스테이지 2에서는 T2 이상이 안 나온다", bTierBreak == false);
+            Check("티어 — 1웨이브에서는 T2 이상이 안 나온다", bTierBreak == false);
             Check("뽑기 — 같은 카드가 한 번에 둘 나오지 않는다", bDuplicate == false);
             Check("뽑기 — 늘 세 장이다", bShort == false);
 
@@ -2423,17 +2426,19 @@ namespace Client
                 return;
             }
 
-            Check("스테이지 10개", cMap.iWaveCount == 10 && cMap.lstWave.Count == 10);
-            Check("이미지 스택은 웨이브 + 1장이다(표가 유효하다)", cMap.lstLayerTex.Count == 11 && cMap.bIsValid);
+            // 260930_**웨이브는 최대 셋이다**(사용자 결정). 스펙 §7 표는 10행이었지만 이 게임은 세 판으로 끝나므로
+            // 앞 세 행만 쓴다 — 표 · 이미지 스택 · 카드 티어 해금(CCardDraw_Utility.Get_MaxTier)이 전부 셋 기준이다.
+            Check("웨이브 셋", cMap.iWaveCount == 3 && cMap.lstWave.Count == 3);
+            Check("이미지 스택은 웨이브 + 1장이다(표가 유효하다)", cMap.lstLayerTex.Count == 4 && cMap.bIsValid);
 
-            float[] arrRatio  = { 0.60f, 0.70f, 0.75f, 0.80f, 0.80f, 0.80f, 0.82f, 0.82f, 0.85f, 0.85f };
-            float[] arrGroggy = { 0f, 60f, 75f, 90f, 105f, 120f, 140f, 160f, 185f, 210f };
-            float[] arrStun   = { 0f, 6f, 6f, 6f, 5.5f, 5.5f, 5f, 5f, 4.5f, 4.5f };
-            float[] arrFuse   = { 0.70f, 0.70f, 0.70f, 0.72f, 0.74f, 0.76f, 0.78f, 0.80f, 0.82f, 0.85f };
-            float[] arrTime   = { 75f, 120f, 150f, 180f, 180f, 180f, 210f, 210f, 240f, 240f };
+            float[] arrRatio  = { 0.60f, 0.70f, 0.75f };
+            float[] arrGroggy = { 0f, 60f, 75f };
+            float[] arrStun   = { 0f, 6f, 6f };
+            float[] arrFuse   = { 0.70f, 0.70f, 0.70f };
+            float[] arrTime   = { 75f, 120f, 150f };
 
             bool bOk = true;
-            for (int i = 0; i < 10; ++i)
+            for (int i = 0; i < arrRatio.Length; ++i)
             {
                 CWaveInfo cWave = cMap.lstWave[i];
                 bOk &= Mathf.Approximately(cWave.fClearRatio, arrRatio[i])
@@ -2442,14 +2447,14 @@ namespace Client
                     && Mathf.Approximately(cWave.fFuseMul, arrFuse[i])
                     && Mathf.Approximately(cWave.fTimeLimit, arrTime[i]);
             }
-            Check("스펙 §7 표 10행이 그대로 읽힌다(점유율 · 그로기 · 기절 · 불 배율 · 목표 시간)", bOk);
+            Check("스펙 §7 표 세 행이 그대로 읽힌다(점유율 · 그로기 · 기절 · 불 배율 · 목표 시간)", bOk);
 
-            // 1스테이지 허수아비 — 웨이브 시작이 아니라 45%에 나온다. 2~6스테이지는 시작부터 한 마리
+            // 1웨이브 허수아비 — 웨이브 시작이 아니라 45%에 나온다. 2웨이브부터는 시작부터 한 마리
             CWaveInfo cFirst = cMap.lstWave[0];
-            Check("1스테이지 — 허수아비 한 마리",
+            Check("1웨이브 — 허수아비 한 마리",
                   cFirst.lstEnemy.Count == 1 && cFirst.lstEnemy[0].iEnemyID == 106 && cFirst.lstEnemy[0].iCount == 1);
-            Check("1스테이지 — 점유율 45%에 나온다", Mathf.Approximately(cFirst.lstEnemy[0].fSpawnRatio, 0.45f));
-            Check("2스테이지 — 웨이브 시작부터 한 마리",
+            Check("1웨이브 — 점유율 45%에 나온다", Mathf.Approximately(cFirst.lstEnemy[0].fSpawnRatio, 0.45f));
+            Check("2웨이브 — 시작부터 한 마리",
                   cMap.lstWave[1].TOTAL_ENEMY == 1 && Mathf.Approximately(cMap.lstWave[1].lstEnemy[0].fSpawnRatio, 0f));
 
             // 행 하나에서 새 열을 안 적어도(옛 표) 전부 0 — 덮어쓰지 않는다
@@ -2473,8 +2478,67 @@ namespace Client
             Check("허수아비(106)가 표에 있다", cScarecrow != null && cScarecrow.eGimmick == ENEMY_GIMMICK.SCARECROW);
 
             // 별 평가 — 스펙 §7.1 목표 시간 이내 ★3 / 1.3배 이내 ★2 / 그 외 ★1 (Test_TimeStar와 같은 식)
-            Check("별 — 스테이지 2(목표 120초) 1.3배는 156초까지 ★2", CStage_Manager.Calc_TimeStar(156f, 120f), 2);
+            Check("별 — 2웨이브(목표 120초) 1.3배는 156초까지 ★2", CStage_Manager.Calc_TimeStar(156f, 120f), 2);
             Check("별 — 156초를 넘으면 ★1", CStage_Manager.Calc_TimeStar(157f, 120f), 1);
+        }
+
+        // 260930_월보 카드 — 레벨이 없는 한 방 카드(iMaxLevel 1)도 뽑히고, 고르면 점령지 내부를 지나갈 수 있다
+        private static void Test_Moonwalk()
+        {
+            CCSVData_CardInfo cTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");
+            if (cTable == null)
+            {
+                Check("월보 — 카드 표를 읽었다", false);
+                return;
+            }
+
+            CCardInfo cMoon = null;
+            for (int i = 0; i < cTable.COUNT; ++i)
+            {
+                if (cTable.Get_ByIndex(i).eType == CARD_TYPE.M08_MOONWALK)
+                    cMoon = cTable.Get_ByIndex(i);
+            }
+
+            Check("월보 — 표에 있다", cMoon != null);
+            if (cMoon == null)
+                return;
+
+            Check("월보 — 레벨이 없는 한 방 카드", cMoon.iMaxLevel, 1);
+            Check("월보 — 이동 계열", cMoon.eFamily == CARD_FAMILY.MOBILITY && cMoon.iWeight > 0);
+
+            // 아직 안 가졌으면 후보에 오르고, 한 번 고르면 다시 안 나온다
+            System.Func<CARD_TYPE, int> fnNone = eType => 0;
+            System.Func<CARD_TYPE, int> fnOwn  = eType => eType == CARD_TYPE.M08_MOONWALK ? 1 : 0;
+
+            bool bBefore = false, bAfter = false;
+            for (int i = 0; i < 200; ++i)
+            {
+                List<CCardInfo> lstPick = CCardDraw_Utility.Draw(cTable.ALL, 1, 3, fnNone);
+                if (lstPick.Exists(c => c.eType == CARD_TYPE.M08_MOONWALK))
+                    bBefore = true;
+
+                lstPick = CCardDraw_Utility.Draw(cTable.ALL, 1, 3, fnOwn);
+                if (lstPick.Exists(c => c.eType == CARD_TYPE.M08_MOONWALK))
+                    bAfter = true;
+            }
+
+            Check("월보 — 안 가졌으면 3지선다에 나온다", bBefore);
+            Check("월보 — 한 번 고르면 다시 안 나온다", bAfter == false);
+
+            // 효과 — 점령지 내부를 지나갈 수 있게 된다(칸 이동 규칙은 그대로, 갈 수 있는 곳만 넓어진다)
+            CTerritoryGrid cGrid = new CTerritoryGrid();
+            cGrid.Initialize(21, 21, 1f, Vector2.zero, 0, null, 4);
+
+            CMoveHandler cMove = new CMoveHandler();
+            cMove.Initialize(cGrid, new Vector2Int(cGrid.START_CENTER.x, cGrid.START_CENTER.y - 4), STEP_SPEED);
+
+            Vector2Int vStart = cMove.CUR_CELL;
+            Walk(cGrid, cMove, MOVE_DIR.UP, 2);
+            Check("월보 없이는 점령지 안쪽으로 못 간다", cMove.CUR_CELL == vStart);
+
+            cMove.Set_AllowOwnedInterior(true);
+            Walk(cGrid, cMove, MOVE_DIR.UP, 2);
+            Check("월보를 켜면 점령지 안쪽을 지나간다", cMove.CUR_CELL.y > vStart.y && cGrid.IS_DRAWING == false);
         }
 
         // 260929_밸런스 스펙(Docs/Design_Card_Balance_Spec.md §6) — 속도 B/D/S · 도화선 fuseMul · 그로기 내성 공식.

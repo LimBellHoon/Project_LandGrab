@@ -35,6 +35,7 @@ namespace Client
         private static readonly Color   COLOR_TRAIL      = new Color32(90, 225, 255, 255);  // 플레이어 쪽(머리)
         private static readonly Color   COLOR_TRAIL_TAIL = new Color32(40, 130, 225, 165);  // 선이 시작된 쪽(꼬리) — 옅게 사라진다
         private static readonly Color   COLOR_FIRE      = new Color32(255, 140, 40, 255);   // 260923_도화선의 불 머리
+        private static readonly Color   COLOR_OUTLINE   = new Color32(150, 245, 255, 210);  // 260930_점령지 외곽선
         private const float             GLOW_ALPHA      = 0.25f;                            // 260924_발광 띠의 진하기
         private static readonly Color32 COLOR_BLOCK     = new Color32(0, 0, 0, 255);        // 맵 밖
 
@@ -42,6 +43,10 @@ namespace Client
         private const float FIRE_LENGTH_CELL  = 0.8f;      // 불 머리 길이(칸)
         private const float GLOW_WIDTH_SCALE  = 2.4f;      // 260924_발광 띠는 본 선의 몇 배 굵기인가
         private const string RESOURCE_TRAIL_MATERIAL = "Mat_Trail";   // 260924_있으면 이 재질(=셰이더)로 선을 그린다
+
+        // 260930_점령지 외곽선 — 내 땅과 빈 땅이 맞닿은 변만 따라 두른다
+        private const float OUTLINE_WIDTH_CELL  = 0.22f;   // 굵기(칸). 긋는 선보다 가늘게 — 지금 긋는 선이 먼저 읽혀야 한다
+        private const int   OUTLINE_SORT_OFFSET = 1;       // 가림막 바로 위(선과 같은 층). 선을 나중에 넣어 그 위에 온다
         private const int   TRAIL_SORT_OFFSET = 1;         // 가림막보다 한 칸 위에 그린다
         private static readonly Color32 COLOR_FALLBACK  = new Color32(8, 10, 20, 235);      // 가림막을 못 읽었을 때
 
@@ -68,6 +73,16 @@ namespace Client
         private readonly List<Color>    m_lstColor     = new List<Color>();
         private readonly List<Vector2>  m_lstUV        = new List<Vector2>();
         private float                   m_fTrailWidthCell = TRAIL_WIDTH_DEFAULT;
+
+        // 260930_점령지 외곽선 — 점령지가 바뀔 때만 다시 만든다(선은 매 프레임, 이쪽은 IS_DIRTY 때만)
+        private GameObject              m_goOutline;
+        private Mesh                    m_cOutlineMesh;
+        private bool                    m_bOutline = true;
+        private readonly List<Vector3>  m_lstOutlinePoint  = new List<Vector3>();
+        private readonly List<Vector3>  m_lstOutlineVertex = new List<Vector3>();
+        private readonly List<int>      m_lstOutlineIndex  = new List<int>();
+        private readonly List<Color>    m_lstOutlineColor  = new List<Color>();
+        private readonly List<Vector2>  m_lstOutlineUV     = new List<Vector2>();
         private bool                    m_bTrailGlow      = true;
         private bool                    m_bOwnMaterial;
 
@@ -134,6 +149,21 @@ namespace Client
             cRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             cRenderer.receiveShadows   = false;
 
+            // 260930_외곽선도 같은 띠 메시 · 같은 재질을 쓴다 — 새 재질도 셰이더도 만들지 않는다
+            m_goOutline = new GameObject("TerritoryOutline");
+            m_goOutline.transform.SetParent(srCover.transform.parent, false);
+
+            m_cOutlineMesh = new Mesh { name = "TerritoryOutline" };
+            m_cOutlineMesh.MarkDynamic();
+            m_goOutline.AddComponent<MeshFilter>().sharedMesh = m_cOutlineMesh;
+
+            MeshRenderer cOutline = m_goOutline.AddComponent<MeshRenderer>();
+            cOutline.sharedMaterial    = m_cTrailMaterial;
+            cOutline.sortingLayerID    = srCover.sortingLayerID;
+            cOutline.sortingOrder      = srCover.sortingOrder + OUTLINE_SORT_OFFSET;
+            cOutline.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            cOutline.receiveShadows    = false;
+
             Refresh_All();
             return true;
         }
@@ -144,6 +174,14 @@ namespace Client
         {
             Clear_Mask();
             Clear_Sprite(m_srReveal, ref m_spReveal);
+
+            if (m_goOutline != null)
+                Object.Destroy(m_goOutline);
+            if (m_cOutlineMesh != null)
+                Object.Destroy(m_cOutlineMesh);
+
+            m_goOutline    = null;
+            m_cOutlineMesh = null;
 
             if (m_goTrailRoot != null)
                 Object.Destroy(m_goTrailRoot);
@@ -378,6 +416,13 @@ namespace Client
             m_bTrailGlow      = bGlow;
         }
 
+        /// <summary> 260930_점령지 외곽선을 두를지. 끄면 메시를 비운다(2-3-1) </summary>
+        public void Set_TerritoryOutline(bool bOutline)
+        {
+            m_bOutline = bOutline;
+            Refresh_Outline();
+        }
+
         /// <summary> 점령지가 바뀌었을 때만 가림막을 다시 뚫는다. 선은 매 프레임 다시 그린다(점 몇 개뿐이다). </summary>
         public void Tick()
         {
@@ -387,6 +432,7 @@ namespace Client
             if (m_cGrid.IS_DIRTY == true)
             {
                 Refresh_All();
+                Refresh_Outline();          // 260930_외곽선도 점령지가 바뀔 때만 다시 만든다
                 m_cGrid.Clear_Dirty();
             }
 
@@ -428,6 +474,122 @@ namespace Client
 
             m_texMask.SetPixels32(m_arrPixel);
             m_texMask.Apply(false);
+        }
+
+        // 260930_점령지 외곽선 — **내 땅과 빈 땅(또는 맵 밖)이 맞닿은 변**만 모아 띠로 두른다.
+        /// <summary>
+        /// 칸마다 네 변을 다 그리면 안쪽 격자까지 그물처럼 보이므로, 이웃이 점령지가 아닌 변만 남긴다.
+        /// 같은 줄에서 이어지는 변은 **한 토막으로 합쳐** 꼭짓점 수를 줄인다 — 칸마다 사각형을 하나씩
+        /// 만들면 60x100 맵에서 수백 개가 되고, 이어 붙인 자리마다 이음매가 보인다.
+        /// 긋는 선과 **같은 띠 메시 · 같은 재질**을 쓴다(2-3-1) — 새 셰이더도 드로우콜도 늘리지 않는다.
+        /// </summary>
+        private void Refresh_Outline()
+        {
+            if (m_cOutlineMesh == null)
+                return;
+
+            m_lstOutlineVertex.Clear();
+            m_lstOutlineIndex.Clear();
+            m_lstOutlineColor.Clear();
+            m_lstOutlineUV.Clear();
+
+            if (m_bOutline == true && m_cGrid != null)
+            {
+                // 가로 변 — 아래쪽(dy -1) · 위쪽(dy +1)을 줄마다 훑으며 이어지는 만큼 합친다
+                for (int y = 0; y < m_cGrid.HEIGHT; ++y)
+                {
+                    Collect_EdgeRun(y, 0, -1);
+                    Collect_EdgeRun(y, 0, 1);
+                }
+
+                // 세로 변 — 왼쪽(dx -1) · 오른쪽(dx +1)
+                for (int x = 0; x < m_cGrid.WIDTH; ++x)
+                {
+                    Collect_EdgeRun(x, -1, 0);
+                    Collect_EdgeRun(x, 1, 0);
+                }
+            }
+
+            m_cOutlineMesh.Clear();
+            if (m_lstOutlineIndex.Count == 0)
+                return;
+
+            m_cOutlineMesh.SetVertices(m_lstOutlineVertex);
+            m_cOutlineMesh.SetColors(m_lstOutlineColor);
+            m_cOutlineMesh.SetUVs(0, m_lstOutlineUV);
+            m_cOutlineMesh.SetTriangles(m_lstOutlineIndex, 0);
+            m_cOutlineMesh.RecalculateBounds();
+        }
+
+        // 줄 하나(가로면 y, 세로면 x)를 훑으며 '이웃이 점령지가 아닌' 변이 이어지는 구간을 토막으로 만든다.
+        // (iDx, iDy)는 어느 쪽 이웃을 보는지 — 그 방향의 변이 곧 그릴 변이다.
+        private void Collect_EdgeRun(int iLine, int iDx, int iDy)
+        {
+            bool bHorizontal = iDy != 0;
+            int  iCount      = bHorizontal ? m_cGrid.WIDTH : m_cGrid.HEIGHT;
+            int  iRunStart   = -1;
+
+            for (int i = 0; i <= iCount; ++i)
+            {
+                bool bEdge = false;
+                if (i < iCount)
+                {
+                    int x = bHorizontal ? i : iLine;
+                    int y = bHorizontal ? iLine : i;
+                    bEdge = m_cGrid.Get_Cell(x, y) == CELL_STATE.OWNED
+                         && m_cGrid.Get_Cell(x + iDx, y + iDy) != CELL_STATE.OWNED;
+                }
+
+                if (bEdge == true)
+                {
+                    if (iRunStart < 0)
+                        iRunStart = i;
+
+                    continue;
+                }
+
+                if (iRunStart < 0)
+                    continue;
+
+                Add_OutlineSegment(iLine, iRunStart, i, iDx, iDy, bHorizontal);
+                iRunStart = -1;
+            }
+        }
+
+        // 합쳐진 한 토막을 띠로 만든다. 칸 (x,y)는 [x,x+1) x [y,y+1)이라 변의 좌표가 정수로 떨어진다(2-3)
+        private void Add_OutlineSegment(int iLine, int iFrom, int iTo, int iDx, int iDy, bool bHorizontal)
+        {
+            Vector2 vFrom, vTo;
+            if (bHorizontal == true)
+            {
+                float fY = iDy > 0 ? iLine + 1 : iLine;
+                vFrom = new Vector2(iFrom, fY);
+                vTo   = new Vector2(iTo, fY);
+            }
+            else
+            {
+                float fX = iDx > 0 ? iLine + 1 : iLine;
+                vFrom = new Vector2(fX, iFrom);
+                vTo   = new Vector2(fX, iTo);
+            }
+
+            m_lstOutlinePoint.Clear();
+            m_lstOutlinePoint.Add(m_cGrid.Grid_ToWorld(vFrom));
+            m_lstOutlinePoint.Add(m_cGrid.Grid_ToWorld(vTo));
+
+            float fWidth = OUTLINE_WIDTH_CELL * m_cGrid.CELL_SIZE;
+            CTrailMesh_Utility.CTrailStyle cStyle = new CTrailMesh_Utility.CTrailStyle
+            {
+                fWidth      = fWidth,
+                cTail       = COLOR_OUTLINE,
+                cHead       = COLOR_OUTLINE,
+                fArcFrom    = 0f,
+                fArcTo      = 1f,
+                fUVPerWorld = 1f / Mathf.Max(1e-4f, fWidth),
+            };
+
+            CTrailMesh_Utility.Append(m_lstOutlinePoint, cStyle,
+                                      m_lstOutlineVertex, m_lstOutlineIndex, m_lstOutlineColor, m_lstOutlineUV);
         }
 
         // 260923_긋는 중인 선. 도화선이 탄 구간은 빼고, 불 머리는 주황으로 그린다

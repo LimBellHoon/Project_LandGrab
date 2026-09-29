@@ -32,6 +32,7 @@ namespace Client
                 case CARD_TYPE.M05_GHOST_STEP:        cEffect = new CCardEffect_GhostStep();       break;
                 case CARD_TYPE.M06_NEARMISS_MASTER:   cEffect = new CCardEffect_NearMissMaster();  break;
                 case CARD_TYPE.M07_SIZE_SHIFT:        cEffect = new CCardEffect_SizeShift();       break;
+                case CARD_TYPE.M08_MOONWALK:          cEffect = new CCardEffect_Moonwalk();        break;
                 case CARD_TYPE.G01_EXTINGUISHER:      cEffect = new CCardEffect_Extinguisher();    break;
                 case CARD_TYPE.G02_INVINCIBLE_STAR:   cEffect = new CCardEffect_InvincibleStar();  break;
                 case CARD_TYPE.G03_LAST_SANCTUARY:    cEffect = new CCardEffect_LastSanctuary();   break;
@@ -216,6 +217,20 @@ namespace Client
             if (m_cOwner.LAST_CAPTURE_RATIO >= BIG_CAPTURE_RATIO)
                 m_cOwner.Add_Invincible(m_cInfo.Get_Value(m_iLevel));
         }
+    }
+
+    // 260930_월보 — 점령지 내부(드러난 이미지 위)를 가로질러 다닐 수 있다. 규칙(Step_To)은 그대로 두고
+    // 이동 가능 여부만 넓히는 기존 플래그를 그대로 쓴다(CMoveHandler.Set_AllowOwnedInterior, 2-11-1).
+    /// <summary> M08_MOONWALK — 점령한 곳 위로도 지나갈 수 있다. 레벨이 없는 한 방 카드다. </summary>
+    public class CCardEffect_Moonwalk : CCardEffect
+    {
+        public override void On_LevelChanged(CCardInfo cInfo, int iLevel)
+        {
+            base.On_LevelChanged(cInfo, iLevel);
+            m_cOwner?.Set_MoveFlag_AllowOwnedInterior(iLevel > 0);
+        }
+
+        public override void Release() => m_cOwner?.Set_MoveFlag_AllowOwnedInterior(false);
     }
 
     /// <summary> M06_NEARMISS_MASTER — 아슬아슬하게 피하면 1초간 빨라진다. </summary>

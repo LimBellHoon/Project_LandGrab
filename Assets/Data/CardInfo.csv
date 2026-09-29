@@ -1,4 +1,4 @@
-iCardID	eType	strName	strDesc	fValue	iWeight	eTheme	eFamily	iTier	iMaxLevel	fValueLv1	fValueLv2	fValueLv3	strParam	bFirstPickOnly	NONE
+﻿iCardID	eType	strName	strDesc	fValue	iWeight	eTheme	eFamily	iTier	iMaxLevel	fValueLv1	fValueLv2	fValueLv3	strParam	bFirstPickOnly	NONE
 ;== 카드 테이블 ==	점령률을 넘길 때마다 셋 중 하나를 고른다. 고른 판에서만 유지된다
 ;eType : Client_Enum.CARD_TYPE 이름과 철자가 같아야 한다
 ;260928_카드 30종(태스크 #22, Docs/Design_Card_Catalog_Spec.md) 도입 — 옛 20종(1~20행)은 iWeight를 0으로
@@ -87,3 +87,4 @@ iCardID	eType	strName	strDesc	fValue	iWeight	eTheme	eFamily	iTier	iMaxLevel	fVal
 48	F05_FUSE_BOMB	도화선 폭탄	도화선에 따라잡혀도 목숨은 깎이지 않는다(선은 그대로 사라진다)	0	10	COMBAT	FUSE	3	3	1	2	3	-	0	판당 횟수
 49	F06_PLAYING_WITH_FIRE	불장난	도화선이 타던 시간만큼 닫는 순간 근처 적에게 그로기를 준다	0	10	COMBAT	FUSE	3	3	8	14	20	-	0	최대 5스택 고정
 50	F07_POWDER_WICK	화약 심지	도화선 앞머리가 적과 겹치면 그로기를 준다	0	10	COMBAT	FUSE	2	3	12	20	28	-	0	대가로 전파 속도 +25% 고정
+51	M08_MOONWALK	월보	점령한 곳(이미지) 위로도 지나갈 수 있다	0	10	MOVE	MOBILITY	3	1	0	0	0	-	0	한 번만 고른다(iMaxLevel 1) — 켜고 끄는 효과라 레벨이 없다

@@ -612,8 +612,11 @@ namespace Client
             m_iRatioStep = 0;
             m_bFuseArmed = false;   // 260924_그리드가 트레일을 비웠으니 타던 도화선도 같이 끈다
 
-            // 260929_카드는 매 스테이지(웨이브) 시작에 전부 초기화한다(스펙 §7.1). 예전에는 웨이브가 넘어가도 유지했다(2-10-1).
-            Reset_CardState();
+            // 260930_**웨이브가 넘어가도 카드는 그대로 둔다**(사용자 결정). 260929에 스펙 §7.1을 따라
+            // 웨이브마다 전부 초기화했었는데, 웨이브가 셋뿐이라 애써 모은 것이 매번 사라져 쌓이는 맛이 없었다.
+            // 다만 **자리에 묶인 것(터렛 · 구역)은 비운다** — 판을 다시 깔면 그 자리가 이제 빈 땅이라 뜻이 없다.
+            // 판을 나갈 때는 여전히 전부 잃는다(Release · CPlayer.Initialize · Hide가 Clear_Card를 부른다).
+            Reset_CardPlacement();
             m_iPickIndex  = 0;
             m_iRerollLeft = Mathf.Max(0, m_cMapInfo.iPickReroll);   // 스펙 §4.1 — 리롤은 판당(스테이지당) 1회
             m_hsLateSpawned.Clear();
@@ -913,33 +916,41 @@ namespace Client
 
         // 260929_카드가 걸어 둔 것 전부를 되돌린다 — 플레이어 쪽 레벨 · 효과(CPlayer.Clear_Card)와 스테이지 쪽 수치 · 자리 ·
         // 쿨타임. 스테이지(웨이브) 시작마다 부르고(스펙 §7.1 "카드 초기화"), 스테이지를 나갈 때도 부른다.
+        // 260930_자리에 묶인 카드 상태만 비운다 — 웨이브가 넘어가면 판을 다시 깔아(2-5) 예전 터렛 · 구역 자리가
+        // 빈 땅이 되기 때문이다. 카드 레벨과 수치는 그대로 남는다(Enter_Wave의 260930 주석 참고).
+        private void Reset_CardPlacement()
+        {
+            m_lstTurret.Clear();
+            m_fTurretGroggyAccum = 0f;
+            m_vK06ZoneCenter     = null;
+            m_fK06ZoneTimer      = 0f;
+            m_dicK07Cooldown.Clear();
+            m_dicF02Cooldown.Clear();
+            m_dicF07Cooldown.Clear();
+        }
+
         private void Reset_CardState()
         {
             m_cPlayer?.Clear_Card();
+            Reset_CardPlacement();
 
+            // 자리에 묶인 것은 위 Reset_CardPlacement가 이미 비웠다 — 여기는 카드가 올려 둔 수치만 되돌린다
             m_iK02Groggy         = 0;
             m_fK03LevyRatio      = 0f;
             m_fK03Timer          = 0f;
-            m_lstTurret.Clear();
             m_iTurretMax         = 0;
-            m_fTurretGroggyAccum = 0f;
             m_fK05FreezeDuration = 0f;
             m_fK06SlowRatio      = 0f;
             m_bK06Unlocked       = false;
             m_fK06Timer          = 0f;
-            m_vK06ZoneCenter     = null;
-            m_fK06ZoneTimer      = 0f;
             m_fK07BindDuration   = 0f;
-            m_dicK07Cooldown.Clear();
             m_fG08Chance         = 0f;
             m_fG08Depth          = 0f;
             m_iF02Groggy         = 0;
-            m_dicF02Cooldown.Clear();
             m_fF04StunDuration   = 0f;
             m_iF06GroggyPerStack = 0;
             m_fF06BurnAccum      = 0f;
             m_iF07Groggy         = 0;
-            m_dicF07Cooldown.Clear();
             m_fG01FreezeTimer    = 0f;
         }
 
@@ -2379,7 +2390,11 @@ namespace Client
 
         #region 필드 아이템 (260920)
         /// <summary> 260924_긋는 중인 선의 겉모습(굵기 · 발광) — CGameManager가 GameConfig 값을 흘려보낸다 </summary>
-        public void Set_TrailStyle(float fWidthCell, bool bGlow) => m_cGridRenderer.Set_TrailStyle(fWidthCell, bGlow);
+        public void Set_TrailStyle(float fWidthCell, bool bGlow, bool bOutline)
+        {
+            m_cGridRenderer.Set_TrailStyle(fWidthCell, bGlow);
+            m_cGridRenderer.Set_TerritoryOutline(bOutline);
+        }
 
         public void Set_FieldItemTable(CCSVData_FieldItemInfo cTable, bool bEnabled)
         {
