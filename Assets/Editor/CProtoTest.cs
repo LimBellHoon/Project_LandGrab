@@ -218,10 +218,11 @@ namespace Client
             Walk(cGrid, cMove, MOVE_DIR.DOWN, 2);
             Check("선을 그리기 시작", cGrid.IS_DRAWING && Near(cMove.POS, vStart - new Vector2(0f, 2f)));
 
-            // 260921_미점령 지대에서도 입력이 없으면 멈춘다
+            // 260929_선을 긋는 중에는 손을 떼도 멈추지 않는다 — 260921 결정을 로그라이트 재작성이 뒤집었다
+            // (원본 스펙 §1, 자세한 것은 Test_ContinueWhileDrawing). 안전 지대에서 서는 것과 반대다
             Vector2 vHold = cMove.POS;
             Walk(cGrid, cMove, MOVE_DIR.NONE, 1);
-            Check("미점령 지대에서도 손을 떼면 정지", cMove.POS == vHold);
+            Check("선을 긋는 중에는 손을 떼도 계속 간다", cMove.POS != vHold && cGrid.IS_DRAWING);
         }
 
         // 260928_내 땅 위에서 경계를 따라간다 — 안쪽으로는 못 들어가고, 바깥으로 누르면 선을 긋는다.
@@ -1612,7 +1613,9 @@ namespace Client
             cGrid.Initialize(41, 41, 1f, Vector2.zero, 0, null, 5);
 
             Vector2 vCenter = CTerritoryGrid.Cell_ToGrid(cGrid.START_CENTER);
-            Check("섬 한가운데는 점령지 안쪽", cGrid.Is_OwnedPoint(vCenter) && cGrid.Distance_ToBoundary(vCenter) > 5f);
+            // 260929_반지름 5짜리 섬이라 한가운데에서 경계까지는 딱 5칸이다 — 가장 가까운 경계를 제대로 고르게
+            // 고친 뒤로 정확히 5.0이 나온다(예전에는 고리의 모서리를 집어 7.07이 나왔다)
+            Check("섬 한가운데는 점령지 안쪽", cGrid.Is_OwnedPoint(vCenter) && cGrid.Distance_ToBoundary(vCenter) >= 5f);
 
             Check("가장 가까운 경계를 찾는다", cGrid.Try_Find_NearestBoundary(vCenter, out Vector2 vFound));
             Check("찾은 곳은 경계 위", cGrid.Distance_ToBoundary(vFound) < 1e-3f);
@@ -3691,9 +3694,18 @@ namespace Client
 
             Check("같은 카드가 겹쳐 나오지 않는다", bDup == false);
 
-            // 표에 있는 것보다 많이 달라고 해도 있는 만큼만 준다
+            // 표에 있는 것보다 많이 달라고 해도 있는 만큼만 준다 —
+            // 260929_기준은 표의 줄 수가 아니라 **뽑힐 수 있는 줄 수**다(가중치 0은 잠긴 카드라 안 나온다, 2-10-1)
             cTable.Pick_Random(99, lstPick);
-            Check("표보다 많이 뽑지 않는다", lstPick.Count, cTable.COUNT);
+            int iPickable = 0;
+            for (int i = 0; i < cTable.COUNT; ++i)
+            {
+                if (cTable.Get_ByIndex(i).iWeight > 0)
+                    ++iPickable;
+            }
+
+            Check("표보다 많이 뽑지 않는다", lstPick.Count, iPickable);
+            Check("뽑힐 수 있는 카드가 표보다 적다(가중치 0이 섞여 있다)", iPickable < cTable.COUNT);
 
             // 가중치가 0인 카드는 안 나온다
             CCSVData_CardInfo cZero = new CCSVData_CardInfo();

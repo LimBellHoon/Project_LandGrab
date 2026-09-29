@@ -67,6 +67,10 @@ namespace Client
         public IReadOnlyList<CCardInfo> ALL => m_lstInfo;
         public int COUNT => m_lstInfo.Count;
 
+        /// <summary> 260929_표를 순서대로 훑는 창구(검증 · 테스트용). 범위 밖이면 null </summary>
+        public CCardInfo Get_ByIndex(int iIndex)
+            => iIndex >= 0 && iIndex < m_lstInfo.Count ? m_lstInfo[iIndex] : null;
+
         public CCardInfo Get_Info(int iCardID)
         {
             for (int i = 0; i < m_lstInfo.Count; ++i)

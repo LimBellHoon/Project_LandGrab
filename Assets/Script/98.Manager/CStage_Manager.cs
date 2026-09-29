@@ -670,7 +670,9 @@ namespace Client
                 return 3;
 
             // 260929_스펙 §7.1 — 1.3배 이내 ★2(예전 1.5배)
-            if (fElapsed <= fTimeLimit * 1.3f)
+            // 260929_양쪽을 10배 · 13배로 키워 비교한다. 1.3f가 정확히 1.3이 아니라서
+            // 60초 목표에 78초(딱 1.3배)가 ★1로 떨어졌다 — 60 * 1.3f = 77.99999...
+            if (fElapsed * 10f <= fTimeLimit * 13f)
                 return 2;
 
             return 1;

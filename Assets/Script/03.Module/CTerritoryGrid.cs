@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 using UnityEngine;
 
@@ -393,8 +393,14 @@ namespace Client
             if (Is_Boundary(vFrom) == true)
                 return true;
 
+            // 260929_고리(체비셰프 반지름) 순으로 넓혀 가되, **같은 고리 안에서는 실제로 가장 가까운 칸**을 고른다.
+            // 예전에는 훑는 순서대로 처음 찾은 것을 그대로 썼는데 그게 늘 고리의 모서리라, 점령 직후
+            // 되돌아갈 자리(Snap_ToBoundary)가 바로 옆 경계가 아니라 대각선 구석으로 튀었다.
             for (int r = 1; r <= iMaxRadius; ++r)
             {
+                bool  bFound = false;
+                float fBest  = float.MaxValue;
+
                 for (int dy = -r; dy <= r; ++dy)
                 {
                     for (int dx = -r; dx <= r; ++dx)
@@ -406,10 +412,18 @@ namespace Client
                         if (Is_InBounds(vCell.x, vCell.y) == false || Is_Boundary(vCell) == false)
                             continue;
 
+                        float fDistSq = dx * dx + dy * dy;
+                        if (fDistSq >= fBest)
+                            continue;
+
+                        fBest  = fDistSq;
                         vFound = vCell;
-                        return true;
+                        bFound = true;
                     }
                 }
+
+                if (bFound == true)
+                    return true;
             }
 
             return false;
@@ -466,7 +480,9 @@ namespace Client
             int iIndex = To_Index(vTo.x, vTo.y);
             m_arrCell[iIndex] = CELL_STATE.TRAIL;
             m_lstTrailCell.Add(iIndex);
-            Set_Dirty();
+            // 260929_가림막을 다시 찍지 않는다 — 마스크는 점령지(OWNED)와 맵 밖(BLOCK)만 보고(CGridRenderer.Refresh_All),
+            // 선은 띠 메시가 따로 그린다(2-3-1). 여기서 더티를 세우면 **선을 긋는 동안 매 프레임** 마스크 전체를
+            // 다시 찍어 올린다 — 맵 1 기준 540x900 픽셀이라 모바일에서 그대로 프레임을 깎는다.
 
             Vector2 vToPoint  = Cell_ToGrid(vTo);
             bool    bAdjacent = Mathf.Abs(vTo.x - vFrom.x) + Mathf.Abs(vTo.y - vFrom.y) == 1;
