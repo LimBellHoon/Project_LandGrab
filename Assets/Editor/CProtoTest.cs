@@ -92,6 +92,9 @@ namespace Client
             Test_RunSkill();
             Test_CardHandler();
             Test_CardCatalog();
+            Test_CardDraw();
+            Test_Balance();
+            Test_StageTable();
             Test_WeaponAndAwaken();
             Test_OrbitAndClub();
             Test_BattleConsumable();
@@ -1541,9 +1544,10 @@ namespace Client
         {
             Check("시간 별 — 목표 안에 깨면 3성", CStage_Manager.Calc_TimeStar(59f, 60f), 3);
             Check("시간 별 — 정확히 목표 시간이어도 3성", CStage_Manager.Calc_TimeStar(60f, 60f), 3);
-            Check("시간 별 — 1.5배 이내면 2성", CStage_Manager.Calc_TimeStar(89f, 60f), 2);
-            Check("시간 별 — 정확히 1.5배여도 2성", CStage_Manager.Calc_TimeStar(90f, 60f), 2);
-            Check("시간 별 — 1.5배를 넘으면 1성", CStage_Manager.Calc_TimeStar(91f, 60f), 1);
+            // 260929_스펙 §7.1 — 1.3배 이내 ★2(예전 1.5배)
+            Check("시간 별 — 1.3배 이내면 2성", CStage_Manager.Calc_TimeStar(77f, 60f), 2);
+            Check("시간 별 — 정확히 1.3배여도 2성", CStage_Manager.Calc_TimeStar(78f, 60f), 2);
+            Check("시간 별 — 1.3배를 넘으면 1성", CStage_Manager.Calc_TimeStar(79f, 60f), 1);
             Check("시간 별 — 아무리 늦어도 1성 밑으로는 안 떨어진다", CStage_Manager.Calc_TimeStar(600f, 60f), 1);
             Check("시간 별 — 목표 시간이 없는 웨이브는 3성 취급", CStage_Manager.Calc_TimeStar(9999f, 0f), 3);
         }
@@ -1752,13 +1756,19 @@ namespace Client
 
             // 260924_점유율 문턱 산수 — CStage_Manager.s_arrCardThreshold(사설 배열)와 같은 값이어야 한다.
             // 값이 바뀌면 여기도 같이 고칠 것 — 웨이브 목표 70%를 일곱 번으로 나눈 지점들이다(2-21).
-            float[] arrThreshold = { 0.05f, 0.12f, 0.20f, 0.30f, 0.42f, 0.56f, 0.65f };
+            // 260929_사설 배열을 베끼지 않고 CStage_Manager.CARD_THRESHOLD를 그대로 읽는다(스펙 §7.1: 0.72까지 일곱 지점).
+            System.Collections.Generic.IReadOnlyList<float> arrThreshold = CStage_Manager.CARD_THRESHOLD;
+            Check("문턱 — 일곱 지점", arrThreshold.Count, 7);
+            Check("문턱 — 스펙 §7.1 값",
+                  Mathf.Approximately(arrThreshold[0], 0.05f) && Mathf.Approximately(arrThreshold[4], 0.42f)
+               && Mathf.Approximately(arrThreshold[6], 0.72f));
             Check("문턱 계산 — 시작은 아직 0개", Count_CardThreshold(arrThreshold, 0f), 0);
             Check("문턱 계산 — 5% 미만은 아직 0개", Count_CardThreshold(arrThreshold, 0.04f), 0);
             Check("문턱 계산 — 정확히 5%면 첫 문턱", Count_CardThreshold(arrThreshold, 0.05f), 1);
             Check("문턱 계산 — 12%면 두 번째 문턱까지", Count_CardThreshold(arrThreshold, 0.12f), 2);
             Check("문턱 계산 — 20%와 30% 사이는 세 번째까지만", Count_CardThreshold(arrThreshold, 0.25f), 3);
-            Check("문턱 계산 — 65% 이상이면 일곱 개 전부", Count_CardThreshold(arrThreshold, 0.99f), 7);
+            Check("문턱 계산 — 72% 미만은 여섯 개까지", Count_CardThreshold(arrThreshold, 0.71f), 6);
+            Check("문턱 계산 — 72% 이상이면 일곱 개 전부", Count_CardThreshold(arrThreshold, 0.99f), 7);
 
             // 260921_자석으로 한꺼번에 넘쳐도 3지선다는 한 장씩 열린다
             CPickQueue cQueue = new CPickQueue();
@@ -1775,10 +1785,10 @@ namespace Client
         }
 
         // 260924_CStage_Manager.Check_CardReady의 문턱 세기 로직을 그대로 흉내 낸다(사설 배열이라 직접 부를 수 없다).
-        private static int Count_CardThreshold(float[] arrThreshold, float fRatio)
+        private static int Count_CardThreshold(System.Collections.Generic.IReadOnlyList<float> arrThreshold, float fRatio)
         {
             int iThreshold = 0;
-            while (iThreshold < arrThreshold.Length && fRatio >= arrThreshold[iThreshold])
+            while (iThreshold < arrThreshold.Count && fRatio >= arrThreshold[iThreshold])
                 ++iThreshold;
 
             return iThreshold;
@@ -2276,6 +2286,261 @@ namespace Client
             Check("Clear 뒤엔 비었다", cHandler.Has(CARD_TYPE.SHIELD) == false && cHandler.ALL.Count == 0);
         }
 
+        // 260929_카드 뽑기(Docs/Design_Card_Balance_Spec.md §4.1 · §6.5) — 고정 첫 선택 · 티어 해금 · 만렙 제외 · 하드 배타 ·
+        // 확률 조정표 · 보유 계열 보장. 무작위라 여러 번 뽑아 "절대 안 나온다" / "반드시 나온다"만 본다.
+        private static void Test_CardDraw()
+        {
+            CCSVData_CardInfo cTable = Load_CsvTable<CCSVData_CardInfo>("CardInfo");
+            if (cTable == null)
+            {
+                Check("CardInfo.csv 로드(Test_CardDraw)", false);
+                return;
+            }
+
+            Dictionary<CARD_TYPE, int> dicLevel = new Dictionary<CARD_TYPE, int>();
+            System.Func<CARD_TYPE, int> fnLevel = eType => dicLevel.TryGetValue(eType, out int iLevel) ? iLevel : 0;
+
+            // 첫 선택 — 감전 선 / 스프린터 / 소화기 고정
+            List<CCardInfo> lstFirst = CCardDraw_Utility.Draw(cTable.ALL, 0, 1, fnLevel);
+            Check("첫 선택 — 세 장", lstFirst.Count, 3);
+            Check("첫 선택 — K01 · M01 · G01",
+                  lstFirst.Exists(c => c.eType == CARD_TYPE.K01_ELECTRIC_LINE)
+               && lstFirst.Exists(c => c.eType == CARD_TYPE.M01_SPRINTER)
+               && lstFirst.Exists(c => c.eType == CARD_TYPE.G01_EXTINGUISHER));
+
+            // 티어 해금 — 스테이지 1~3은 T1만, 4~6은 T2까지, 7 이상은 T3까지
+            Check("티어 — 스테이지 3은 1", CCardDraw_Utility.Get_MaxTier(3), 1);
+            Check("티어 — 스테이지 4는 2", CCardDraw_Utility.Get_MaxTier(4), 2);
+            Check("티어 — 스테이지 7은 3", CCardDraw_Utility.Get_MaxTier(7), 3);
+
+            bool bTierBreak = false, bDuplicate = false, bShort = false;
+            for (int n = 0; n < 300; ++n)
+            {
+                List<CCardInfo> lstPick = CCardDraw_Utility.Draw(cTable.ALL, 1, 2, fnLevel);
+                bShort |= lstPick.Count != 3;
+                for (int i = 0; i < lstPick.Count; ++i)
+                {
+                    bTierBreak |= lstPick[i].iTier > 1;
+                    for (int j = i + 1; j < lstPick.Count; ++j)
+                        bDuplicate |= lstPick[i] == lstPick[j];
+                }
+            }
+            Check("티어 — 스테이지 2에서는 T2 이상이 안 나온다", bTierBreak == false);
+            Check("뽑기 — 같은 카드가 한 번에 둘 나오지 않는다", bDuplicate == false);
+            Check("뽑기 — 늘 세 장이다", bShort == false);
+
+            // 만렙은 풀에서 빠진다
+            dicLevel[CARD_TYPE.K01_ELECTRIC_LINE] = 3;
+            bool bMaxShown = false;
+            for (int n = 0; n < 300; ++n)
+                bMaxShown |= CCardDraw_Utility.Draw(cTable.ALL, 1, 10, fnLevel).Exists(c => c.eType == CARD_TYPE.K01_ELECTRIC_LINE);
+            Check("만렙 카드는 안 나온다", bMaxShown == false);
+            dicLevel.Clear();
+
+            // 꺼 둔 K08 · M04는 어떤 경우에도 안 나온다(안전 귀환이 없다, 스펙 §5.1)
+            bool bDisabledShown = false;
+            for (int n = 0; n < 300; ++n)
+            {
+                List<CCardInfo> lstPick = CCardDraw_Utility.Draw(cTable.ALL, 1, 10, fnLevel);
+                bDisabledShown |= lstPick.Exists(c => c.eType == CARD_TYPE.K08_WHIRL || c.eType == CARD_TYPE.M04_UNBREAKABLE_RUSH);
+            }
+            Check("K08 · M04는 꺼져 있어 안 나온다", bDisabledShown == false);
+
+            // 하드 배타 — 둘 중 하나를 들면 다른 쪽은 무조건 제외(켜져 있더라도)
+            dicLevel[CARD_TYPE.M04_UNBREAKABLE_RUSH] = 1;
+            Check("하드 배타 — M04를 들면 K08 제외", CCardDraw_Utility.Is_HardExcluded(CARD_TYPE.K08_WHIRL, fnLevel) == true);
+            Check("하드 배타 — M04 자신은 제외가 아니다", CCardDraw_Utility.Is_HardExcluded(CARD_TYPE.M04_UNBREAKABLE_RUSH, fnLevel) == false);
+            dicLevel.Clear();
+            dicLevel[CARD_TYPE.K08_WHIRL] = 1;
+            Check("하드 배타 — K08을 들면 M04 제외", CCardDraw_Utility.Is_HardExcluded(CARD_TYPE.M04_UNBREAKABLE_RUSH, fnLevel) == true);
+            dicLevel.Clear();
+
+            // 확률 조정표(§6.5) — 배율을 숫자로 검증한다
+            CCardInfo cG08 = cTable.Get_Info(43);
+            CCardInfo cF01 = cTable.Get_Info(44);
+            CCardInfo cF03 = cTable.Get_Info(46);
+            CCardInfo cF05 = cTable.Get_Info(48);
+            CCardInfo cG01 = cTable.Get_Info(36);
+            CCardInfo cK03 = cTable.Get_Info(23);
+            CCardInfo cK04 = cTable.Get_Info(24);
+            Check("조정표 — 아무것도 없으면 G08은 ×1", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cG08, cTable.ALL, fnLevel), 1f));
+
+            dicLevel[CARD_TYPE.F01_BURNING_HASTE] = 1;
+            Check("조정표 — F계열 1장이면 G08은 ×1", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cG08, cTable.ALL, fnLevel), 1f));
+            dicLevel[CARD_TYPE.F03_FIREBREAK] = 1;
+            Check("조정표 — F계열 2장이면 G08은 ×0.1", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cG08, cTable.ALL, fnLevel), 0.1f));
+            Check("조정표 — {G01,F03,F05} 중 F03만 있으면 F05는 ×1", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cF05, cTable.ALL, fnLevel), 1f));
+            dicLevel[CARD_TYPE.G01_EXTINGUISHER] = 1;
+            Check("조정표 — {G01,F03,F05} 중 둘을 들면 남은 F05는 ×0.1", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cF05, cTable.ALL, fnLevel), 0.1f));
+            Check("조정표 — 이미 든 카드(G01)는 ×0.1이 아니다", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cG01, cTable.ALL, fnLevel), 1f));
+            dicLevel.Clear();
+
+            dicLevel[CARD_TYPE.G08_REFRACTION] = 2;
+            Check("조정표 — G08 Lv.1~2면 F계열은 ×0.3", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cF01, cTable.ALL, fnLevel), 0.3f));
+            dicLevel[CARD_TYPE.G08_REFRACTION] = 3;
+            Check("조정표 — G08 Lv.3이면 F계열은 ×0(풀에서 빠진다)", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cF01, cTable.ALL, fnLevel), 0f));
+            bool bFuseShown = false;
+            for (int n = 0; n < 300; ++n)
+                bFuseShown |= CCardDraw_Utility.Draw(cTable.ALL, 1, 10, fnLevel).Exists(c => c.eFamily == CARD_FAMILY.FUSE);
+            Check("조정표 — G08 Lv.3이면 F계열이 한 장도 안 나온다", bFuseShown == false);
+            dicLevel.Clear();
+
+            dicLevel[CARD_TYPE.K03_LEVY] = 1;
+            Check("조정표 — K03을 들면 K04는 ×0.5", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cK04, cTable.ALL, fnLevel), 0.5f));
+            dicLevel.Clear();
+            dicLevel[CARD_TYPE.K04_TURRET] = 1;
+            Check("조정표 — K04를 들면 K03은 ×0.5", Mathf.Approximately(CCardDraw_Utility.Calc_WeightModifier(cK03, cTable.ALL, fnLevel), 0.5f));
+            dicLevel.Clear();
+
+            // 보유 계열 보장 — 한 계열을 들고 있으면 세 장 중 최소 한 장은 그 계열이다
+            dicLevel[CARD_TYPE.K02_BOUNDARY_SHOCK] = 1;
+            bool bNoOwnedFamily = false;
+            for (int n = 0; n < 300; ++n)
+                bNoOwnedFamily |= CCardDraw_Utility.Draw(cTable.ALL, 1, 10, fnLevel).Exists(c => c.eFamily == CARD_FAMILY.CONTROL) == false;
+            Check("보유 계열 — 세 장 중 최소 한 장은 든 계열(제어)이다", bNoOwnedFamily == false);
+            dicLevel.Clear();
+
+            // 호출부가 빼는 카드(버린 카드)는 안 나온다
+            bool bExcludedShown = false;
+            for (int n = 0; n < 200; ++n)
+                bExcludedShown |= CCardDraw_Utility.Draw(cTable.ALL, 1, 10, fnLevel, c => c.eType == CARD_TYPE.M01_SPRINTER)
+                                                    .Exists(c => c.eType == CARD_TYPE.M01_SPRINTER);
+            Check("버린 카드는 안 나온다", bExcludedShown == false);
+        }
+
+        // 260929_스테이지 표(Docs/Design_Card_Balance_Spec.md §7) — MapInfo.csv 1번 맵이 스테이지 10개(웨이브 10개)로 읽히는지,
+        // 그로기 · 기절 · 도화선 배율 열이 밀리지 않았는지, 허수아비의 늦은 스폰(@점유율)이 읽히는지 본다.
+        private static void Test_StageTable()
+        {
+            CCSVData_MapInfo cMapTable = Load_MapTable();
+            CMapInfo cMap = cMapTable != null ? cMapTable.Get_Info(1) : null;
+            if (cMap == null)
+            {
+                Check("MapInfo.csv 1번 맵 로드(Test_StageTable)", false);
+                return;
+            }
+
+            Check("스테이지 10개", cMap.iWaveCount == 10 && cMap.lstWave.Count == 10);
+            Check("이미지 스택은 웨이브 + 1장이다(표가 유효하다)", cMap.lstLayerTex.Count == 11 && cMap.bIsValid);
+
+            float[] arrRatio  = { 0.60f, 0.70f, 0.75f, 0.80f, 0.80f, 0.80f, 0.82f, 0.82f, 0.85f, 0.85f };
+            float[] arrGroggy = { 0f, 60f, 75f, 90f, 105f, 120f, 140f, 160f, 185f, 210f };
+            float[] arrStun   = { 0f, 6f, 6f, 6f, 5.5f, 5.5f, 5f, 5f, 4.5f, 4.5f };
+            float[] arrFuse   = { 0.70f, 0.70f, 0.70f, 0.72f, 0.74f, 0.76f, 0.78f, 0.80f, 0.82f, 0.85f };
+            float[] arrTime   = { 75f, 120f, 150f, 180f, 180f, 180f, 210f, 210f, 240f, 240f };
+
+            bool bOk = true;
+            for (int i = 0; i < 10; ++i)
+            {
+                CWaveInfo cWave = cMap.lstWave[i];
+                bOk &= Mathf.Approximately(cWave.fClearRatio, arrRatio[i])
+                    && Mathf.Approximately(cWave.fGroggyTotal, arrGroggy[i])
+                    && Mathf.Approximately(cWave.fStunDuration, arrStun[i])
+                    && Mathf.Approximately(cWave.fFuseMul, arrFuse[i])
+                    && Mathf.Approximately(cWave.fTimeLimit, arrTime[i]);
+            }
+            Check("스펙 §7 표 10행이 그대로 읽힌다(점유율 · 그로기 · 기절 · 불 배율 · 목표 시간)", bOk);
+
+            // 1스테이지 허수아비 — 웨이브 시작이 아니라 45%에 나온다. 2~6스테이지는 시작부터 한 마리
+            CWaveInfo cFirst = cMap.lstWave[0];
+            Check("1스테이지 — 허수아비 한 마리",
+                  cFirst.lstEnemy.Count == 1 && cFirst.lstEnemy[0].iEnemyID == 106 && cFirst.lstEnemy[0].iCount == 1);
+            Check("1스테이지 — 점유율 45%에 나온다", Mathf.Approximately(cFirst.lstEnemy[0].fSpawnRatio, 0.45f));
+            Check("2스테이지 — 웨이브 시작부터 한 마리",
+                  cMap.lstWave[1].TOTAL_ENEMY == 1 && Mathf.Approximately(cMap.lstWave[1].lstEnemy[0].fSpawnRatio, 0f));
+
+            // 행 하나에서 새 열을 안 적어도(옛 표) 전부 0 — 덮어쓰지 않는다
+            string strTab = ((char)9).ToString();
+            string strNl  = ((char)10).ToString();
+            CCSVData_MapInfo cOld = new CCSVData_MapInfo();
+            cOld.Read_CSVData(new TextAsset(
+                  string.Join(strTab, "iMapID", "strMapName", "iGridWidth", "iGridHeight", "fCellSize", "iBorderThick", "iLife",
+                                      "fPlayerSpeed", "iWaveCount", "strShapeMask", "strLayerTex", "strWaveEnemy",
+                                      "strWaveClearRatio", "strWaveTimeLimit", "NONE") + strNl
+                + string.Join(strTab, "9", "옛 표", "60", "100", "0.12", "0", "3", "9", "1", "-", "A|B", "101*1@0.5", "0.6", "60", "")));
+            CMapInfo cOldMap = cOld.Get_Info(9);
+            Check("새 열이 없는 옛 표도 읽힌다(덮어쓰기 없음)",
+                  cOldMap != null && cOldMap.lstWave.Count == 1 && cOldMap.lstWave[0].fGroggyTotal == 0f
+               && cOldMap.lstWave[0].fFuseMul == 0f);
+            Check("@점유율 표기가 옛 표에서도 읽힌다", cOldMap != null && Mathf.Approximately(cOldMap.lstWave[0].lstEnemy[0].fSpawnRatio, 0.5f));
+
+            // 허수아비 몬스터 행
+            CCSVData_EnemyInfo cEnemyTable = Load_CsvTable<CCSVData_EnemyInfo>("EnemyInfo");
+            CEnemyInfo cScarecrow = cEnemyTable != null ? cEnemyTable.Get_Info(106) : null;
+            Check("허수아비(106)가 표에 있다", cScarecrow != null && cScarecrow.eGimmick == ENEMY_GIMMICK.SCARECROW);
+
+            // 별 평가 — 스펙 §7.1 목표 시간 이내 ★3 / 1.3배 이내 ★2 / 그 외 ★1 (Test_TimeStar와 같은 식)
+            Check("별 — 스테이지 2(목표 120초) 1.3배는 156초까지 ★2", CStage_Manager.Calc_TimeStar(156f, 120f), 2);
+            Check("별 — 156초를 넘으면 ★1", CStage_Manager.Calc_TimeStar(157f, 120f), 1);
+        }
+
+        // 260929_밸런스 스펙(Docs/Design_Card_Balance_Spec.md §6) — 속도 B/D/S · 도화선 fuseMul · 그로기 내성 공식.
+        // 스펙 문서의 예시 숫자를 그대로 검증한다.
+        private static void Test_Balance()
+        {
+            // §6.1 — B는 카드 증가분 합만 +100%로 자른다
+            Check("B — 합이 상한 안이면 그대로", Mathf.Approximately(CBalance_Utility.Clamp_SpeedBonus(0.6f), 0.6f));
+            Check("B — 합이 +100%를 넘으면 자른다", Mathf.Approximately(CBalance_Utility.Clamp_SpeedBonus(3f), 1f));
+            Check("B — 음수는 0(감소는 D의 몫)", Mathf.Approximately(CBalance_Utility.Clamp_SpeedBonus(-0.5f), 0f));
+            Check("속도 — 카드 +60%면 1.6배", Mathf.Approximately(CBalance_Utility.Calc_SpeedMultiplier(0.6f, 1f, 1f), 1.6f));
+            Check("속도 — 카드를 아무리 모아도 2배까지", Mathf.Approximately(CBalance_Utility.Calc_SpeedMultiplier(5f, 1f, 1f), 2f));
+
+            // D — 감속은 상한과 무관하고 하한만 있다
+            Check("D — 감속 곱은 그대로 반영된다", Mathf.Approximately(CBalance_Utility.Calc_SpeedMultiplier(0f, 0.5f, 1f), 0.5f));
+            Check("D — 하한 0.30 밑으로는 안 내려간다", Mathf.Approximately(CBalance_Utility.Calc_SpeedMultiplier(0f, 0.1f, 1f), 0.3f));
+            Check("카드가 상한에 걸려도 감속은 그대로 걸린다",
+                  Mathf.Approximately(CBalance_Utility.Calc_SpeedMultiplier(5f, 0.5f, 1f), 1f));
+
+            // S — 상태 배율은 상한 밖이다(M04 1.5배는 카드를 다 모은 상태에서도 그대로 곱해진다)
+            Check("S — 상한에 걸린 뒤에도 상태 배율은 그대로 곱해진다",
+                  Mathf.Approximately(CBalance_Utility.Calc_SpeedMultiplier(5f, 1f, 1.5f), 3f));
+
+            // §6.2 — 스펙 예시: 스테이지4(0.72) + F03 Lv1(-0.30) + F07(+0.25) = 0.67 → 4.02칸/초
+            Check("도화선 — 스펙 예시 4.02칸/초",
+                  Mathf.Abs(CBalance_Utility.Calc_FuseSpeed(0.72f, -0.30f + 0.25f) - 4.02f) < 0.001f);
+            Check("도화선 — 기본(0.70)은 예전 4.2칸/초와 같다",
+                  Mathf.Abs(CBalance_Utility.Calc_FuseSpeed(0.70f, 0f) - 4.2f) < 0.001f);
+            Check("도화선 — 하한 0.40", Mathf.Approximately(CBalance_Utility.Clamp_FuseMul(0.7f, -5f), 0.4f));
+            Check("도화선 — 상한 1.50", Mathf.Approximately(CBalance_Utility.Clamp_FuseMul(0.85f, 5f), 1.5f));
+
+            // §6.3 — 총량 60(스테이지 2): 0회 60 / 1회 75 / 5회 135 / 6회 195(그 뒤는 +100%씩)
+            Check("내성 — 첫 기절 60", Mathf.Approximately(CBalance_Utility.Calc_RequiredGroggy(60f, 0), 60f));
+            Check("내성 — 1번 기절한 뒤 75", Mathf.Approximately(CBalance_Utility.Calc_RequiredGroggy(60f, 1), 75f));
+            Check("내성 — 5번 기절한 뒤 135", Mathf.Approximately(CBalance_Utility.Calc_RequiredGroggy(60f, 5), 135f));
+            Check("내성 — 6번째부터는 +100%씩(195)", Mathf.Approximately(CBalance_Utility.Calc_RequiredGroggy(60f, 6), 195f));
+            Check("내성 — 7번째 255", Mathf.Approximately(CBalance_Utility.Calc_RequiredGroggy(60f, 7), 255f));
+
+            // 스테이지 값 덮어쓰기 — 0 이하는 EnemyInfo 값을 그대로 둔다
+            GameObject goEnemy = new GameObject("Test_BalanceEnemy");
+            CEnemy cEnemy = goEnemy.AddComponent<CEnemy>();
+            cEnemy.Initialize(new CEnemyDesc
+            {
+                eObjectType   = Engine.OBJECT_TYPE.ENEMY,
+                strPrefabName = "Prefab_Enemy",
+                cGrid         = Make_Grid(),
+                vStartCell    = new Vector2Int(GRID_SIZE / 2, GRID_SIZE / 2),
+                vStartDir     = Vector2.right,
+                iEnemyID      = 994,
+                eGimmick      = ENEMY_GIMMICK.NONE,
+                fSpeed        = 1f,
+                fChaseSpeed   = 1f,
+                fTurnRate     = 1f,
+                fHitRange     = 0.5f,
+                iGroggyMax    = 3,
+                fStunDuration = 1f,
+            });
+            cEnemy.Set_StageGroggy(0f, 0f);
+            Check("스테이지 그로기 — 0이면 표 값 그대로(총량 3)", cEnemy.HP, 3);
+            cEnemy.Set_StageGroggy(60f, 6f);
+            Check("스테이지 그로기 — 총량이 60으로 바뀐다", cEnemy.HP, 60);
+            cEnemy.Damage(59);
+            Check("스테이지 그로기 — 59로는 아직 기절 안 한다", cEnemy.IS_STUNNED == false);
+            cEnemy.Damage(1);
+            Check("스테이지 그로기 — 60이 차면 기절한다", cEnemy.IS_STUNNED == true);
+            Check("스테이지 그로기 — 다음 요구량은 75", cEnemy.HP, 75);
+            Object.DestroyImmediate(goEnemy);
+        }
+
         // 260928_카드 30종(태스크 #22, Docs/Design_Card_Catalog_Spec.md) — CSV 값 스케일(비율 vs %)과
         // CCardEffect 몇 종, K03의 스테이지 쪽 원시 동작(Try_ForceStunIfLow)을 짚는다. 값 스케일이
         // 카드마다 다른 게 가장 틀리기 쉬운 지점이라(예: K06/G08는 %라 100으로 나누고, M01/F01은
@@ -2323,7 +2588,9 @@ namespace Client
             // Collect_Candidates — 레벨링 카드(iMaxLevel>1)만, 만렙은 빠진다
             System.Func<CARD_TYPE, int> fnZero = eType => 0;
             List<CCardInfo> lstFresh = cTable.Collect_Candidates(fnZero);
-            Check("레벨링 카드 30종이 후보다(옛 20종 제외)", lstFresh.Count, 30);
+            Check("레벨링 카드 28종이 후보다(옛 20종과 꺼 둔 K08/M04 제외)", lstFresh.Count, 28);
+            Check("꺼 둔 K08은 후보가 아니다", lstFresh.Exists(c => c.eType == CARD_TYPE.K08_WHIRL) == false);
+            Check("꺼 둔 M04는 후보가 아니다", lstFresh.Exists(c => c.eType == CARD_TYPE.M04_UNBREAKABLE_RUSH) == false);
             Check("옛 카드(즉시효과)는 후보가 아니다", lstFresh.Contains(cShield) == false);
 
             System.Func<CARD_TYPE, int> fnMaxK01 = eType => eType == CARD_TYPE.K01_ELECTRIC_LINE ? 3 : 0;

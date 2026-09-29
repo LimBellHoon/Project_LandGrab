@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace Client
 {
@@ -62,12 +62,18 @@ namespace Client
         /// <summary> 카드를 잃을 때(스테이지 종료) — 걸어 둔 플래그 · 구독을 되돌린다. </summary>
         public virtual void Release() { }
 
-        /// <summary> F03/F07/G07 등이 도화선 전파 속도에 곱하는 배율. 1이면 영향 없음(매 프레임 다시 곱해서 합친다). </summary>
-        public virtual float Get_FuseSpeedScale() => 1f;
+        /// <summary>
+        /// 260929_F03/G07이 fuseMul에 더하는 값(음수면 느려진다, 스펙 §6.2). 0이면 영향 없음 — 매 프레임 다시 더해서 합친다.
+        /// 예전에는 곱하는 배율이었는데 스펙이 "stageFuseMul + Σ보정"을 clamp하는 덧셈 식이라 바꿨다.
+        /// </summary>
+        public virtual float Get_FuseMulDelta() => 0f;
         /// <summary> M07(축소)이 몸 충돌 판정 거리에 곱하는 배율. 1이면 영향 없음. </summary>
         public virtual float Get_HitboxScale() => 1f;
-        /// <summary> G07/F01처럼 "조건이 맞는 동안만" 곱하는 이동속도 배율. 1이면 영향 없음. </summary>
-        public virtual float Get_ConditionalSpeedScale() => 1f;
+        /// <summary>
+        /// 260929_G07/F01처럼 "조건이 맞는 동안만" 이동속도 증가율 B에 더하는 값(0.4 = +40%, 스펙 §6.1). 0이면 영향 없음.
+        /// 예전에는 곱하는 배율이었는데 B는 합산 뒤 +100% 상한을 거는 덧셈 식이라 바꿨다.
+        /// </summary>
+        public virtual float Get_SpeedBonus() => 0f;
     }
 
     // ==================== 제어형(K) — 플레이어 혼자 해결되는 것만 ====================
@@ -144,7 +150,7 @@ namespace Client
         {
             if (m_cOwner != null)
                 m_cOwner.OnTurn -= On_Turn;
-            m_cOwner?.Set_MomentumSpeedScale(1f);
+            m_cOwner?.Set_MomentumSpeedBonus(0f);
         }
 
         private void On_Turn() => m_fStack = 0f;
@@ -156,7 +162,7 @@ namespace Client
 
             float fMax = m_cInfo.Get_Value(m_iLevel);
             m_fStack = Mathf.Min(fMax, m_fStack + GAIN_PER_SEC * fDeltaTime);
-            m_cOwner.Set_MomentumSpeedScale(1f + m_fStack);
+            m_cOwner.Set_MomentumSpeedBonus(m_fStack);
         }
     }
 
@@ -265,7 +271,7 @@ namespace Client
             else
             {
                 float fNewBonus = cInfo.Get_Param("SPEED", iLevel) / 100f;
-                m_cOwner?.Add_CardSpeed(fNewBonus - m_fAppliedSpeed);
+                m_cOwner?.Add_CatalogCardSpeed(fNewBonus - m_fAppliedSpeed);
                 m_fAppliedSpeed = fNewBonus;
             }
         }
@@ -444,11 +450,11 @@ namespace Client
             m_cInfo = cInfo;
         }
 
-        public override float Get_ConditionalSpeedScale()
-            => m_cOwner != null && m_cOwner.LIFE == 1 ? 1f + m_cInfo.Get_Value(m_iLevel) / 100f : 1f;
+        public override float Get_SpeedBonus()
+            => m_cOwner != null && m_cOwner.LIFE == 1 ? m_cInfo.Get_Value(m_iLevel) / 100f : 0f;
 
-        public override float Get_FuseSpeedScale()
-            => m_cOwner != null && m_cOwner.LIFE == 1 ? 1f - m_cInfo.Get_Param("FUSE", m_iLevel) / 100f : 1f;
+        public override float Get_FuseMulDelta()
+            => m_cOwner != null && m_cOwner.LIFE == 1 ? -m_cInfo.Get_Param("FUSE", m_iLevel) / 100f : 0f;
     }
 
     // ==================== 도화선형(F) — 플레이어 혼자 해결되는 것만 ====================
@@ -466,8 +472,8 @@ namespace Client
 
         // CardInfo.csv의 F01 fValueLv는 이미 비율(0.40=+40%)이다 — K06/G07/G08의 %표기(35=35%)와
         // 다른 스케일이라 여기서는 100으로 나누지 않는다(M01_SPRINTER와 같은 결).
-        public override float Get_ConditionalSpeedScale()
-            => m_cOwner != null && m_cOwner.IS_TRAIL_BURNING == true ? 1f + m_cInfo.Get_Value(m_iLevel) : 1f;
+        public override float Get_SpeedBonus()
+            => m_cOwner != null && m_cOwner.IS_TRAIL_BURNING == true ? m_cInfo.Get_Value(m_iLevel) : 0f;
     }
 
     /// <summary> F03_FIREBREAK — 도화선 전파 속도를 늘 줄인다. </summary>
@@ -482,7 +488,7 @@ namespace Client
         }
 
         // F03도 F01과 같은 비율 스케일이다(CardInfo.csv fValueLv=0.30 = -30%) — 100으로 나누지 않는다.
-        public override float Get_FuseSpeedScale() => 1f - m_cInfo.Get_Value(m_iLevel);
+        public override float Get_FuseMulDelta() => -m_cInfo.Get_Value(m_iLevel);
     }
 
     /// <summary> F05_FUSE_BOMB — 판당 무효화 횟수(레벨업마다 직전 레벨과의 차이만 더한다). </summary>

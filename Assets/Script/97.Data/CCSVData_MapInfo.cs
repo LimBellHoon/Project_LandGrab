@@ -10,8 +10,10 @@ namespace Client
     /// <summary> 웨이브 하나가 소환할 몬스터 한 종류. </summary>
     public struct CWaveEnemy
     {
-        public int iEnemyID;
-        public int iCount;
+        public int   iEnemyID;
+        public int   iCount;
+        // 260929_0이면 웨이브 시작에 나오고, 0보다 크면 그 점유율에 닿는 순간 나온다("106*1@0.45", 스펙 §7.1 1스테이지 허수아비)
+        public float fSpawnRatio;
     }
 
     /// <summary> 웨이브 하나의 규칙. </summary>
@@ -19,6 +21,10 @@ namespace Client
     {
         public float                fClearRatio;    // 이 웨이브를 넘기는 데 필요한 점령률
         public float                fTimeLimit;     // 이 웨이브의 제한 시간(초)
+        // 260929_스테이지 표(Docs/Design_Card_Balance_Spec.md §7) — 0 이하면 그 값은 덮어쓰지 않는다(표의 "–")
+        public float                fGroggyTotal;   // 몬스터 그로기 총량(EnemyInfo.iGroggyMax를 덮어쓴다)
+        public float                fStunDuration;  // 기절 지속(초)
+        public float                fFuseMul;       // 도화선 전파 배율(stageFuseMul) — 0이면 기본 0.70
         public List<CWaveEnemy>     lstEnemy = new List<CWaveEnemy>();
 
         public int TOTAL_ENEMY
@@ -184,7 +190,7 @@ namespace Client
         }
 
         /// <summary>
-        /// 웨이브 3열(몬스터 / 점령률 / 제한시간)을 한 번에 엮는다.
+        /// 웨이브 6열(몬스터 / 점령률 / 제한시간 / 260929_그로기 총량 · 기절 지속 · 도화선 배율)을 한 번에 엮는다.
         /// 몬스터 열이 웨이브 개수의 기준이고, 나머지는 모자라면 마지막 값을 이어 쓴다.
         /// </summary>
         private static void Parse_Wave(CMapInfo cInfo, string[] arrField)
@@ -192,6 +198,10 @@ namespace Client
             List<string> lstWaveEnemy = CCSV_Utility.To_List(arrField, 11);
             List<float>  lstRatio     = CCSV_Utility.To_FloatList(arrField, 12);
             List<float>  lstTime      = CCSV_Utility.To_FloatList(arrField, 13);
+            // 260929_스테이지 표 세 열 — 비어 있으면 전부 0(덮어쓰지 않음)
+            List<float>  lstGroggy    = CCSV_Utility.To_FloatList(arrField, 25);
+            List<float>  lstStun      = CCSV_Utility.To_FloatList(arrField, 26);
+            List<float>  lstFuseMul   = CCSV_Utility.To_FloatList(arrField, 27);
 
             for (int i = 0; i < lstWaveEnemy.Count; ++i)
             {
@@ -199,6 +209,9 @@ namespace Client
                 {
                     fClearRatio = Get_ValueOrLast(lstRatio, i, 0.7f),
                     fTimeLimit  = Get_ValueOrLast(lstTime, i, 180f),
+                    fGroggyTotal  = Get_ValueOrLast(lstGroggy, i, 0f),
+                    fStunDuration = Get_ValueOrLast(lstStun, i, 0f),
+                    fFuseMul      = Get_ValueOrLast(lstFuseMul, i, 0f),
                 };
 
                 Parse_WaveEnemy(cInfo, i + 1, lstWaveEnemy[i], cWave.lstEnemy);
@@ -217,11 +230,22 @@ namespace Client
                 if (strToken.Length == 0)
                     continue;
 
+                // 260929_"106*1@0.45" — @ 뒤는 그 점유율에 닿으면 나온다(없으면 웨이브 시작에)
+                float fSpawnRatio = 0f;
+                int iAt = strToken.IndexOf('@');
+                if (iAt >= 0)
+                {
+                    float.TryParse(strToken.Substring(iAt + 1), System.Globalization.NumberStyles.Float,
+                                   System.Globalization.CultureInfo.InvariantCulture, out fSpawnRatio);
+                    strToken = strToken.Substring(0, iAt);
+                }
+
                 string[] arrPair = strToken.Split(CCSV_Utility.SPLIT_COUNT);
                 CWaveEnemy cEnemy = new CWaveEnemy
                 {
-                    iEnemyID = CCSV_Utility.To_Int(arrPair, 0),
-                    iCount   = arrPair.Length > 1 ? CCSV_Utility.To_Int(arrPair, 1, 1) : 1,
+                    iEnemyID    = CCSV_Utility.To_Int(arrPair, 0),
+                    iCount      = arrPair.Length > 1 ? CCSV_Utility.To_Int(arrPair, 1, 1) : 1,
+                    fSpawnRatio = Mathf.Clamp01(fSpawnRatio),
                 };
 
                 if (cEnemy.iEnemyID <= 0 || cEnemy.iCount <= 0)

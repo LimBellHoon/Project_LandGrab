@@ -437,6 +437,7 @@
         PROJECTILE,     // 투사체 — 플레이어를 향해 발사 (fGimmickValue = 탄속)
         SPAWN,          // 부하 소환 (fGimmickValue = 소환 마리수)
         GNAW,           // 260921_땅 갉는 자 — 내 땅 가장자리를 도로 빈 땅으로 (fGimmickValue = 한 번에 갉는 칸 수)
+        SCARECROW,      // 260929_허수아비(스펙 §7.1) — 이동만 하고 플레이어를 추적하지 않는다. 선에 닿으면 다른 몬스터처럼 도화선이 붙는다
     }
 
     // 260916_효과음 종류. CAudio_Manager.Play(SOUND_ID)로 재생한다.

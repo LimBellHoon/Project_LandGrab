@@ -67,15 +67,11 @@ namespace Client
         // 점령으로 가두는 것은 그로기와 무관하게 즉시 죽는다(2-3, 260928_사용자 확인으로 유지) — 그 경로는 Kill().
         private const float     DEFAULT_GROGGY_MAX    = 3f;
         private const float     DEFAULT_STUN_DURATION = 1.5f;
-        private const float     GROGGY_DECAY_PER_SEC  = 0.02f;   // 그로기 총량의 2% — 안 맞으면 스스로 식는다
-        private const float     RESISTANCE_PER_STUN    = 0.25f;  // 기절마다 다음 요구량 +25%(판당 누적)
-        private const float     RESISTANCE_PER_STUN_HARD = 1f;   // 기절 상한을 넘으면 +100%로 가팔라진다
-        private const int       STUN_SOFT_CAP          = 5;      // 이 횟수를 넘으면 내성이 더 가파르게 는다
+        // 260929_내성 · 자연 감소 수치는 CBalance_Utility(스펙 §6.3) 한곳에 있다 — 여기서는 기절 횟수만 센다.
         private float           m_fGroggyMax;
         private float           m_fGroggy;
         private float           m_fStunDuration;
-        private float           m_fResistance;      // 이번 판 동안 쌓인 내성 — Initialize에서만 리셋된다(웨이브 전환에서는 유지)
-        private int             m_iStunCount;
+        private int             m_iStunCount;       // 이번 판 동안 쌓인 기절 횟수 — Initialize에서만 리셋된다(웨이브 전환에서는 유지)
         private static readonly object s_keyGroggyStun = new object();   // CImpactHandler 딕셔너리 키 — 그로기발 기절 전용
 
         /// <summary> 260912_EnemyInfo.csv의 ID. 웨이브가 넘어갈 때 종류별 수를 셀 때 쓴다. </summary>
@@ -144,7 +140,6 @@ namespace Client
             m_fGroggyMax    = cDesc.iGroggyMax > 0 ? cDesc.iGroggyMax : DEFAULT_GROGGY_MAX;
             m_fStunDuration = cDesc.fStunDuration > 0f ? cDesc.fStunDuration : DEFAULT_STUN_DURATION;
             m_fGroggy       = 0f;
-            m_fResistance   = 0f;      // 새로 스폰된(=풀에서 막 꺼낸) 몬스터라 내성도 처음부터 — 웨이브 전환만으로는 안 불린다
             m_iStunCount    = 0;
             m_cImpact.Clear();      // 260917_풀에서 재사용되므로 지난 판의 기절 · 감속을 지운다
             m_bWhiteShown   = false;
@@ -253,7 +248,6 @@ namespace Client
             m_fGroggy = 0f;
             m_cImpact.Set_Stun(s_keyGroggyStun, m_fStunDuration);
             ++m_iStunCount;
-            m_fResistance += m_iStunCount > STUN_SOFT_CAP ? RESISTANCE_PER_STUN_HARD : RESISTANCE_PER_STUN;
             OnStunned?.Invoke();
         }
 
@@ -264,7 +258,22 @@ namespace Client
             bCollect = true;
         }
 
-        private float Effective_GroggyMax() => m_fGroggyMax * (1f + m_fResistance);
+        // 260929_다음 기절에 필요한 그로기 = 총량 × (1 + 0.25n), n>=5부터는 +100%씩(스펙 §6.3, CBalance_Utility)
+        private float Effective_GroggyMax() => CBalance_Utility.Calc_RequiredGroggy(m_fGroggyMax, m_iStunCount);
+
+        /// <summary>
+        /// 260929_스테이지 표(Docs/Design_Card_Balance_Spec.md §7)의 그로기 총량 · 기절 지속을 이 몬스터에 덮어쓴다.
+        /// 0 이하면 그 값은 덮어쓰지 않는다(표의 "–" — EnemyInfo.csv 값을 그대로 쓴다). 웨이브가 넘어갈 때
+        /// 살아 있는 몬스터에게도 불린다 — 채워 둔 그로기와 쌓인 내성(기절 횟수)은 그대로 둔다.
+        /// </summary>
+        public void Set_StageGroggy(float fGroggyTotal, float fStunDuration)
+        {
+            if (fGroggyTotal > 0f)
+                m_fGroggyMax = fGroggyTotal;
+
+            if (fStunDuration > 0f)
+                m_fStunDuration = fStunDuration;
+        }
 
         /// <summary> 260928_K03_LEVY 카드 전용 — 그로기 잔여량이 fRatio(0~1) 이하면 남은 만큼만 채워
         /// 기존 Damage() 경로 그대로 즉시 기절시킨다(새 기절 진입로를 만들지 않는다). </summary>
@@ -291,7 +300,7 @@ namespace Client
             if (m_fGroggy <= 0f)
                 return;
 
-            m_fGroggy = Mathf.Max(0f, m_fGroggy - m_fGroggyMax * GROGGY_DECAY_PER_SEC * fDeltaTime);
+            m_fGroggy = Mathf.Max(0f, m_fGroggy - m_fGroggyMax * CBalance_Utility.GROGGY_DECAY_PER_SEC * fDeltaTime);
         }
 
         /// <summary> 몽둥이 등 넉백 효과가 부른다. 잠깐 배회/추적을 멈추고 방향으로 밀려난다. </summary>
@@ -329,6 +338,13 @@ namespace Client
         {
             m_bExposed   = bExposed;
             m_vTargetPos = vTargetPos;
+
+            // 260929_허수아비는 플레이어가 나와 있어도 쫓지 않고 계속 배회한다(스펙 §7.1 — 도화선을 가르치는 용도)
+            if (m_eGimmick == ENEMY_GIMMICK.SCARECROW)
+            {
+                Set_MoveState(false, vTargetPos);
+                return;
+            }
 
             // 260918_트리가 있으면(PROJECTILE류) 실제 배회/추적은 Tick에서 트리가 정한다 —
             // 여기서는 상태만 갱신해 둔다(CEnemyBehaviorTree_Utility 참고).

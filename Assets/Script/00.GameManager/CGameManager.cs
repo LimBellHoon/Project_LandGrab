@@ -79,8 +79,10 @@ namespace Client
         private CCSVData_CardInfo   m_cCardTable;       // 260912_카드 표
         private CCSVData_GachaInfo  m_cGachaTable;      // 260918_장비 뽑기 표
         private CCSVData_ProjectileInfo m_cProjectileTable; // 260917_탄 표
-        private CCSVData_RunSkillInfo   m_cRunSkillTable;   // 260917_런 스킬 표 — 3지선다에 카드와 섞는다
-        private CCSVData_AwakenInfo     m_cAwakenTable;     // 260917_각성 표 — 없으면 각성 후보가 안 나온다
+        // 260929_런 스킬 · 각성 표 — 3지선다는 이제 카드 30종만 뽑아서(Build_PickOptions) 더는 안 쓴다. 카드 시스템에 흡수하는
+        // 정리 태스크에서 옛 코드와 함께 걷어낼 때까지 로드만 남겨 뒀다.
+        private CCSVData_RunSkillInfo   m_cRunSkillTable;
+        private CCSVData_AwakenInfo     m_cAwakenTable;
         private CCSVData_ImpactInfo     m_cImpactTable;     // 260917_피격 효과 표
         private CCSVData_CharacterInfo  m_cCharacterTable;  // 260917_캐릭터 표(스킨 + 스탯 배율)
         private CCSVData_CaptureRewardInfo m_cCaptureRewardTable;  // 260918_점령 재화 배율 표
@@ -538,7 +540,7 @@ namespace Client
         private void On_CardReady()
         {
             // 260921_열지 못하는 길에서도 전부 Close_Pick을 부른다 — 안 부르면 대기열이 막혀 다음 선택지가 영영 안 뜬다
-            if (m_cCardTable == null && m_cRunSkillTable == null)
+            if (m_cCardTable == null)
             {
                 m_cStageManager.Close_Pick();
                 return;
@@ -579,40 +581,29 @@ namespace Client
             m_cCardUI = m_cGameInstance.Open_UI<CUI_CardPick>(cDesc, m_trUIPopup);
         }
 
-        // 260917_카드와 런 스킬을 한 풀에 넣어 뽑는다. 레벨은 이번 판 플레이어가, 해금은 계정 진행도가 안다.
+        // 260929_3지선다는 이제 카드 30종만 스펙 §4.1 알고리즘으로 뽑는다 — 첫 선택은 고정 풀(★), 그 뒤는 스테이지 티어 해금 ·
+        // 보유 계열 ×2.5 · 확률 조정표 · 보유 계열 최소 한 장 보장(CCardDraw_Utility). 런 스킬 · 각성은 카드 시스템에 흡수하기로
+        // 확정돼(태스크 #21) 풀에서 뺐다 — 코드(CRunSkillHandler 등)는 정리 태스크까지 남아 있다.
         // 260921_버린 것은 판이 끝날 때까지 빼고, fnExclude로 지금 화면에 떠 있는 것도 뺄 수 있다(다시 뽑기 · 버리기)
         private List<CPickOption> Build_PickOptions(int iCount, Func<CPickOption, bool> fnExclude)
         {
-            CRunSkillHandler cRunSkill = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.RUN_SKILL : null;
-            CCardHandler     cCard     = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.CARD : null;
-            return CPickOption_Utility.Pick(
-                m_cCardTable, m_cRunSkillTable,
-                eType => cRunSkill != null ? cRunSkill.Get_Level(eType) : 0,
-                m_cProgressManager.Is_Cleared,
-                iCount,
-                m_cAwakenTable,
-                eType => cRunSkill != null && cRunSkill.Is_Awakened(eType),
-                cOption => m_cStageManager.Is_Banished(cOption) == true || Is_CardExcluded(cCard, cOption)
-                        || (fnExclude != null && fnExclude(cOption) == true),
-                eType => cCard != null ? cCard.Get_Level(eType) : 0);
-        }
+            CCardHandler cCard = m_cStageManager.PLAYER != null ? m_cStageManager.PLAYER.CARD : null;
+            Func<CARD_TYPE, int> fnLevel = eType => cCard != null ? cCard.Get_Level(eType) : 0;
 
-        // 260928_배타 카드 쌍(태스크 #23, Docs/Design_Roguelite_Rewrite.md §7) — M04_UNBREAKABLE_RUSH와
-        // K08_WHIRL은 둘 다 "귀환"을 덮어쓴다(2-26 §2-3의 안전 귀환 버튼 하나를 두고 다툰다) — 하나를 들고
-        // 있으면 남은 배타 대상은 후보에서 빠진다. CPickOption_Utility.Pick의 fnExclude(2-10-1, 이미 있는
-        // 확장점)에 규칙을 얹는 형태라 Pick 자체는 손대지 않았다.
-        private static bool Is_CardExcluded(CCardHandler cCard, CPickOption cOption)
-        {
-            if (cCard == null || cOption.eKind != PICK_KIND.CARD || cOption.cCard == null)
-                return false;
+            List<CCardInfo> lstCard = m_cCardTable != null
+                ? CCardDraw_Utility.Draw(m_cCardTable.ALL, m_cStageManager.PICK_INDEX, m_cStageManager.WAVE, fnLevel,
+                    cInfo =>
+                    {
+                        CPickOption cOption = CPickOption.From_Card(cInfo);
+                        return m_cStageManager.Is_Banished(cOption) == true || (fnExclude != null && fnExclude(cOption) == true);
+                    }, iCount)
+                : new List<CCardInfo>();
 
-            CARD_TYPE eType = cOption.cCard.eType;
-            if (eType == CARD_TYPE.M04_UNBREAKABLE_RUSH)
-                return cCard.Has(CARD_TYPE.K08_WHIRL);
-            if (eType == CARD_TYPE.K08_WHIRL)
-                return cCard.Has(CARD_TYPE.M04_UNBREAKABLE_RUSH);
+            List<CPickOption> lstOption = new List<CPickOption>(lstCard.Count);
+            for (int i = 0; i < lstCard.Count; ++i)
+                lstOption.Add(CPickOption.From_Card(lstCard[i], fnLevel(lstCard[i].eType) + 1));
 
-            return false;
+            return lstOption;
         }
 
         // 260921_다시 뽑기 — 세 장을 새로 뽑는다. 횟수가 없으면 null

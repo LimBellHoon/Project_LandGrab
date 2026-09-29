@@ -49,8 +49,13 @@ namespace Client
         // 끝나지만(점령은 안 된다, CTerritoryGrid.Step_To 참고), 따라잡히면 몸에 닿은 것과 같은 값이 깎인다.
         // "선을 긋는 동안은 약하다"는 그대로 두되, 즉사 대신 반응할 시간을 준다.
         // 260928_로그라이트 재작성(Docs/Design_Roguelite_Rewrite.md 3-2) — 원본 스펙 수치로 갱신.
-        // 기본 이동속도(6.0칸/초)의 70%로 잡아, 계속 앞으로 그으면 거리가 벌어지고 멈추거나 감속당하면 좁혀진다.
-        private const float  FUSE_SPEED_CELL_PER_SEC = 4.2f;  // 초당 몇 칸을 태우는가 — 연출 값이라 CSV로 빼지 않는다
+        // 260929_속도는 이제 고정 4.2가 아니라 BASE_SPEED(6.0) × clamp(스테이지 fuseMul + 카드 보정, 0.4~1.5)다
+        // (Docs/Design_Card_Balance_Spec.md §6.2, CBalance_Utility.Calc_FuseSpeed). 기본 0.70이면 예전 4.2와 같다.
+        // 플레이어 속도와 무관하다 — 속도 카드로 불을 느리게 만들 수 없다.
+        private const float  DEFAULT_FUSE_MUL      = 0.70f;
+        // 260929_F07_POWDER_WICK의 대가 — fuseMul에 더한다(원본 스펙 카드표: 불 전파 속도 +25%)
+        private const float  F07_FUSE_MUL_COST     = 0.25f;
+        private float         m_fStageFuseMul      = DEFAULT_FUSE_MUL;   // 이번 스테이지(웨이브)의 표 값
         // 260928_발화 시 플레이어-불 사이 거리를 최소 이만큼 보장한다 — 짧은 선에서 발화 즉시 따라잡히지 않게.
         private const float  FUSE_MIN_GRACE_SEC      = 2f;
 
@@ -66,8 +71,12 @@ namespace Client
         // 일곱 번으로 고르게 나눴다(균등 5% 간격이던 260923 값을 대신한다) — 뒤로 갈수록 다음 카드까지
         // 더 많이 먹어야 하지만, 처음 몇 장은 빨리 나와 손맛을 준다. 규칙 값이지만 맵마다 다르게 줄
         // 이유가 아직 없어 CSV로 빼지 않았다 — 필요해지면 MapInfo.csv 열로 옮길 것.
+        // 260929_마지막 지점을 0.65 → 0.72로(스펙 §7.1 "카드 획득 구간 0.05/0.12/0.20/0.30/0.42/0.56/0.72, 판당 7장").
         private static readonly float[] s_arrCardThreshold =
-            { 0.05f, 0.12f, 0.20f, 0.30f, 0.42f, 0.56f, 0.65f };
+            { 0.05f, 0.12f, 0.20f, 0.30f, 0.42f, 0.56f, 0.72f };
+
+        /// <summary> 3지선다가 열리는 점유율 지점들 — CProtoTest가 사설 배열을 베끼지 않고 이걸 읽는다. </summary>
+        public static IReadOnlyList<float> CARD_THRESHOLD => s_arrCardThreshold;
 
         // 260904_보상 공개 연출 길이(초). 규칙 값이 아니라 연출 타이밍이라 코드에 둔다.
         private const float  REVEAL_TIME = 0.5f;     // 가림막이 걷히는 시간
@@ -183,6 +192,13 @@ namespace Client
         // s_arrCardThreshold의 지점을 하나 더 넘을 때마다 하나씩 연다. 웨이브가 넘어가 점유율이
         // 0으로 돌아가면 이 값도 같이 리셋된다.
         private int                         m_iRatioStep;
+        // 260929_이번 스테이지(웨이브)에서 지금까지 고른 카드 수. 0이면 첫 선택이라 고정 풀(★)이 나온다(스펙 §4.1)
+        private int                         m_iPickIndex;
+        // 260929_스테이지 표 값(MapInfo 웨이브 열) — 몬스터 그로기 총량 · 기절 지속(0이면 덮어쓰지 않음)
+        private float                       m_fStageGroggy;
+        private float                       m_fStageStun;
+        // 260929_웨이브 중간에 나오는 몬스터(@점유율)를 이미 냈는가 — 웨이브마다 지운다
+        private readonly HashSet<int>       m_hsLateSpawned = new HashSet<int>();
         private readonly CPickQueue         m_cPickQueue = new CPickQueue();   // 260921_한 번에 한 장만
         // 260922_현란한 동작 판정 — 알아보고 알려 주기만 한다(OnStylish)
         private readonly CStyleTracker      m_cStyle = new CStyleTracker();
@@ -284,6 +300,8 @@ namespace Client
         public int              MAX_LIFE        => m_cPlayer != null ? m_cPlayer.MAX_LIFE : 0;
         public int              ENEMY_COUNT     => m_lstEnemy.Count;
         public int              WAVE            => m_iWave;
+        /// <summary> 260929_이번 스테이지에서 지금까지 고른 카드 수(0이면 첫 선택) — CGameManager.Build_PickOptions가 읽는다. </summary>
+        public int              PICK_INDEX      => m_iPickIndex;
         // 260905_별 = 이번 판에서 완료한 웨이브 수. 도중에 죽거나 시간이 끝나도 여기까지는 남는다.
         public int              STAR            => m_iStar;
         // 260928_시간 별 등급(1~3) — 목표 시간 대비 얼마나 빨리 깼는지. 웨이브 수 별(STAR)과는 다른 값이다 —
@@ -432,33 +450,12 @@ namespace Client
             m_bFuseArmed      = false;  // 260924_도화선
             OnFuseIgnited     = null;
 
-            // 260928_카드 30종(태스크 #22) — 카드는 판이 끝나면 사라진다(2-11-1과 같은 결).
-            // 레벨(CCardHandler)은 m_cPlayer.Initialize/Hide의 Clear_Card가 지우고, 여기서는
-            // 이 카드들이 걸어 둔 스테이지 쪽 수치·자리·쿨타임을 지운다.
-            m_iK02Groggy         = 0;
-            m_fK03LevyRatio      = 0f;
-            m_fK03Timer          = 0f;
-            m_lstTurret.Clear();
-            m_iTurretMax         = 0;
-            m_fTurretGroggyAccum = 0f;
-            m_fK05FreezeDuration = 0f;
-            m_fK06SlowRatio      = 0f;
-            m_bK06Unlocked       = false;
-            m_fK06Timer          = 0f;
-            m_vK06ZoneCenter     = null;
-            m_fK06ZoneTimer      = 0f;
-            m_fK07BindDuration   = 0f;
-            m_dicK07Cooldown.Clear();
-            m_fG08Chance         = 0f;
-            m_fG08Depth          = 0f;
-            m_iF02Groggy         = 0;
-            m_dicF02Cooldown.Clear();
-            m_fF04StunDuration   = 0f;
-            m_iF06GroggyPerStack = 0;
-            m_fF06BurnAccum      = 0f;
-            m_iF07Groggy         = 0;
-            m_dicF07Cooldown.Clear();
-            m_fG01FreezeTimer    = 0f;
+            Reset_CardState();      // 260929_카드는 판이 끝나면 사라진다(2-11-1과 같은 결)
+            m_iPickIndex    = 0;
+            m_fStageGroggy  = 0f;
+            m_fStageStun    = 0f;
+            m_fStageFuseMul = DEFAULT_FUSE_MUL;
+            m_hsLateSpawned.Clear();
 
             Collect_Player();
             Collect_Enemies();
@@ -547,8 +544,7 @@ namespace Client
             m_eWavePhase = WAVE_PHASE.NONE;
             m_cGridRenderer.Set_CoverAlpha(1f);
 
-            // 260921_다시 뽑기 · 버리기는 판 전체에서 센다
-            m_iRerollLeft = Mathf.Max(0, m_cMapInfo.iPickReroll);
+            // 260921_버리기는 판 전체에서 센다. 260929_다시 뽑기는 스테이지(웨이브)마다 다시 채운다(Enter_Wave, 스펙 §4.1)
             m_iBanishLeft = Mathf.Max(0, m_cMapInfo.iPickBanish);
             m_hsBanished.Clear();
 
@@ -575,6 +571,7 @@ namespace Client
 
             Tick_EnemySlow(fDeltaTime);
             m_cStyle.Tick(fDeltaTime);
+            Tick_LateSpawn();
             Tick_Enemy(fDeltaTime);
             Tick_Cards(fDeltaTime);
             Tick_DevAutoFire(fDeltaTime);
@@ -615,22 +612,18 @@ namespace Client
             m_iRatioStep = 0;
             m_bFuseArmed = false;   // 260924_그리드가 트레일을 비웠으니 타던 도화선도 같이 끈다
 
-            // 260928_카드 30종(태스크 #22) — 카드를 들고 있는지(레벨값 필드)는 웨이브가 넘어가도 유지한다
-            // (m_fEnemyCardSlow가 그렇듯). 여기서 지우는 건 '자리 · 쿨타임 · 타이머'처럼 이번 웨이브의
-            // 판에 묶여 있던 상태뿐이다 — 안 지우면 지난 웨이브에 세운 포탑이 다음 웨이브에도 남거나,
-            // 쿨타임이 걸린 채로 새 웨이브를 맞는다.
-            m_lstTurret.Clear();
-            m_fTurretGroggyAccum = 0f;
-            m_bK06Unlocked   = false;
-            m_fK06Timer      = 0f;
-            m_vK06ZoneCenter = null;
-            m_fK06ZoneTimer  = 0f;
-            m_fK03Timer      = 0f;
-            m_dicK07Cooldown.Clear();
-            m_dicF02Cooldown.Clear();
-            m_dicF07Cooldown.Clear();
-            m_fF06BurnAccum   = 0f;
-            m_fG01FreezeTimer = 0f;
+            // 260929_카드는 매 스테이지(웨이브) 시작에 전부 초기화한다(스펙 §7.1). 예전에는 웨이브가 넘어가도 유지했다(2-10-1).
+            Reset_CardState();
+            m_iPickIndex  = 0;
+            m_iRerollLeft = Mathf.Max(0, m_cMapInfo.iPickReroll);   // 스펙 §4.1 — 리롤은 판당(스테이지당) 1회
+            m_hsLateSpawned.Clear();
+
+            // 260929_스테이지 표 값(스펙 §7) — 그로기 총량 · 기절 지속은 몬스터에 덮어쓰고, 도화선 배율은 스테이지가 든다
+            m_fStageGroggy  = cWave.fGroggyTotal;
+            m_fStageStun    = cWave.fStunDuration;
+            m_fStageFuseMul = cWave.fFuseMul > 0f ? cWave.fFuseMul : DEFAULT_FUSE_MUL;
+            for (int i = 0; i < m_lstEnemy.Count; ++i)
+                m_lstEnemy[i]?.Set_StageGroggy(m_fStageGroggy, m_fStageStun);
 
             Respawn_Player();
 
@@ -676,7 +669,8 @@ namespace Client
             if (fTimeLimit <= 0f || fElapsed <= fTimeLimit)
                 return 3;
 
-            if (fElapsed <= fTimeLimit * 1.5f)
+            // 260929_스펙 §7.1 — 1.3배 이내 ★2(예전 1.5배)
+            if (fElapsed <= fTimeLimit * 1.3f)
                 return 2;
 
             return 1;
@@ -915,6 +909,38 @@ namespace Client
             Try_OpenPick();
         }
 
+        // 260929_카드가 걸어 둔 것 전부를 되돌린다 — 플레이어 쪽 레벨 · 효과(CPlayer.Clear_Card)와 스테이지 쪽 수치 · 자리 ·
+        // 쿨타임. 스테이지(웨이브) 시작마다 부르고(스펙 §7.1 "카드 초기화"), 스테이지를 나갈 때도 부른다.
+        private void Reset_CardState()
+        {
+            m_cPlayer?.Clear_Card();
+
+            m_iK02Groggy         = 0;
+            m_fK03LevyRatio      = 0f;
+            m_fK03Timer          = 0f;
+            m_lstTurret.Clear();
+            m_iTurretMax         = 0;
+            m_fTurretGroggyAccum = 0f;
+            m_fK05FreezeDuration = 0f;
+            m_fK06SlowRatio      = 0f;
+            m_bK06Unlocked       = false;
+            m_fK06Timer          = 0f;
+            m_vK06ZoneCenter     = null;
+            m_fK06ZoneTimer      = 0f;
+            m_fK07BindDuration   = 0f;
+            m_dicK07Cooldown.Clear();
+            m_fG08Chance         = 0f;
+            m_fG08Depth          = 0f;
+            m_iF02Groggy         = 0;
+            m_dicF02Cooldown.Clear();
+            m_fF04StunDuration   = 0f;
+            m_iF06GroggyPerStack = 0;
+            m_fF06BurnAccum      = 0f;
+            m_iF07Groggy         = 0;
+            m_dicF07Cooldown.Clear();
+            m_fG01FreezeTimer    = 0f;
+        }
+
         private void Try_OpenPick()
         {
             if (m_cPickQueue.Try_Open() == true)
@@ -942,7 +968,13 @@ namespace Client
                 return false;
 
             if (cOption.eKind == PICK_KIND.CARD)
-                return Apply_Card(cOption.cCard);
+            {
+                bool bApplied = Apply_Card(cOption.cCard);
+                if (bApplied == true)
+                    ++m_iPickIndex;     // 260929_첫 선택(고정 풀) 다음부터는 일반 풀이다(스펙 §4.1)
+
+                return bApplied;
+            }
 
             // 260917_각성 — 그 액티브가 그 자리에서 바뀐다
             if (cOption.eKind == PICK_KIND.AWAKEN)
@@ -1351,6 +1383,11 @@ namespace Client
             for (int i = 0; i < cWave.lstEnemy.Count; ++i)
             {
                 CWaveEnemy cEntry = cWave.lstEnemy[i];
+
+                // 260929_점유율에 닿아야 나오는 몬스터(@)는 Tick_LateSpawn이 낸다
+                if (cEntry.fSpawnRatio > 0f)
+                    continue;
+
                 CEnemyInfo cInfo  = m_cEnemyTable.Get_Info(cEntry.iEnemyID);
                 if (cInfo == null)
                     continue;
@@ -1370,6 +1407,32 @@ namespace Client
                     Spawn_Enemy(cInfo, Find_EnemySpawnCell(iSpawned, iTotal), Get_EnemySpawnDir(iSpawned));
                     ++iSpawned;
                 }
+            }
+        }
+
+        // 260929_"106*1@0.45" — 점유율이 그 값에 닿는 순간 한 번 나온다(스펙 §7.1 1스테이지 허수아비).
+        // 웨이브가 바뀌면 Enter_Wave가 기록을 지운다. 이미 살아 있는 수는 빼고 모자란 만큼만 낸다(Spawn_Enemies와 같은 규칙).
+        private void Tick_LateSpawn()
+        {
+            CWaveInfo cWave = m_cMapInfo != null ? m_cMapInfo.Get_Wave(m_iWave) : null;
+            if (cWave == null || m_cEnemyTable == null)
+                return;
+
+            for (int i = 0; i < cWave.lstEnemy.Count; ++i)
+            {
+                CWaveEnemy cEntry = cWave.lstEnemy[i];
+                if (cEntry.fSpawnRatio <= 0f || m_hsLateSpawned.Contains(i) == true || m_cGrid.OWNED_RATIO < cEntry.fSpawnRatio)
+                    continue;
+
+                m_hsLateSpawned.Add(i);
+
+                CEnemyInfo cInfo = m_cEnemyTable.Get_Info(cEntry.iEnemyID);
+                if (cInfo == null || Has_Prefab(cInfo.strPrefabName) == false)
+                    continue;
+
+                int iNeed = cEntry.iCount - Count_Enemy(cEntry.iEnemyID);
+                for (int n = 0; n < iNeed; ++n)
+                    Spawn_Enemy(cInfo, Find_EnemySpawnCell(n, iNeed), Get_EnemySpawnDir(n));
             }
         }
 
@@ -1435,6 +1498,7 @@ namespace Client
             }
 
             cEnemy.Set_GimmickHost(this);
+            cEnemy.Set_StageGroggy(m_fStageGroggy, m_fStageStun);   // 260929_스테이지 표 값(스펙 §7)
 
             // 260912_감속이 걸려 있는 동안 소환된 몬스터만 멀쩡하면 스킬이 반쪽이 된다.
             cEnemy.Set_SpeedScale(m_fEnemySlowScale * m_fEnemyCardSlow);
@@ -1650,7 +1714,7 @@ namespace Client
             // 260928_짧은 선에서 즉시 따라잡히지 않게, 필요하면 발화 지점을 선 끝에서 최소 유예 거리만큼
             // 물린다(원본 스펙 §2.2) — 몬스터가 닿은 자리(fArc)보다 안전 지대 쪽으로 더 물러날 뿐,
             // 몬스터가 닿은 자리 자체를 앞으로 당기지는 않는다(Mathf.Min이 fArc를 넘지 않게 막는다).
-            float fMinFront = m_cGrid.TRAIL_LENGTH - FUSE_SPEED_CELL_PER_SEC * FUSE_MIN_GRACE_SEC;
+            float fMinFront = m_cGrid.TRAIL_LENGTH - Get_FuseSpeed() * FUSE_MIN_GRACE_SEC;
             m_fFuseFrom  = Mathf.Max(0f, Mathf.Min(fArc, fMinFront));
             m_fFuseFront = m_fFuseFrom;
 
@@ -1665,6 +1729,14 @@ namespace Client
                 cEnemy.IMPACT.Set_Stun(s_keyCounterFire, m_fF04StunDuration);
 
             OnFuseIgnited?.Invoke(m_cGrid.Grid_ToCell(m_cGrid.Get_TrailPoint(fArc)));
+        }
+
+        /// <summary> 260929_지금 도화선이 타는 속도(칸/초) — 스테이지 표 값 + 카드 보정(F03/G07 · F07의 대가). </summary>
+        public float Get_FuseSpeed()
+        {
+            float fDelta = (m_cPlayer != null ? m_cPlayer.FUSE_MUL_DELTA : 0f)
+                         + (m_iF07Groggy > 0 ? F07_FUSE_MUL_COST : 0f);
+            return CBalance_Utility.Calc_FuseSpeed(m_fStageFuseMul, fDelta);
         }
 
         // 260928_G08_REFRACTION — 몬스터 반대쪽으로 트레일을 우회시킨다(CTerritoryGrid.Try_Insert_Detour, 2-3-3).
@@ -1704,7 +1776,7 @@ namespace Client
 
             m_fF06BurnAccum += fDeltaTime;
 
-            float fSpeed = FUSE_SPEED_CELL_PER_SEC * (m_cPlayer != null ? m_cPlayer.FUSE_SPEED_SCALE : 1f);
+            float fSpeed = Get_FuseSpeed();
 
             // 260928_G01_EXTINGUISHER — 따라잡히기까지 1.5초 이내로 남으면 충전을 하나 써서 3초 멈춘다.
             float fRemainSec = fSpeed > 0f ? (m_cGrid.TRAIL_LENGTH - m_fFuseFront) / fSpeed : 0f;

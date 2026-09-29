@@ -1,4 +1,4 @@
-﻿iMapID	strMapName	iGridWidth	iGridHeight	fCellSize	iBorderThick	iLife	fPlayerSpeed	iWaveCount	strShapeMask	strLayerTex	strWaveEnemy	strWaveClearRatio	strWaveTimeLimit	iCoinPerStar	iCoinPerCell	iCharacterID	iFieldItemOnWave	fFieldItemCool	fFieldItemDropRate	iStartRadius	iExpTotal	iStaminaCost	iPickReroll	iPickBanish	NONE
+﻿iMapID	strMapName	iGridWidth	iGridHeight	fCellSize	iBorderThick	iLife	fPlayerSpeed	iWaveCount	strShapeMask	strLayerTex	strWaveEnemy	strWaveClearRatio	strWaveTimeLimit	iCoinPerStar	iCoinPerCell	iCharacterID	iFieldItemOnWave	fFieldItemCool	fFieldItemDropRate	iStartRadius	iExpTotal	iStaminaCost	iPickReroll	iPickBanish	strWaveGroggy	strWaveStun	strWaveFuseMul	NONE
 ;== 맵 / 웨이브 테이블 ==	구분자는 반드시 [탭]. 0번 줄이 헤더이며 그 위에는 아무것도 못 넣는다														
 ;fPlayerSpeed : 플레이어 이동 속도(초당 셀)															
 ;strLayerTex : 겹쳐 깔리는 이미지 스택. | 로 구분하고 (iWaveCount + 1)장이 필요하다															
@@ -13,5 +13,10 @@
 ;iBorderThick / iStartRadius : 시작 안전 지대. 0이면 외곽 테두리를 주지 않는다(외벽을 찍어도 점령되지 않는다). iStartRadius는 맵 한가운데 시작 섬의 반경(셀) — 5면 11x11칸 (2-3, 260920)
 ;iExpTotal / iStaminaCost : 이 스테이지를 끝냈을 때 얻는 계정 경험치의 최대치(진행도에 비례해 받는다) / 들어갈 때 쓰는 하트 (2-23, 260921)
 ;iPickReroll / iPickBanish : 3지선다 다시 뽑기 횟수 / 버리기 횟수 — 둘 다 판 전체에서 (260921)
-;---	이름	가로셀	세로셀	셀크기	테두리	체력	이동속도	웨이브수	모양마스크	이미지스택	웨이브별몬스터	웨이브별점령률	웨이브별제한시간	별당코인	칸당코인	캐릭터ID	웨이브시작아이템	아이템주기	처치드랍확률	시작섬반경	총경험치	진입하트	다시뽑기	버리기	메모
-1	프로토 스테이지	60	100	0.12	0	3	9	3	-	Tex_Mask_01|Tex_Reward_01|Tex_Reward_02|Tex_Reward_03	101*4,105*1|101*5,102*3|102*4,103*2,104*1	0.6|0.65|0.7	70|70|90	50	1	1	1	25	0.15	5	300	5	2	2	기본 맵 — 캐릭터 1(리네트)을 준다
+;iWaveCount 10 = 스테이지 10개 : 260929_원본 스펙 §7 스테이지 표(Docs/Design_Card_Balance_Spec.md) — 스테이지 N = 이 맵의 N웨이브. 매 웨이브 시작에 카드가 전부 초기화된다
+;strWaveEnemy : 260929_"106*1@0.45"처럼 @ 뒤에 점유율을 적으면 웨이브 시작이 아니라 그 점유율에 닿는 순간 나온다(스펙 §7.1 — 1스테이지 허수아비는 45%에 등장). 스테이지 7~10의 "분할"은 아직 구현이 없어 근사했다(7·8=배회자 1, 9·10=소환 기믹 분열체 1)
+;strWaveClearRatio / strWaveTimeLimit : 스펙 §7의 목표 점유율 / 목표 시간(초, 강제 타임아웃이 아니라 별 평가 기준). 1스테이지 목표 시간은 "60~90초"의 가운데 75초
+;strWaveGroggy / strWaveStun / strWaveFuseMul : 260929_스테이지별 몬스터 그로기 총량 / 기절 지속(초) / 도화선 전파 배율(stageFuseMul). 0이면 덮어쓰지 않는다(그로기·기절은 EnemyInfo 값, 배율은 0.70)
+;iPickReroll : 260929_스펙 §4.1 "리롤 판당 1회 무료" — 이제 웨이브(=스테이지)마다 다시 채운다. iPickBanish는 스펙에 없는 기존 기능이라 그대로 뒀다(판 전체)
+;---	이름	가로셀	세로셀	셀크기	테두리	체력	이동속도	웨이브수	모양마스크	이미지스택	웨이브별몬스터	웨이브별점령률	웨이브별제한시간	별당코인	칸당코인	캐릭터ID	웨이브시작아이템	아이템주기	처치드랍확률	시작섬반경	총경험치	진입하트	다시뽑기	버리기	웨이브별그로기	웨이브별기절	웨이브별불배율	메모
+1	프로토 스테이지	60	100	0.12	0	3	9	10	-	Tex_Mask_01|Tex_Reward_01|Tex_Reward_02|Tex_Reward_03|Tex_Reward_01|Tex_Reward_02|Tex_Reward_03|Tex_Reward_01|Tex_Reward_02|Tex_Reward_03|Tex_Reward_01	106*1@0.45|101*1|101*1|101*1|101*1|101*1|101*1|101*1|104*1|104*1	0.6|0.7|0.75|0.8|0.8|0.8|0.82|0.82|0.85|0.85	75|120|150|180|180|180|210|210|240|240	50	1	1	1	25	0.15	5	300	5	1	2	0|60|75|90|105|120|140|160|185|210	0|6|6|6|5.5|5.5|5|5|4.5|4.5	0.7|0.7|0.7|0.72|0.74|0.76|0.78|0.8|0.82|0.85	기본 맵 — 캐릭터 1(리네트)을 준다 / 260929_스테이지 10개(스펙 §7). 보상 이미지는 자리 채움 — 실제 아트가 오면 strLayerTex만 갈아 끼운다
